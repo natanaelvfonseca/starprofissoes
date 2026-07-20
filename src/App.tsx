@@ -17,8 +17,8 @@ export default function App() {
 
   return <>
     <div className="suite-switcher">
-      <button className={product === "crm" ? "active" : ""} onClick={() => select("crm")}><Users size={16}/>Kogna CRM</button>
-      <button className={product === "pay" ? "active" : ""} onClick={() => select("pay")}><CreditCard size={16}/>Kogna Pay</button>
+      <button className={product === "crm" ? "active" : ""} onClick={() => select("crm")}><Users size={16}/>Star Comercial</button>
+      <button className={product === "pay" ? "active" : ""} onClick={() => select("pay")}><CreditCard size={16}/>Star Financeiro</button>
     </div>
     {product === "crm" ? <CrmApp /> : <PayApp />}
   </>;

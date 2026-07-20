@@ -1,6 +1,6 @@
-# Kogna CRM & Pay
+# Star Profissões
 
-Ambiente demonstrativo com CRM comercial e gestão financeira integrados. Todos os dados são fictícios e o projeto não utiliza banco de dados, APIs privadas ou credenciais dos sistemas originais.
+Sistema independente da Star Profissões com gestão comercial e financeira. Todos os dados desta versão demonstrativa são fictícios e o projeto não utiliza banco de dados, APIs privadas ou credenciais de outros sistemas.
 
 ## Rodar localmente
 

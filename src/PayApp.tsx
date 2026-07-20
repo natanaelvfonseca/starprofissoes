@@ -40,7 +40,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import kognaLogo from "./assets/kogna-logo.png";
+import starLogo from "./assets/star-profissoes-logo.png";
 import "./App.css";
 
 type Page = "dashboard" | "turmas" | "alunos" | "cobranca" | "whatsapp" | "score" | "relatorios";
@@ -270,7 +270,7 @@ function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <img src={kognaLogo} alt="Kogna" className="brand-logo" />
+        <img src={starLogo} alt="Star Profissões" className="brand-logo" />
         <nav className="menu">
           <MenuButton icon={LayoutDashboard} label="Dashboard" active={page === "dashboard"} onClick={() => setPage("dashboard")} />
           <MenuButton icon={CalendarClock} label="Turmas" active={page === "turmas"} onClick={() => setPage("turmas")} />
@@ -282,7 +282,7 @@ function App() {
         </nav>
         <div className="side-card">
           <Sparkles size={18} />
-          <strong>Kogna Pay</strong>
+          <strong>Star Financeiro</strong>
           <span>Transforme matrículas em caixa antes da turma acontecer.</span>
         </div>
       </aside>
@@ -331,7 +331,7 @@ function Dashboard({ totals }: { totals: ReturnType<typeof AppTotalsPlaceholder>
       <div className="hero-panel">
         <div>
           <p className="eyebrow">Estratégia financeira</p>
-          <h2>A Kogna transforma matrículas em previsibilidade financeira antes da turma acontecer.</h2>
+          <h2>A Star Profissões transforma matrículas em previsibilidade financeira antes da turma acontecer.</h2>
           <p>Monitore cada matrícula, antecipe recebíveis e priorize ações antes que o risco financeiro vire inadimplência.</p>
         </div>
         <div className="hero-kpi">
@@ -357,27 +357,27 @@ function Dashboard({ totals }: { totals: ReturnType<typeof AppTotalsPlaceholder>
             <AreaChart data={cashFlow}>
               <defs>
                 <linearGradient id="orange" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="#ff6a00" stopOpacity={0.34} />
-                  <stop offset="100%" stopColor="#ff6a00" stopOpacity={0.02} />
+                  <stop offset="0%" stopColor="#F4B728" stopOpacity={0.34} />
+                  <stop offset="100%" stopColor="#F4B728" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#ece7df" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E7ECF3" />
               <XAxis dataKey="label" tickLine={false} axisLine={false} />
               <YAxis hide />
               <Tooltip formatter={(value) => money.format(Number(value))} />
-              <Area dataKey="previsto" stroke="#1746d8" fill="transparent" strokeWidth={2} />
-              <Area dataKey="recebido" stroke="#ff6a00" fill="url(#orange)" strokeWidth={3} />
+              <Area dataKey="previsto" stroke="#224C99" fill="transparent" strokeWidth={2} />
+              <Area dataKey="recebido" stroke="#F4B728" fill="url(#orange)" strokeWidth={3} />
             </AreaChart>
           </ResponsiveContainer>
         </Card>
         <Card title="Evolução até a turma">
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={receivingEvolution}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#ece7df" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E7ECF3" />
               <XAxis dataKey="day" tickLine={false} axisLine={false} />
               <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tickLine={false} axisLine={false} />
               <Tooltip formatter={(value) => `${value}% recebido`} />
-              <Line dataKey="recebido" stroke="#ff6a00" strokeWidth={3} dot={{ fill: "#1746d8", strokeWidth: 0 }} />
+              <Line dataKey="recebido" stroke="#F4B728" strokeWidth={3} dot={{ fill: "#224C99", strokeWidth: 0 }} />
             </LineChart>
           </ResponsiveContainer>
         </Card>
@@ -517,9 +517,9 @@ function CollectionPage() {
 
 function WhatsappPage() {
   const messages = [
-    ["Boas-vindas", "Oi, João! Seja bem-vindo à Kogna. Sua matrícula foi registrada com sucesso. Vou te ajudar a se organizar para chegar no dia da turma com sua vaga garantida e seu pagamento tranquilo."],
+    ["Boas-vindas", "Oi, João! Seja bem-vindo à Star Profissões. Sua matrícula foi registrada com sucesso. Vou te ajudar a se organizar para chegar no dia da turma com sua vaga garantida e seu pagamento tranquilo."],
     ["Plano sugerido", "Para facilitar, posso dividir seu saldo em parcelas menores antes da turma. Assim você chega no curso com tudo organizado e sem pressão no final de semana."],
-    ["Vencimento hoje", "Passando para lembrar que hoje é o melhor dia para avançar no seu plano Kogna Pay. Posso te enviar o link de pagamento agora?"],
+    ["Vencimento hoje", "Passando para lembrar que hoje é o melhor dia para avançar no seu plano Star Financeiro. Posso te enviar o link de pagamento agora?"],
     ["Pré-turma", "Sua turma está chegando. Vamos deixar sua confirmação financeira pronta para você aproveitar o curso com tranquilidade."],
   ];
   return (
@@ -575,8 +575,8 @@ function ScorePage() {
 function ReportsPage() {
   const byCity = classes.map((item) => ({ city: item.city.split("/")[0], recebido: item.received, aberto: item.expected - item.received }));
   const pie = [
-    { name: "Recebido", value: 137413, color: "#ff6a00" },
-    { name: "Em aberto", value: 79002, color: "#1746d8" },
+    { name: "Recebido", value: 137413, color: "#F4B728" },
+    { name: "Em aberto", value: 79002, color: "#224C99" },
   ];
   return (
     <section className="page-grid">
@@ -584,12 +584,12 @@ function ReportsPage() {
         <Card title="Recebimento por cidade">
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={byCity}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#ece7df" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E7ECF3" />
               <XAxis dataKey="city" tickLine={false} axisLine={false} />
               <YAxis hide />
               <Tooltip formatter={(value) => money.format(Number(value))} />
-              <Bar dataKey="recebido" fill="#ff6a00" radius={[8, 8, 0, 0]} />
-              <Bar dataKey="aberto" fill="#1746d8" radius={[8, 8, 0, 0]} />
+              <Bar dataKey="recebido" fill="#F4B728" radius={[8, 8, 0, 0]} />
+              <Bar dataKey="aberto" fill="#224C99" radius={[8, 8, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </Card>
