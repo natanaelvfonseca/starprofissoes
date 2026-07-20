@@ -1,0 +1,25 @@
+{
+  "name": "Star Profissões",
+  "short_name": "Star CRM",
+  "description": "CRM comercial da Star Profissões.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#07154C",
+  "theme_color": "#16006C",
+  "icons": [
+    {
+      "src": "/icon-star-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-star-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
