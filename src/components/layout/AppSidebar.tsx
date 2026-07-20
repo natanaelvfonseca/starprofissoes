@@ -1,12 +1,17 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
+  ChartNoAxesCombined,
   ClipboardPenLine,
   ContactRound,
+  FileUp,
   Gauge,
+  LibraryBig,
   LogOut,
   MapPinned,
+  MessagesSquare,
   UserRoundCheck,
   UsersRound,
+  WandSparkles,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -26,7 +31,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import starLogo from "@/assets/star-profissoes-logo.png";
 import { useAuth } from "@/lib/auth";
 import {
+  canAccessSystemFeedback,
   canManageUnits,
+  canViewAttendances,
+  canViewGrowth,
   canViewManagement,
   canViewStudents,
   getInitials,
@@ -40,6 +48,9 @@ type NavigationItem = {
   icon: LucideIcon;
   managementOnly?: boolean;
   studentViewOnly?: boolean;
+  systemFeedbackOnly?: boolean;
+  attendancesOnly?: boolean;
+  devOnly?: boolean;
 };
 
 type NavigationGroup = {
@@ -57,12 +68,23 @@ const groups: Array<NavigationGroup> = [
     items: [
       { title: "Leads", url: "/crm", icon: ContactRound },
       { title: "Alunos", url: "/leads", icon: UserRoundCheck, studentViewOnly: true },
+      { title: "IA Comercial", url: "/ia-comercial", icon: WandSparkles, attendancesOnly: true },
     ],
+  },
+  {
+    label: "Crescimento",
+    items: [{ title: "Relatórios", url: "/bi", icon: ChartNoAxesCombined }],
+  },
+  {
+    label: "Área de Membros",
+    items: [{ title: "Treinamentos", url: "/treinamentos", icon: LibraryBig }],
   },
   {
     label: "Gestão",
     items: [
       { title: "Cadastro", url: "/gestao/cadastro", icon: ClipboardPenLine, managementOnly: true },
+      { title: "Importar leads", url: "/crm/importar", icon: FileUp, devOnly: true },
+      { title: "Feedback", url: "/feedback", icon: MessagesSquare, systemFeedbackOnly: true },
     ],
   },
 ];
@@ -77,19 +99,28 @@ export function AppSidebar() {
   const isActive = (url: string) => (url === "/" ? path === "/" : path.startsWith(url));
   const canViewManagementArea = user ? canViewManagement(user.role) : false;
   const canViewStudentList = user ? canViewStudents(user.role) : false;
+  const canViewSystemFeedback = user ? canAccessSystemFeedback(user.role) : false;
+  const canSeeAttendances = user ? canViewAttendances(user.role) : false;
   const closeMobileSidebar = () => {
     if (isMobile) {
       setOpenMobile(false);
     }
   };
   const visibleGroups = groups
-    .filter((group) => group.label !== "Gestão" || canViewManagementArea)
+    .filter(
+      (group) =>
+        (group.label !== "Crescimento" || (user ? canViewGrowth(user.role) : false)) &&
+        (group.label !== "Gestão" || canViewManagementArea || canViewSystemFeedback),
+    )
     .map((group) => ({
       ...group,
       items: group.items.filter(
         (item) =>
           (!item.managementOnly || canViewManagementArea) &&
-          (!item.studentViewOnly || canViewStudentList),
+          (!item.studentViewOnly || canViewStudentList) &&
+          (!item.systemFeedbackOnly || canViewSystemFeedback) &&
+          (!item.attendancesOnly || canSeeAttendances) &&
+          (!item.devOnly || user?.role === "DEV"),
       ),
     }))
     .filter((group) => group.items.length > 0);

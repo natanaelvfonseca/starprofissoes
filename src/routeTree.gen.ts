@@ -9,52 +9,57 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as UsuariosRouteImport } from './routes/usuarios'
-import { Route as UnidadesRouteImport } from './routes/unidades'
-import { Route as PerfilRouteImport } from './routes/perfil'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as CrmRouteImport } from './routes/crm'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BiRouteImport } from './routes/bi'
+import { Route as CrmRouteImport } from './routes/crm'
+import { Route as FeedbackRouteImport } from './routes/feedback'
+import { Route as IaComercialRouteImport } from './routes/ia-comercial'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as PerfilRouteImport } from './routes/perfil'
+import { Route as TreinamentosRouteImport } from './routes/treinamentos'
+import { Route as UnidadesRouteImport } from './routes/unidades'
+import { Route as UsuariosRouteImport } from './routes/usuarios'
+import { Route as ApiGrowthRouteImport } from './routes/api/growth'
+import { Route as ApiIaComercialRouteImport } from './routes/api/ia-comercial'
+import { Route as ApiProfileRouteImport } from './routes/api/profile'
+import { Route as ApiSystemFeedbackRouteImport } from './routes/api/system-feedback'
+import { Route as ApiSystemSettingsRouteImport } from './routes/api/system-settings'
+import { Route as ApiTrainingRouteImport } from './routes/api/training'
+import { Route as CrmImportarRouteImport } from './routes/crm.importar'
+import { Route as CrmTransferenciaRouteImport } from './routes/crm.transferencia'
+import { Route as GestaoCadastroRouteImport } from './routes/gestao.cadastro'
 import { Route as LeadsIndexRouteImport } from './routes/leads.index'
 import { Route as LeadsIdRouteImport } from './routes/leads.$id'
-import { Route as GestaoCadastroRouteImport } from './routes/gestao.cadastro'
-import { Route as CrmTransferenciaRouteImport } from './routes/crm.transferencia'
-import { Route as ApiSystemSettingsRouteImport } from './routes/api/system-settings'
-import { Route as ApiProfileRouteImport } from './routes/api/profile'
-import { Route as ApiHealthDbRouteImport } from './routes/api/health/db'
-import { Route as ApiGestaoCoursesRouteImport } from './routes/api/gestao/courses'
-import { Route as ApiGestaoChannelsRouteImport } from './routes/api/gestao/channels'
-import { Route as ApiGestaoAttendancesRouteImport } from './routes/api/gestao/attendances'
-import { Route as ApiCrmTransferRouteImport } from './routes/api/crm/transfer'
-import { Route as ApiCrmTasksRouteImport } from './routes/api/crm/tasks'
-import { Route as ApiCrmLeadsRouteImport } from './routes/api/crm/leads'
-import { Route as ApiAuthSessionRouteImport } from './routes/api/auth/session'
-import { Route as ApiAuthLogoutRouteImport } from './routes/api/auth/logout'
-import { Route as ApiAuthLoginRouteImport } from './routes/api/auth/login'
-import { Route as ApiAdminUsersRouteImport } from './routes/api/admin/users'
 import { Route as ApiAdminUnitsRouteImport } from './routes/api/admin/units'
-import { Route as ApiGestaoCoursesIdRouteImport } from './routes/api/gestao/courses.$id'
-import { Route as ApiGestaoChannelsIdRouteImport } from './routes/api/gestao/channels.$id'
+import { Route as ApiAdminUsersRouteImport } from './routes/api/admin/users'
+import { Route as ApiAuthLoginRouteImport } from './routes/api/auth/login'
+import { Route as ApiAuthLogoutRouteImport } from './routes/api/auth/logout'
+import { Route as ApiAuthSessionRouteImport } from './routes/api/auth/session'
+import { Route as ApiCrmImportRouteImport } from './routes/api/crm/import'
+import { Route as ApiCrmLeadsRouteImport } from './routes/api/crm/leads'
+import { Route as ApiCrmTasksRouteImport } from './routes/api/crm/tasks'
+import { Route as ApiCrmTransferRouteImport } from './routes/api/crm/transfer'
+import { Route as ApiGestaoAttendancesRouteImport } from './routes/api/gestao/attendances'
+import { Route as ApiGestaoChannelsRouteImport } from './routes/api/gestao/channels'
+import { Route as ApiGestaoCoursesRouteImport } from './routes/api/gestao/courses'
+import { Route as ApiHealthDbRouteImport } from './routes/api/health/db'
+import { Route as ApiIaComercialAnalisesRouteImport } from './routes/api/ia-comercial.analises'
+import { Route as ApiIaComercialScriptsRouteImport } from './routes/api/ia-comercial.scripts'
+import { Route as ApiIntegrationsEvolutionRouteImport } from './routes/api/integrations/evolution'
+import { Route as ApiTrainingVideoRouteImport } from './routes/api/training.video'
+import { Route as ApiWebhooksEvolutionRouteImport } from './routes/api/webhooks/evolution'
 import { Route as ApiCrmLeadsIdRouteImport } from './routes/api/crm/leads.$id'
+import { Route as ApiGestaoChannelsIdRouteImport } from './routes/api/gestao/channels.$id'
+import { Route as ApiGestaoCoursesIdRouteImport } from './routes/api/gestao/courses.$id'
 
-const UsuariosRoute = UsuariosRouteImport.update({
-  id: '/usuarios',
-  path: '/usuarios',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const UnidadesRoute = UnidadesRouteImport.update({
-  id: '/unidades',
-  path: '/unidades',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PerfilRoute = PerfilRouteImport.update({
-  id: '/perfil',
-  path: '/perfil',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
+const BiRoute = BiRouteImport.update({
+  id: '/bi',
+  path: '/bi',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CrmRoute = CrmRouteImport.update({
@@ -62,9 +67,84 @@ const CrmRoute = CrmRouteImport.update({
   path: '/crm',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const FeedbackRoute = FeedbackRouteImport.update({
+  id: '/feedback',
+  path: '/feedback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IaComercialRoute = IaComercialRouteImport.update({
+  id: '/ia-comercial',
+  path: '/ia-comercial',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PerfilRoute = PerfilRouteImport.update({
+  id: '/perfil',
+  path: '/perfil',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TreinamentosRoute = TreinamentosRouteImport.update({
+  id: '/treinamentos',
+  path: '/treinamentos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UnidadesRoute = UnidadesRouteImport.update({
+  id: '/unidades',
+  path: '/unidades',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UsuariosRoute = UsuariosRouteImport.update({
+  id: '/usuarios',
+  path: '/usuarios',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiGrowthRoute = ApiGrowthRouteImport.update({
+  id: '/api/growth',
+  path: '/api/growth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiIaComercialRoute = ApiIaComercialRouteImport.update({
+  id: '/api/ia-comercial',
+  path: '/api/ia-comercial',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProfileRoute = ApiProfileRouteImport.update({
+  id: '/api/profile',
+  path: '/api/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSystemFeedbackRoute = ApiSystemFeedbackRouteImport.update({
+  id: '/api/system-feedback',
+  path: '/api/system-feedback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSystemSettingsRoute = ApiSystemSettingsRouteImport.update({
+  id: '/api/system-settings',
+  path: '/api/system-settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTrainingRoute = ApiTrainingRouteImport.update({
+  id: '/api/training',
+  path: '/api/training',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CrmImportarRoute = CrmImportarRouteImport.update({
+  id: '/importar',
+  path: '/importar',
+  getParentRoute: () => CrmRoute,
+} as any)
+const CrmTransferenciaRoute = CrmTransferenciaRouteImport.update({
+  id: '/transferencia',
+  path: '/transferencia',
+  getParentRoute: () => CrmRoute,
+} as any)
+const GestaoCadastroRoute = GestaoCadastroRouteImport.update({
+  id: '/gestao/cadastro',
+  path: '/gestao/cadastro',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LeadsIndexRoute = LeadsIndexRouteImport.update({
@@ -77,74 +157,9 @@ const LeadsIdRoute = LeadsIdRouteImport.update({
   path: '/leads/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const GestaoCadastroRoute = GestaoCadastroRouteImport.update({
-  id: '/gestao/cadastro',
-  path: '/gestao/cadastro',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CrmTransferenciaRoute = CrmTransferenciaRouteImport.update({
-  id: '/transferencia',
-  path: '/transferencia',
-  getParentRoute: () => CrmRoute,
-} as any)
-const ApiSystemSettingsRoute = ApiSystemSettingsRouteImport.update({
-  id: '/api/system-settings',
-  path: '/api/system-settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiProfileRoute = ApiProfileRouteImport.update({
-  id: '/api/profile',
-  path: '/api/profile',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiHealthDbRoute = ApiHealthDbRouteImport.update({
-  id: '/api/health/db',
-  path: '/api/health/db',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiGestaoCoursesRoute = ApiGestaoCoursesRouteImport.update({
-  id: '/api/gestao/courses',
-  path: '/api/gestao/courses',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiGestaoChannelsRoute = ApiGestaoChannelsRouteImport.update({
-  id: '/api/gestao/channels',
-  path: '/api/gestao/channels',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiGestaoAttendancesRoute = ApiGestaoAttendancesRouteImport.update({
-  id: '/api/gestao/attendances',
-  path: '/api/gestao/attendances',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiCrmTransferRoute = ApiCrmTransferRouteImport.update({
-  id: '/api/crm/transfer',
-  path: '/api/crm/transfer',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiCrmTasksRoute = ApiCrmTasksRouteImport.update({
-  id: '/api/crm/tasks',
-  path: '/api/crm/tasks',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiCrmLeadsRoute = ApiCrmLeadsRouteImport.update({
-  id: '/api/crm/leads',
-  path: '/api/crm/leads',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAuthSessionRoute = ApiAuthSessionRouteImport.update({
-  id: '/api/auth/session',
-  path: '/api/auth/session',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAuthLogoutRoute = ApiAuthLogoutRouteImport.update({
-  id: '/api/auth/logout',
-  path: '/api/auth/logout',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAuthLoginRoute = ApiAuthLoginRouteImport.update({
-  id: '/api/auth/login',
-  path: '/api/auth/login',
+const ApiAdminUnitsRoute = ApiAdminUnitsRouteImport.update({
+  id: '/api/admin/units',
+  path: '/api/admin/units',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAdminUsersRoute = ApiAdminUsersRouteImport.update({
@@ -152,36 +167,121 @@ const ApiAdminUsersRoute = ApiAdminUsersRouteImport.update({
   path: '/api/admin/users',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAdminUnitsRoute = ApiAdminUnitsRouteImport.update({
-  id: '/api/admin/units',
-  path: '/api/admin/units',
+const ApiAuthLoginRoute = ApiAuthLoginRouteImport.update({
+  id: '/api/auth/login',
+  path: '/api/auth/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiGestaoCoursesIdRoute = ApiGestaoCoursesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => ApiGestaoCoursesRoute,
+const ApiAuthLogoutRoute = ApiAuthLogoutRouteImport.update({
+  id: '/api/auth/logout',
+  path: '/api/auth/logout',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const ApiGestaoChannelsIdRoute = ApiGestaoChannelsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => ApiGestaoChannelsRoute,
+const ApiAuthSessionRoute = ApiAuthSessionRouteImport.update({
+  id: '/api/auth/session',
+  path: '/api/auth/session',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCrmImportRoute = ApiCrmImportRouteImport.update({
+  id: '/api/crm/import',
+  path: '/api/crm/import',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCrmLeadsRoute = ApiCrmLeadsRouteImport.update({
+  id: '/api/crm/leads',
+  path: '/api/crm/leads',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCrmTasksRoute = ApiCrmTasksRouteImport.update({
+  id: '/api/crm/tasks',
+  path: '/api/crm/tasks',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCrmTransferRoute = ApiCrmTransferRouteImport.update({
+  id: '/api/crm/transfer',
+  path: '/api/crm/transfer',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiGestaoAttendancesRoute = ApiGestaoAttendancesRouteImport.update({
+  id: '/api/gestao/attendances',
+  path: '/api/gestao/attendances',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiGestaoChannelsRoute = ApiGestaoChannelsRouteImport.update({
+  id: '/api/gestao/channels',
+  path: '/api/gestao/channels',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiGestaoCoursesRoute = ApiGestaoCoursesRouteImport.update({
+  id: '/api/gestao/courses',
+  path: '/api/gestao/courses',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiHealthDbRoute = ApiHealthDbRouteImport.update({
+  id: '/api/health/db',
+  path: '/api/health/db',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiIaComercialAnalisesRoute = ApiIaComercialAnalisesRouteImport.update({
+  id: '/analises',
+  path: '/analises',
+  getParentRoute: () => ApiIaComercialRoute,
+} as any)
+const ApiIaComercialScriptsRoute = ApiIaComercialScriptsRouteImport.update({
+  id: '/scripts',
+  path: '/scripts',
+  getParentRoute: () => ApiIaComercialRoute,
+} as any)
+const ApiIntegrationsEvolutionRoute =
+  ApiIntegrationsEvolutionRouteImport.update({
+    id: '/api/integrations/evolution',
+    path: '/api/integrations/evolution',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiTrainingVideoRoute = ApiTrainingVideoRouteImport.update({
+  id: '/video',
+  path: '/video',
+  getParentRoute: () => ApiTrainingRoute,
+} as any)
+const ApiWebhooksEvolutionRoute = ApiWebhooksEvolutionRouteImport.update({
+  id: '/api/webhooks/evolution',
+  path: '/api/webhooks/evolution',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiCrmLeadsIdRoute = ApiCrmLeadsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => ApiCrmLeadsRoute,
 } as any)
+const ApiGestaoChannelsIdRoute = ApiGestaoChannelsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiGestaoChannelsRoute,
+} as any)
+const ApiGestaoCoursesIdRoute = ApiGestaoCoursesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiGestaoCoursesRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/bi': typeof BiRoute
   '/crm': typeof CrmRouteWithChildren
+  '/feedback': typeof FeedbackRoute
+  '/ia-comercial': typeof IaComercialRoute
   '/login': typeof LoginRoute
   '/perfil': typeof PerfilRoute
+  '/treinamentos': typeof TreinamentosRoute
   '/unidades': typeof UnidadesRoute
   '/usuarios': typeof UsuariosRoute
+  '/api/growth': typeof ApiGrowthRoute
+  '/api/ia-comercial': typeof ApiIaComercialRouteWithChildren
   '/api/profile': typeof ApiProfileRoute
+  '/api/system-feedback': typeof ApiSystemFeedbackRoute
   '/api/system-settings': typeof ApiSystemSettingsRoute
+  '/api/training': typeof ApiTrainingRouteWithChildren
+  '/crm/importar': typeof CrmImportarRoute
   '/crm/transferencia': typeof CrmTransferenciaRoute
   '/gestao/cadastro': typeof GestaoCadastroRoute
   '/leads/$id': typeof LeadsIdRoute
@@ -191,6 +291,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
+  '/api/crm/import': typeof ApiCrmImportRoute
   '/api/crm/leads': typeof ApiCrmLeadsRouteWithChildren
   '/api/crm/tasks': typeof ApiCrmTasksRoute
   '/api/crm/transfer': typeof ApiCrmTransferRoute
@@ -198,19 +299,33 @@ export interface FileRoutesByFullPath {
   '/api/gestao/channels': typeof ApiGestaoChannelsRouteWithChildren
   '/api/gestao/courses': typeof ApiGestaoCoursesRouteWithChildren
   '/api/health/db': typeof ApiHealthDbRoute
+  '/api/ia-comercial/analises': typeof ApiIaComercialAnalisesRoute
+  '/api/ia-comercial/scripts': typeof ApiIaComercialScriptsRoute
+  '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
+  '/api/training/video': typeof ApiTrainingVideoRoute
+  '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
   '/api/crm/leads/$id': typeof ApiCrmLeadsIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/bi': typeof BiRoute
   '/crm': typeof CrmRouteWithChildren
+  '/feedback': typeof FeedbackRoute
+  '/ia-comercial': typeof IaComercialRoute
   '/login': typeof LoginRoute
   '/perfil': typeof PerfilRoute
+  '/treinamentos': typeof TreinamentosRoute
   '/unidades': typeof UnidadesRoute
   '/usuarios': typeof UsuariosRoute
+  '/api/growth': typeof ApiGrowthRoute
+  '/api/ia-comercial': typeof ApiIaComercialRouteWithChildren
   '/api/profile': typeof ApiProfileRoute
+  '/api/system-feedback': typeof ApiSystemFeedbackRoute
   '/api/system-settings': typeof ApiSystemSettingsRoute
+  '/api/training': typeof ApiTrainingRouteWithChildren
+  '/crm/importar': typeof CrmImportarRoute
   '/crm/transferencia': typeof CrmTransferenciaRoute
   '/gestao/cadastro': typeof GestaoCadastroRoute
   '/leads/$id': typeof LeadsIdRoute
@@ -220,6 +335,7 @@ export interface FileRoutesByTo {
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
+  '/api/crm/import': typeof ApiCrmImportRoute
   '/api/crm/leads': typeof ApiCrmLeadsRouteWithChildren
   '/api/crm/tasks': typeof ApiCrmTasksRoute
   '/api/crm/transfer': typeof ApiCrmTransferRoute
@@ -227,6 +343,11 @@ export interface FileRoutesByTo {
   '/api/gestao/channels': typeof ApiGestaoChannelsRouteWithChildren
   '/api/gestao/courses': typeof ApiGestaoCoursesRouteWithChildren
   '/api/health/db': typeof ApiHealthDbRoute
+  '/api/ia-comercial/analises': typeof ApiIaComercialAnalisesRoute
+  '/api/ia-comercial/scripts': typeof ApiIaComercialScriptsRoute
+  '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
+  '/api/training/video': typeof ApiTrainingVideoRoute
+  '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
   '/api/crm/leads/$id': typeof ApiCrmLeadsIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
@@ -234,13 +355,22 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/bi': typeof BiRoute
   '/crm': typeof CrmRouteWithChildren
+  '/feedback': typeof FeedbackRoute
+  '/ia-comercial': typeof IaComercialRoute
   '/login': typeof LoginRoute
   '/perfil': typeof PerfilRoute
+  '/treinamentos': typeof TreinamentosRoute
   '/unidades': typeof UnidadesRoute
   '/usuarios': typeof UsuariosRoute
+  '/api/growth': typeof ApiGrowthRoute
+  '/api/ia-comercial': typeof ApiIaComercialRouteWithChildren
   '/api/profile': typeof ApiProfileRoute
+  '/api/system-feedback': typeof ApiSystemFeedbackRoute
   '/api/system-settings': typeof ApiSystemSettingsRoute
+  '/api/training': typeof ApiTrainingRouteWithChildren
+  '/crm/importar': typeof CrmImportarRoute
   '/crm/transferencia': typeof CrmTransferenciaRoute
   '/gestao/cadastro': typeof GestaoCadastroRoute
   '/leads/$id': typeof LeadsIdRoute
@@ -250,6 +380,7 @@ export interface FileRoutesById {
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
+  '/api/crm/import': typeof ApiCrmImportRoute
   '/api/crm/leads': typeof ApiCrmLeadsRouteWithChildren
   '/api/crm/tasks': typeof ApiCrmTasksRoute
   '/api/crm/transfer': typeof ApiCrmTransferRoute
@@ -257,6 +388,11 @@ export interface FileRoutesById {
   '/api/gestao/channels': typeof ApiGestaoChannelsRouteWithChildren
   '/api/gestao/courses': typeof ApiGestaoCoursesRouteWithChildren
   '/api/health/db': typeof ApiHealthDbRoute
+  '/api/ia-comercial/analises': typeof ApiIaComercialAnalisesRoute
+  '/api/ia-comercial/scripts': typeof ApiIaComercialScriptsRoute
+  '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
+  '/api/training/video': typeof ApiTrainingVideoRoute
+  '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
   '/api/crm/leads/$id': typeof ApiCrmLeadsIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
@@ -265,13 +401,22 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/bi'
     | '/crm'
+    | '/feedback'
+    | '/ia-comercial'
     | '/login'
     | '/perfil'
+    | '/treinamentos'
     | '/unidades'
     | '/usuarios'
+    | '/api/growth'
+    | '/api/ia-comercial'
     | '/api/profile'
+    | '/api/system-feedback'
     | '/api/system-settings'
+    | '/api/training'
+    | '/crm/importar'
     | '/crm/transferencia'
     | '/gestao/cadastro'
     | '/leads/$id'
@@ -281,6 +426,7 @@ export interface FileRouteTypes {
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
+    | '/api/crm/import'
     | '/api/crm/leads'
     | '/api/crm/tasks'
     | '/api/crm/transfer'
@@ -288,19 +434,33 @@ export interface FileRouteTypes {
     | '/api/gestao/channels'
     | '/api/gestao/courses'
     | '/api/health/db'
+    | '/api/ia-comercial/analises'
+    | '/api/ia-comercial/scripts'
+    | '/api/integrations/evolution'
+    | '/api/training/video'
+    | '/api/webhooks/evolution'
     | '/api/crm/leads/$id'
     | '/api/gestao/channels/$id'
     | '/api/gestao/courses/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/bi'
     | '/crm'
+    | '/feedback'
+    | '/ia-comercial'
     | '/login'
     | '/perfil'
+    | '/treinamentos'
     | '/unidades'
     | '/usuarios'
+    | '/api/growth'
+    | '/api/ia-comercial'
     | '/api/profile'
+    | '/api/system-feedback'
     | '/api/system-settings'
+    | '/api/training'
+    | '/crm/importar'
     | '/crm/transferencia'
     | '/gestao/cadastro'
     | '/leads/$id'
@@ -310,6 +470,7 @@ export interface FileRouteTypes {
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
+    | '/api/crm/import'
     | '/api/crm/leads'
     | '/api/crm/tasks'
     | '/api/crm/transfer'
@@ -317,19 +478,33 @@ export interface FileRouteTypes {
     | '/api/gestao/channels'
     | '/api/gestao/courses'
     | '/api/health/db'
+    | '/api/ia-comercial/analises'
+    | '/api/ia-comercial/scripts'
+    | '/api/integrations/evolution'
+    | '/api/training/video'
+    | '/api/webhooks/evolution'
     | '/api/crm/leads/$id'
     | '/api/gestao/channels/$id'
     | '/api/gestao/courses/$id'
   id:
     | '__root__'
     | '/'
+    | '/bi'
     | '/crm'
+    | '/feedback'
+    | '/ia-comercial'
     | '/login'
     | '/perfil'
+    | '/treinamentos'
     | '/unidades'
     | '/usuarios'
+    | '/api/growth'
+    | '/api/ia-comercial'
     | '/api/profile'
+    | '/api/system-feedback'
     | '/api/system-settings'
+    | '/api/training'
+    | '/crm/importar'
     | '/crm/transferencia'
     | '/gestao/cadastro'
     | '/leads/$id'
@@ -339,6 +514,7 @@ export interface FileRouteTypes {
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
+    | '/api/crm/import'
     | '/api/crm/leads'
     | '/api/crm/tasks'
     | '/api/crm/transfer'
@@ -346,6 +522,11 @@ export interface FileRouteTypes {
     | '/api/gestao/channels'
     | '/api/gestao/courses'
     | '/api/health/db'
+    | '/api/ia-comercial/analises'
+    | '/api/ia-comercial/scripts'
+    | '/api/integrations/evolution'
+    | '/api/training/video'
+    | '/api/webhooks/evolution'
     | '/api/crm/leads/$id'
     | '/api/gestao/channels/$id'
     | '/api/gestao/courses/$id'
@@ -353,13 +534,21 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BiRoute: typeof BiRoute
   CrmRoute: typeof CrmRouteWithChildren
+  FeedbackRoute: typeof FeedbackRoute
+  IaComercialRoute: typeof IaComercialRoute
   LoginRoute: typeof LoginRoute
   PerfilRoute: typeof PerfilRoute
+  TreinamentosRoute: typeof TreinamentosRoute
   UnidadesRoute: typeof UnidadesRoute
   UsuariosRoute: typeof UsuariosRoute
+  ApiGrowthRoute: typeof ApiGrowthRoute
+  ApiIaComercialRoute: typeof ApiIaComercialRouteWithChildren
   ApiProfileRoute: typeof ApiProfileRoute
+  ApiSystemFeedbackRoute: typeof ApiSystemFeedbackRoute
   ApiSystemSettingsRoute: typeof ApiSystemSettingsRoute
+  ApiTrainingRoute: typeof ApiTrainingRouteWithChildren
   GestaoCadastroRoute: typeof GestaoCadastroRoute
   LeadsIdRoute: typeof LeadsIdRoute
   LeadsIndexRoute: typeof LeadsIndexRoute
@@ -368,6 +557,7 @@ export interface RootRouteChildren {
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
   ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
   ApiAuthSessionRoute: typeof ApiAuthSessionRoute
+  ApiCrmImportRoute: typeof ApiCrmImportRoute
   ApiCrmLeadsRoute: typeof ApiCrmLeadsRouteWithChildren
   ApiCrmTasksRoute: typeof ApiCrmTasksRoute
   ApiCrmTransferRoute: typeof ApiCrmTransferRoute
@@ -375,36 +565,24 @@ export interface RootRouteChildren {
   ApiGestaoChannelsRoute: typeof ApiGestaoChannelsRouteWithChildren
   ApiGestaoCoursesRoute: typeof ApiGestaoCoursesRouteWithChildren
   ApiHealthDbRoute: typeof ApiHealthDbRoute
+  ApiIntegrationsEvolutionRoute: typeof ApiIntegrationsEvolutionRoute
+  ApiWebhooksEvolutionRoute: typeof ApiWebhooksEvolutionRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/usuarios': {
-      id: '/usuarios'
-      path: '/usuarios'
-      fullPath: '/usuarios'
-      preLoaderRoute: typeof UsuariosRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/unidades': {
-      id: '/unidades'
-      path: '/unidades'
-      fullPath: '/unidades'
-      preLoaderRoute: typeof UnidadesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/perfil': {
-      id: '/perfil'
-      path: '/perfil'
-      fullPath: '/perfil'
-      preLoaderRoute: typeof PerfilRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
+    '/bi': {
+      id: '/bi'
+      path: '/bi'
+      fullPath: '/bi'
+      preLoaderRoute: typeof BiRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/crm': {
@@ -414,11 +592,116 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CrmRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/feedback': {
+      id: '/feedback'
+      path: '/feedback'
+      fullPath: '/feedback'
+      preLoaderRoute: typeof FeedbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ia-comercial': {
+      id: '/ia-comercial'
+      path: '/ia-comercial'
+      fullPath: '/ia-comercial'
+      preLoaderRoute: typeof IaComercialRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/perfil': {
+      id: '/perfil'
+      path: '/perfil'
+      fullPath: '/perfil'
+      preLoaderRoute: typeof PerfilRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/treinamentos': {
+      id: '/treinamentos'
+      path: '/treinamentos'
+      fullPath: '/treinamentos'
+      preLoaderRoute: typeof TreinamentosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/unidades': {
+      id: '/unidades'
+      path: '/unidades'
+      fullPath: '/unidades'
+      preLoaderRoute: typeof UnidadesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/usuarios': {
+      id: '/usuarios'
+      path: '/usuarios'
+      fullPath: '/usuarios'
+      preLoaderRoute: typeof UsuariosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/growth': {
+      id: '/api/growth'
+      path: '/api/growth'
+      fullPath: '/api/growth'
+      preLoaderRoute: typeof ApiGrowthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ia-comercial': {
+      id: '/api/ia-comercial'
+      path: '/api/ia-comercial'
+      fullPath: '/api/ia-comercial'
+      preLoaderRoute: typeof ApiIaComercialRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/profile': {
+      id: '/api/profile'
+      path: '/api/profile'
+      fullPath: '/api/profile'
+      preLoaderRoute: typeof ApiProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/system-feedback': {
+      id: '/api/system-feedback'
+      path: '/api/system-feedback'
+      fullPath: '/api/system-feedback'
+      preLoaderRoute: typeof ApiSystemFeedbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/system-settings': {
+      id: '/api/system-settings'
+      path: '/api/system-settings'
+      fullPath: '/api/system-settings'
+      preLoaderRoute: typeof ApiSystemSettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/training': {
+      id: '/api/training'
+      path: '/api/training'
+      fullPath: '/api/training'
+      preLoaderRoute: typeof ApiTrainingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/crm/importar': {
+      id: '/crm/importar'
+      path: '/importar'
+      fullPath: '/crm/importar'
+      preLoaderRoute: typeof CrmImportarRouteImport
+      parentRoute: typeof CrmRoute
+    }
+    '/crm/transferencia': {
+      id: '/crm/transferencia'
+      path: '/transferencia'
+      fullPath: '/crm/transferencia'
+      preLoaderRoute: typeof CrmTransferenciaRouteImport
+      parentRoute: typeof CrmRoute
+    }
+    '/gestao/cadastro': {
+      id: '/gestao/cadastro'
+      path: '/gestao/cadastro'
+      fullPath: '/gestao/cadastro'
+      preLoaderRoute: typeof GestaoCadastroRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/leads/': {
@@ -435,102 +718,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LeadsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/gestao/cadastro': {
-      id: '/gestao/cadastro'
-      path: '/gestao/cadastro'
-      fullPath: '/gestao/cadastro'
-      preLoaderRoute: typeof GestaoCadastroRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/crm/transferencia': {
-      id: '/crm/transferencia'
-      path: '/transferencia'
-      fullPath: '/crm/transferencia'
-      preLoaderRoute: typeof CrmTransferenciaRouteImport
-      parentRoute: typeof CrmRoute
-    }
-    '/api/system-settings': {
-      id: '/api/system-settings'
-      path: '/api/system-settings'
-      fullPath: '/api/system-settings'
-      preLoaderRoute: typeof ApiSystemSettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/profile': {
-      id: '/api/profile'
-      path: '/api/profile'
-      fullPath: '/api/profile'
-      preLoaderRoute: typeof ApiProfileRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/health/db': {
-      id: '/api/health/db'
-      path: '/api/health/db'
-      fullPath: '/api/health/db'
-      preLoaderRoute: typeof ApiHealthDbRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/gestao/courses': {
-      id: '/api/gestao/courses'
-      path: '/api/gestao/courses'
-      fullPath: '/api/gestao/courses'
-      preLoaderRoute: typeof ApiGestaoCoursesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/gestao/channels': {
-      id: '/api/gestao/channels'
-      path: '/api/gestao/channels'
-      fullPath: '/api/gestao/channels'
-      preLoaderRoute: typeof ApiGestaoChannelsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/gestao/attendances': {
-      id: '/api/gestao/attendances'
-      path: '/api/gestao/attendances'
-      fullPath: '/api/gestao/attendances'
-      preLoaderRoute: typeof ApiGestaoAttendancesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/crm/transfer': {
-      id: '/api/crm/transfer'
-      path: '/api/crm/transfer'
-      fullPath: '/api/crm/transfer'
-      preLoaderRoute: typeof ApiCrmTransferRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/crm/tasks': {
-      id: '/api/crm/tasks'
-      path: '/api/crm/tasks'
-      fullPath: '/api/crm/tasks'
-      preLoaderRoute: typeof ApiCrmTasksRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/crm/leads': {
-      id: '/api/crm/leads'
-      path: '/api/crm/leads'
-      fullPath: '/api/crm/leads'
-      preLoaderRoute: typeof ApiCrmLeadsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/auth/session': {
-      id: '/api/auth/session'
-      path: '/api/auth/session'
-      fullPath: '/api/auth/session'
-      preLoaderRoute: typeof ApiAuthSessionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/auth/logout': {
-      id: '/api/auth/logout'
-      path: '/api/auth/logout'
-      fullPath: '/api/auth/logout'
-      preLoaderRoute: typeof ApiAuthLogoutRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/auth/login': {
-      id: '/api/auth/login'
-      path: '/api/auth/login'
-      fullPath: '/api/auth/login'
-      preLoaderRoute: typeof ApiAuthLoginRouteImport
+    '/api/admin/units': {
+      id: '/api/admin/units'
+      path: '/api/admin/units'
+      fullPath: '/api/admin/units'
+      preLoaderRoute: typeof ApiAdminUnitsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/admin/users': {
@@ -540,26 +732,117 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAdminUsersRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/admin/units': {
-      id: '/api/admin/units'
-      path: '/api/admin/units'
-      fullPath: '/api/admin/units'
-      preLoaderRoute: typeof ApiAdminUnitsRouteImport
+    '/api/auth/login': {
+      id: '/api/auth/login'
+      path: '/api/auth/login'
+      fullPath: '/api/auth/login'
+      preLoaderRoute: typeof ApiAuthLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/gestao/courses/$id': {
-      id: '/api/gestao/courses/$id'
-      path: '/$id'
-      fullPath: '/api/gestao/courses/$id'
-      preLoaderRoute: typeof ApiGestaoCoursesIdRouteImport
-      parentRoute: typeof ApiGestaoCoursesRoute
+    '/api/auth/logout': {
+      id: '/api/auth/logout'
+      path: '/api/auth/logout'
+      fullPath: '/api/auth/logout'
+      preLoaderRoute: typeof ApiAuthLogoutRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/api/gestao/channels/$id': {
-      id: '/api/gestao/channels/$id'
-      path: '/$id'
-      fullPath: '/api/gestao/channels/$id'
-      preLoaderRoute: typeof ApiGestaoChannelsIdRouteImport
-      parentRoute: typeof ApiGestaoChannelsRoute
+    '/api/auth/session': {
+      id: '/api/auth/session'
+      path: '/api/auth/session'
+      fullPath: '/api/auth/session'
+      preLoaderRoute: typeof ApiAuthSessionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/crm/import': {
+      id: '/api/crm/import'
+      path: '/api/crm/import'
+      fullPath: '/api/crm/import'
+      preLoaderRoute: typeof ApiCrmImportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/crm/leads': {
+      id: '/api/crm/leads'
+      path: '/api/crm/leads'
+      fullPath: '/api/crm/leads'
+      preLoaderRoute: typeof ApiCrmLeadsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/crm/tasks': {
+      id: '/api/crm/tasks'
+      path: '/api/crm/tasks'
+      fullPath: '/api/crm/tasks'
+      preLoaderRoute: typeof ApiCrmTasksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/crm/transfer': {
+      id: '/api/crm/transfer'
+      path: '/api/crm/transfer'
+      fullPath: '/api/crm/transfer'
+      preLoaderRoute: typeof ApiCrmTransferRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/gestao/attendances': {
+      id: '/api/gestao/attendances'
+      path: '/api/gestao/attendances'
+      fullPath: '/api/gestao/attendances'
+      preLoaderRoute: typeof ApiGestaoAttendancesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/gestao/channels': {
+      id: '/api/gestao/channels'
+      path: '/api/gestao/channels'
+      fullPath: '/api/gestao/channels'
+      preLoaderRoute: typeof ApiGestaoChannelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/gestao/courses': {
+      id: '/api/gestao/courses'
+      path: '/api/gestao/courses'
+      fullPath: '/api/gestao/courses'
+      preLoaderRoute: typeof ApiGestaoCoursesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/health/db': {
+      id: '/api/health/db'
+      path: '/api/health/db'
+      fullPath: '/api/health/db'
+      preLoaderRoute: typeof ApiHealthDbRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ia-comercial/analises': {
+      id: '/api/ia-comercial/analises'
+      path: '/analises'
+      fullPath: '/api/ia-comercial/analises'
+      preLoaderRoute: typeof ApiIaComercialAnalisesRouteImport
+      parentRoute: typeof ApiIaComercialRoute
+    }
+    '/api/ia-comercial/scripts': {
+      id: '/api/ia-comercial/scripts'
+      path: '/scripts'
+      fullPath: '/api/ia-comercial/scripts'
+      preLoaderRoute: typeof ApiIaComercialScriptsRouteImport
+      parentRoute: typeof ApiIaComercialRoute
+    }
+    '/api/integrations/evolution': {
+      id: '/api/integrations/evolution'
+      path: '/api/integrations/evolution'
+      fullPath: '/api/integrations/evolution'
+      preLoaderRoute: typeof ApiIntegrationsEvolutionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/training/video': {
+      id: '/api/training/video'
+      path: '/video'
+      fullPath: '/api/training/video'
+      preLoaderRoute: typeof ApiTrainingVideoRouteImport
+      parentRoute: typeof ApiTrainingRoute
+    }
+    '/api/webhooks/evolution': {
+      id: '/api/webhooks/evolution'
+      path: '/api/webhooks/evolution'
+      fullPath: '/api/webhooks/evolution'
+      preLoaderRoute: typeof ApiWebhooksEvolutionRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/crm/leads/$id': {
       id: '/api/crm/leads/$id'
@@ -568,18 +851,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCrmLeadsIdRouteImport
       parentRoute: typeof ApiCrmLeadsRoute
     }
+    '/api/gestao/channels/$id': {
+      id: '/api/gestao/channels/$id'
+      path: '/$id'
+      fullPath: '/api/gestao/channels/$id'
+      preLoaderRoute: typeof ApiGestaoChannelsIdRouteImport
+      parentRoute: typeof ApiGestaoChannelsRoute
+    }
+    '/api/gestao/courses/$id': {
+      id: '/api/gestao/courses/$id'
+      path: '/$id'
+      fullPath: '/api/gestao/courses/$id'
+      preLoaderRoute: typeof ApiGestaoCoursesIdRouteImport
+      parentRoute: typeof ApiGestaoCoursesRoute
+    }
   }
 }
 
 interface CrmRouteChildren {
+  CrmImportarRoute: typeof CrmImportarRoute
   CrmTransferenciaRoute: typeof CrmTransferenciaRoute
 }
 
 const CrmRouteChildren: CrmRouteChildren = {
+  CrmImportarRoute: CrmImportarRoute,
   CrmTransferenciaRoute: CrmTransferenciaRoute,
 }
 
 const CrmRouteWithChildren = CrmRoute._addFileChildren(CrmRouteChildren)
+
+interface ApiIaComercialRouteChildren {
+  ApiIaComercialAnalisesRoute: typeof ApiIaComercialAnalisesRoute
+  ApiIaComercialScriptsRoute: typeof ApiIaComercialScriptsRoute
+}
+
+const ApiIaComercialRouteChildren: ApiIaComercialRouteChildren = {
+  ApiIaComercialAnalisesRoute: ApiIaComercialAnalisesRoute,
+  ApiIaComercialScriptsRoute: ApiIaComercialScriptsRoute,
+}
+
+const ApiIaComercialRouteWithChildren = ApiIaComercialRoute._addFileChildren(
+  ApiIaComercialRouteChildren,
+)
+
+interface ApiTrainingRouteChildren {
+  ApiTrainingVideoRoute: typeof ApiTrainingVideoRoute
+}
+
+const ApiTrainingRouteChildren: ApiTrainingRouteChildren = {
+  ApiTrainingVideoRoute: ApiTrainingVideoRoute,
+}
+
+const ApiTrainingRouteWithChildren = ApiTrainingRoute._addFileChildren(
+  ApiTrainingRouteChildren,
+)
 
 interface ApiCrmLeadsRouteChildren {
   ApiCrmLeadsIdRoute: typeof ApiCrmLeadsIdRoute
@@ -617,13 +942,21 @@ const ApiGestaoCoursesRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BiRoute: BiRoute,
   CrmRoute: CrmRouteWithChildren,
+  FeedbackRoute: FeedbackRoute,
+  IaComercialRoute: IaComercialRoute,
   LoginRoute: LoginRoute,
   PerfilRoute: PerfilRoute,
+  TreinamentosRoute: TreinamentosRoute,
   UnidadesRoute: UnidadesRoute,
   UsuariosRoute: UsuariosRoute,
+  ApiGrowthRoute: ApiGrowthRoute,
+  ApiIaComercialRoute: ApiIaComercialRouteWithChildren,
   ApiProfileRoute: ApiProfileRoute,
+  ApiSystemFeedbackRoute: ApiSystemFeedbackRoute,
   ApiSystemSettingsRoute: ApiSystemSettingsRoute,
+  ApiTrainingRoute: ApiTrainingRouteWithChildren,
   GestaoCadastroRoute: GestaoCadastroRoute,
   LeadsIdRoute: LeadsIdRoute,
   LeadsIndexRoute: LeadsIndexRoute,
@@ -632,6 +965,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthLoginRoute: ApiAuthLoginRoute,
   ApiAuthLogoutRoute: ApiAuthLogoutRoute,
   ApiAuthSessionRoute: ApiAuthSessionRoute,
+  ApiCrmImportRoute: ApiCrmImportRoute,
   ApiCrmLeadsRoute: ApiCrmLeadsRouteWithChildren,
   ApiCrmTasksRoute: ApiCrmTasksRoute,
   ApiCrmTransferRoute: ApiCrmTransferRoute,
@@ -639,6 +973,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiGestaoChannelsRoute: ApiGestaoChannelsRouteWithChildren,
   ApiGestaoCoursesRoute: ApiGestaoCoursesRouteWithChildren,
   ApiHealthDbRoute: ApiHealthDbRoute,
+  ApiIntegrationsEvolutionRoute: ApiIntegrationsEvolutionRoute,
+  ApiWebhooksEvolutionRoute: ApiWebhooksEvolutionRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
