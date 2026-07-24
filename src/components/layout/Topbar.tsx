@@ -1,5 +1,6 @@
 import * as React from "react";
-import { Bell, CheckCircle2, Clock3, Loader2 } from "lucide-react";
+import { Link, useRouterState } from "@tanstack/react-router";
+import { Bell, CheckCircle2, Clock3, CreditCard, Loader2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,8 @@ function formatNotificationDate(value: string) {
 
 export function Topbar() {
   const { session } = useAuth();
+  const path = useRouterState({ select: (routerState) => routerState.location.pathname });
+  const isFinancial = path.startsWith("/financeiro");
   const [notifications, setNotifications] = React.useState<Array<CrmLeadTask>>([]);
   const [loadingNotifications, setLoadingNotifications] = React.useState(false);
   const [updatingTaskId, setUpdatingTaskId] = React.useState<string | null>(null);
@@ -172,6 +175,30 @@ export function Topbar() {
         <SidebarTrigger className="h-11 w-11 rounded-xl border-border/80 bg-white/90 shadow-card backdrop-blur hover:bg-accent hover:text-accent-foreground md:hidden" />
       </div>
       <div className="pointer-events-auto flex items-center gap-2">
+        <div className="flex items-center rounded-xl border border-border/80 bg-white/90 p-1 shadow-card backdrop-blur">
+          <Button
+            asChild
+            size="sm"
+            variant={isFinancial ? "ghost" : "default"}
+            className={cn("rounded-lg px-2.5 sm:px-3", !isFinancial && "bg-gradient-primary")}
+          >
+            <Link to="/">
+              <Users className="h-4 w-4" />
+              <span className="hidden sm:inline">CRM</span>
+            </Link>
+          </Button>
+          <Button
+            asChild
+            size="sm"
+            variant={isFinancial ? "default" : "ghost"}
+            className={cn("rounded-lg px-2.5 sm:px-3", isFinancial && "bg-gradient-primary")}
+          >
+            <Link to="/financeiro">
+              <CreditCard className="h-4 w-4" />
+              <span className="hidden sm:inline">Financeiro</span>
+            </Link>
+          </Button>
+        </div>
         <Popover>
           <PopoverTrigger asChild>
             <Button

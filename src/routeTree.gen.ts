@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as BiRouteImport } from './routes/bi'
 import { Route as CrmRouteImport } from './routes/crm'
 import { Route as FeedbackRouteImport } from './routes/feedback'
+import { Route as FinanceiroRouteImport } from './routes/financeiro'
 import { Route as IaComercialRouteImport } from './routes/ia-comercial'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as PerfilRouteImport } from './routes/perfil'
@@ -70,6 +71,11 @@ const CrmRoute = CrmRouteImport.update({
 const FeedbackRoute = FeedbackRouteImport.update({
   id: '/feedback',
   path: '/feedback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FinanceiroRoute = FinanceiroRouteImport.update({
+  id: '/financeiro',
+  path: '/financeiro',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IaComercialRoute = IaComercialRouteImport.update({
@@ -269,6 +275,7 @@ export interface FileRoutesByFullPath {
   '/bi': typeof BiRoute
   '/crm': typeof CrmRouteWithChildren
   '/feedback': typeof FeedbackRoute
+  '/financeiro': typeof FinanceiroRoute
   '/ia-comercial': typeof IaComercialRoute
   '/login': typeof LoginRoute
   '/perfil': typeof PerfilRoute
@@ -313,6 +320,7 @@ export interface FileRoutesByTo {
   '/bi': typeof BiRoute
   '/crm': typeof CrmRouteWithChildren
   '/feedback': typeof FeedbackRoute
+  '/financeiro': typeof FinanceiroRoute
   '/ia-comercial': typeof IaComercialRoute
   '/login': typeof LoginRoute
   '/perfil': typeof PerfilRoute
@@ -358,6 +366,7 @@ export interface FileRoutesById {
   '/bi': typeof BiRoute
   '/crm': typeof CrmRouteWithChildren
   '/feedback': typeof FeedbackRoute
+  '/financeiro': typeof FinanceiroRoute
   '/ia-comercial': typeof IaComercialRoute
   '/login': typeof LoginRoute
   '/perfil': typeof PerfilRoute
@@ -404,6 +413,7 @@ export interface FileRouteTypes {
     | '/bi'
     | '/crm'
     | '/feedback'
+    | '/financeiro'
     | '/ia-comercial'
     | '/login'
     | '/perfil'
@@ -448,6 +458,7 @@ export interface FileRouteTypes {
     | '/bi'
     | '/crm'
     | '/feedback'
+    | '/financeiro'
     | '/ia-comercial'
     | '/login'
     | '/perfil'
@@ -492,6 +503,7 @@ export interface FileRouteTypes {
     | '/bi'
     | '/crm'
     | '/feedback'
+    | '/financeiro'
     | '/ia-comercial'
     | '/login'
     | '/perfil'
@@ -537,6 +549,7 @@ export interface RootRouteChildren {
   BiRoute: typeof BiRoute
   CrmRoute: typeof CrmRouteWithChildren
   FeedbackRoute: typeof FeedbackRoute
+  FinanceiroRoute: typeof FinanceiroRoute
   IaComercialRoute: typeof IaComercialRoute
   LoginRoute: typeof LoginRoute
   PerfilRoute: typeof PerfilRoute
@@ -597,6 +610,13 @@ declare module '@tanstack/react-router' {
       path: '/feedback'
       fullPath: '/feedback'
       preLoaderRoute: typeof FeedbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/financeiro': {
+      id: '/financeiro'
+      path: '/financeiro'
+      fullPath: '/financeiro'
+      preLoaderRoute: typeof FinanceiroRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/ia-comercial': {
@@ -945,6 +965,7 @@ const rootRouteChildren: RootRouteChildren = {
   BiRoute: BiRoute,
   CrmRoute: CrmRouteWithChildren,
   FeedbackRoute: FeedbackRoute,
+  FinanceiroRoute: FinanceiroRoute,
   IaComercialRoute: IaComercialRoute,
   LoginRoute: LoginRoute,
   PerfilRoute: PerfilRoute,
