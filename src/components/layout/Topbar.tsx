@@ -1,6 +1,14 @@
 import * as React from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Bell, CheckCircle2, Clock3, CreditCard, Loader2, Users } from "lucide-react";
+import {
+  Bell,
+  CheckCircle2,
+  Clock3,
+  CreditCard,
+  GraduationCap,
+  Loader2,
+  Users,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,6 +49,8 @@ export function Topbar() {
   const { session } = useAuth();
   const path = useRouterState({ select: (routerState) => routerState.location.pathname });
   const isFinancial = path.startsWith("/financeiro");
+  const isStudent = path.startsWith("/aluno");
+  const isCrm = !isFinancial && !isStudent;
   const [notifications, setNotifications] = React.useState<Array<CrmLeadTask>>([]);
   const [loadingNotifications, setLoadingNotifications] = React.useState(false);
   const [updatingTaskId, setUpdatingTaskId] = React.useState<string | null>(null);
@@ -179,8 +189,8 @@ export function Topbar() {
           <Button
             asChild
             size="sm"
-            variant={isFinancial ? "ghost" : "default"}
-            className={cn("rounded-lg px-2.5 sm:px-3", !isFinancial && "bg-gradient-primary")}
+            variant={isCrm ? "default" : "ghost"}
+            className={cn("rounded-lg px-2.5 sm:px-3", isCrm && "bg-gradient-primary")}
           >
             <Link to="/">
               <Users className="h-4 w-4" />
@@ -196,6 +206,17 @@ export function Topbar() {
             <Link to="/financeiro">
               <CreditCard className="h-4 w-4" />
               <span className="hidden sm:inline">Financeiro</span>
+            </Link>
+          </Button>
+          <Button
+            asChild
+            size="sm"
+            variant={isStudent ? "default" : "ghost"}
+            className={cn("rounded-lg px-2.5 sm:px-3", isStudent && "bg-gradient-primary")}
+          >
+            <Link to="/aluno">
+              <GraduationCap className="h-4 w-4" />
+              <span className="hidden sm:inline">Aluno</span>
             </Link>
           </Button>
         </div>

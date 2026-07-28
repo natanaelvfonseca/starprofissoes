@@ -1,7 +1,8 @@
 import * as React from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
+  ArrowRight,
   Banknote,
   CalendarClock,
   CheckCircle2,
@@ -10,6 +11,7 @@ import {
   FileBarChart,
   Gauge,
   LayoutDashboard,
+  ListChecks,
   MapPin,
   MessageCircle,
   PhoneCall,
@@ -53,6 +55,7 @@ import { cn } from "@/lib/utils";
 
 type FinancialPage =
   | "dashboard"
+  | "central"
   | "turmas"
   | "alunos"
   | "cobranca"
@@ -122,6 +125,7 @@ const receivingEvolution = [
 
 const tabs: Array<{ id: FinancialPage; label: string; icon: typeof LayoutDashboard }> = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "central", label: "Central do dia", icon: ListChecks },
   { id: "turmas", label: "Turmas", icon: CalendarClock },
   { id: "alunos", label: "Alunos e recebíveis", icon: Users },
   { id: "cobranca", label: "Cobrança", icon: PhoneCall },
@@ -181,6 +185,7 @@ function FinancialPageRoute() {
       </div>
 
       {page === "dashboard" ? <Dashboard totals={financialTotals} /> : null}
+      {page === "central" ? <DailyCollectionPage /> : null}
       {page === "turmas" ? (
         <ClassesPage selected={selectedClass} onSelect={setSelectedClass} />
       ) : null}
@@ -205,14 +210,14 @@ function Dashboard({ totals }: { totals: typeof financialTotals }) {
           <div className="max-w-3xl">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-gold">Estratégia financeira</p>
             <h2 className="mt-2 text-2xl font-extrabold text-white md:text-3xl">
-              Saúde financeira saudável
+              Saúde financeira da operação
             </h2>
             <p className="mt-3 text-sm leading-6 text-white/70">
               Monitore matrículas, priorize cobranças e reduza o risco financeiro da operação.
             </p>
           </div>
           <div className="grid h-36 w-36 shrink-0 place-items-center rounded-full border border-emerald-300/50 bg-emerald-500/20 text-center shadow-[0_0_40px_rgba(52,211,153,0.18)]">
-            <div><strong className="block text-4xl text-emerald-300">{totals.inGoodStanding}%</strong><span className="text-xs font-semibold text-emerald-100">em dia</span></div>
+            <div><strong className="block text-4xl text-emerald-300">{totals.inGoodStanding}%</strong><span className="block max-w-24 text-xs font-semibold leading-4 text-emerald-100">dos alunos em dia</span></div>
           </div>
         </div>
       </section>
@@ -220,7 +225,7 @@ function Dashboard({ totals }: { totals: typeof financialTotals }) {
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Receita prevista" value={money.format(totals.expected)} icon={WalletCards} hint="Turmas ativas" />
         <StatCard label="Receita recebida" value={money.format(totals.received)} icon={Banknote} accent="success" hint="Caixa confirmado" />
-        <StatCard label="Saldo em aberto" value={money.format(totals.open)} icon={ReceiptText} accent="gold" hint="Potencial para antecipar" />
+        <StatCard label="Saldo em aberto" value={money.format(totals.open)} icon={ReceiptText} accent="gold" hint="Valor ainda a receber" />
         <StatCard label="Alunos em risco" value={totals.risk} icon={AlertTriangle} accent="warning" hint="Prioridade de cobrança" />
       </section>
 
@@ -280,6 +285,162 @@ function Dashboard({ totals }: { totals: typeof financialTotals }) {
           </CardContent>
         </Card>
       </section>
+    </div>
+  );
+}
+
+const dailyCollectionRows = [
+  {
+    id: "joao-silva",
+    student: "João Silva",
+    className: "Máquinas Agrícolas",
+    situation: "Parcela atrasada",
+    value: 300,
+    commitment: "Sem acordo",
+    action: "Iniciar negociação",
+    tone: "critical",
+  },
+  {
+    id: "maria-souza",
+    student: "Maria Souza",
+    className: "Bombeiro Civil",
+    situation: "Promessa vence hoje",
+    value: 150,
+    commitment: "Pagar até 17h",
+    action: "Enviar lembrete",
+    tone: "attention",
+  },
+  {
+    id: "carlos-lima",
+    student: "Carlos Lima",
+    className: "Inseminação Artificial",
+    situation: "Acordo quebrado",
+    value: 200,
+    commitment: "R$ 50 semanal",
+    action: "Reorganizar plano",
+    tone: "critical",
+  },
+  {
+    id: "ana-santos",
+    student: "Ana Santos",
+    className: "Máquinas Pesadas",
+    situation: "Aguardando Pix",
+    value: 250,
+    commitment: "Pagar hoje",
+    action: "Confirmar recebimento",
+    tone: "waiting",
+  },
+] as const;
+
+function DailyCollectionPage() {
+  const indicators = [
+    { value: "R$ 8.750", label: "prometidos para hoje", icon: CircleDollarSign, tone: "text-primary bg-primary/10" },
+    { value: "R$ 3.200", label: "recebidos hoje", icon: CheckCircle2, tone: "text-emerald-700 bg-emerald-50" },
+    { value: "18", label: "compromissos vencendo", icon: Clock3, tone: "text-amber-700 bg-amber-50" },
+    { value: "7", label: "promessas quebradas", icon: AlertTriangle, tone: "text-red-700 bg-red-50" },
+    { value: "12", label: "negociações aguardando resposta", icon: MessageCircle, tone: "text-violet-700 bg-violet-50" },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-gold">
+          Central de cobrança do dia
+        </p>
+        <h2 className="mt-2 text-2xl font-bold tracking-tight">Prioridades de cobrança</h2>
+        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+          Tudo o que a equipe precisa acompanhar hoje para recuperar pagamentos e cumprir
+          promessas.
+        </p>
+      </div>
+
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        {indicators.map((indicator) => {
+          const Icon = indicator.icon;
+          return (
+            <Card key={indicator.label} className="overflow-hidden">
+              <CardContent className="p-5">
+                <div className={cn("grid h-10 w-10 place-items-center rounded-xl", indicator.tone)}>
+                  <Icon className="h-5 w-5" />
+                </div>
+                <strong className="mt-4 block text-2xl tracking-tight">{indicator.value}</strong>
+                <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                  {indicator.label}
+                </span>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </section>
+
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b bg-muted/20">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="text-base">Fila operacional de hoje</CardTitle>
+              <CardDescription className="mt-1">
+                Ordenada por urgência, compromisso e risco de recebimento.
+              </CardDescription>
+            </div>
+            <Badge variant="outline" className="w-fit bg-background">
+              4 ações prioritárias
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="overflow-x-auto p-0">
+          <table className="w-full min-w-[960px] text-sm">
+            <thead className="border-b bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                {["Aluno", "Turma", "Situação", "Valor", "Compromisso", "Próxima ação"].map(
+                  (heading) => (
+                    <th key={heading} className="px-5 py-3 font-semibold">
+                      {heading}
+                    </th>
+                  ),
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {dailyCollectionRows.map((row) => (
+                <tr key={row.id} className="transition hover:bg-muted/30">
+                  <td className="px-5 py-4">
+                    <Link
+                      to="/financeiro/aluno/$studentId"
+                      params={{ studentId: row.id }}
+                      className="font-semibold text-foreground hover:text-primary"
+                    >
+                      {row.student}
+                    </Link>
+                  </td>
+                  <td className="px-5 py-4 text-muted-foreground">{row.className}</td>
+                  <td className="px-5 py-4">
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        row.tone === "critical" && "border-red-200 bg-red-50 text-red-800",
+                        row.tone === "attention" && "border-amber-200 bg-amber-50 text-amber-800",
+                        row.tone === "waiting" && "border-blue-200 bg-blue-50 text-blue-800",
+                      )}
+                    >
+                      {row.situation}
+                    </Badge>
+                  </td>
+                  <td className="px-5 py-4 font-bold">{money.format(row.value)}</td>
+                  <td className="px-5 py-4 text-muted-foreground">{row.commitment}</td>
+                  <td className="px-5 py-4">
+                    <Button asChild size="sm" variant="outline" className="justify-between">
+                      <Link to="/financeiro/aluno/$studentId" params={{ studentId: row.id }}>
+                        {row.action}
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -406,7 +567,18 @@ function StudentDrawer({ student, onClose }: { student: Student; onClose: () => 
         <div className="mt-6 grid grid-cols-2 gap-3"><SummaryBox label="Valor do curso" value={money.format(student.total)} icon={CircleDollarSign} /><SummaryBox label="Valor pago" value={money.format(student.paid)} icon={CheckCircle2} /><SummaryBox label="Saldo restante" value={money.format(open)} icon={ReceiptText} /><SummaryBox label="Score de risco" value={String(student.risk)} icon={Gauge} /></div>
         <div className="mt-6 rounded-xl border p-4"><div className="mb-3 flex justify-between text-sm font-semibold"><span>Progresso do pagamento</span><span>{percent(student.paid, student.total)}%</span></div><Progress value={percent(student.paid, student.total)} /></div>
         <Card className="mt-6"><CardHeader><CardTitle className="text-base">Plano sugerido</CardTitle><CardDescription>{student.promise}</CardDescription></CardHeader><CardContent className="space-y-2">{[0, 7, 14, 25].map((days, index) => <div key={days} className="flex justify-between rounded-lg bg-muted px-3 py-2 text-sm"><span>Parcela {index + 1}</span><strong>{money.format(Math.ceil(open / 4))} {index === 0 ? "hoje" : `em ${days} dias`}</strong></div>)}</CardContent></Card>
-        <div className="mt-6 grid grid-cols-2 gap-3"><Button><Send />Enviar link</Button><Button variant="outline"><Banknote />Registrar pagamento</Button><Button variant="outline"><ReceiptText />Registrar promessa</Button><Button variant="outline"><MessageCircle />WhatsApp</Button></div>
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <Button asChild className="col-span-2 bg-gradient-primary">
+            <Link to="/financeiro/aluno/$studentId" params={{ studentId: student.id }}>
+              Abrir perfil financeiro completo
+              <ArrowRight />
+            </Link>
+          </Button>
+          <Button><Send />Enviar link</Button>
+          <Button variant="outline"><Banknote />Registrar pagamento</Button>
+          <Button variant="outline"><ReceiptText />Registrar promessa</Button>
+          <Button variant="outline"><MessageCircle />WhatsApp</Button>
+        </div>
       </aside>
     </div>
   );

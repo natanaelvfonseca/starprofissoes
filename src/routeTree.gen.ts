@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AlunoRouteImport } from './routes/aluno'
 import { Route as BiRouteImport } from './routes/bi'
 import { Route as CrmRouteImport } from './routes/crm'
 import { Route as FeedbackRouteImport } from './routes/feedback'
@@ -49,6 +50,7 @@ import { Route as ApiIaComercialScriptsRouteImport } from './routes/api/ia-comer
 import { Route as ApiIntegrationsEvolutionRouteImport } from './routes/api/integrations/evolution'
 import { Route as ApiTrainingVideoRouteImport } from './routes/api/training.video'
 import { Route as ApiWebhooksEvolutionRouteImport } from './routes/api/webhooks/evolution'
+import { Route as FinanceiroAlunoStudentIdRouteImport } from './routes/financeiro.aluno.$studentId'
 import { Route as ApiCrmLeadsIdRouteImport } from './routes/api/crm/leads.$id'
 import { Route as ApiGestaoChannelsIdRouteImport } from './routes/api/gestao/channels.$id'
 import { Route as ApiGestaoCoursesIdRouteImport } from './routes/api/gestao/courses.$id'
@@ -56,6 +58,11 @@ import { Route as ApiGestaoCoursesIdRouteImport } from './routes/api/gestao/cour
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AlunoRoute = AlunoRouteImport.update({
+  id: '/aluno',
+  path: '/aluno',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BiRoute = BiRouteImport.update({
@@ -254,6 +261,12 @@ const ApiWebhooksEvolutionRoute = ApiWebhooksEvolutionRouteImport.update({
   path: '/api/webhooks/evolution',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FinanceiroAlunoStudentIdRoute =
+  FinanceiroAlunoStudentIdRouteImport.update({
+    id: '/aluno/$studentId',
+    path: '/aluno/$studentId',
+    getParentRoute: () => FinanceiroRoute,
+  } as any)
 const ApiCrmLeadsIdRoute = ApiCrmLeadsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -272,10 +285,11 @@ const ApiGestaoCoursesIdRoute = ApiGestaoCoursesIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/aluno': typeof AlunoRoute
   '/bi': typeof BiRoute
   '/crm': typeof CrmRouteWithChildren
   '/feedback': typeof FeedbackRoute
-  '/financeiro': typeof FinanceiroRoute
+  '/financeiro': typeof FinanceiroRouteWithChildren
   '/ia-comercial': typeof IaComercialRoute
   '/login': typeof LoginRoute
   '/perfil': typeof PerfilRoute
@@ -311,16 +325,18 @@ export interface FileRoutesByFullPath {
   '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
   '/api/training/video': typeof ApiTrainingVideoRoute
   '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
+  '/financeiro/aluno/$studentId': typeof FinanceiroAlunoStudentIdRoute
   '/api/crm/leads/$id': typeof ApiCrmLeadsIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/aluno': typeof AlunoRoute
   '/bi': typeof BiRoute
   '/crm': typeof CrmRouteWithChildren
   '/feedback': typeof FeedbackRoute
-  '/financeiro': typeof FinanceiroRoute
+  '/financeiro': typeof FinanceiroRouteWithChildren
   '/ia-comercial': typeof IaComercialRoute
   '/login': typeof LoginRoute
   '/perfil': typeof PerfilRoute
@@ -356,6 +372,7 @@ export interface FileRoutesByTo {
   '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
   '/api/training/video': typeof ApiTrainingVideoRoute
   '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
+  '/financeiro/aluno/$studentId': typeof FinanceiroAlunoStudentIdRoute
   '/api/crm/leads/$id': typeof ApiCrmLeadsIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
@@ -363,10 +380,11 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/aluno': typeof AlunoRoute
   '/bi': typeof BiRoute
   '/crm': typeof CrmRouteWithChildren
   '/feedback': typeof FeedbackRoute
-  '/financeiro': typeof FinanceiroRoute
+  '/financeiro': typeof FinanceiroRouteWithChildren
   '/ia-comercial': typeof IaComercialRoute
   '/login': typeof LoginRoute
   '/perfil': typeof PerfilRoute
@@ -402,6 +420,7 @@ export interface FileRoutesById {
   '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
   '/api/training/video': typeof ApiTrainingVideoRoute
   '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
+  '/financeiro/aluno/$studentId': typeof FinanceiroAlunoStudentIdRoute
   '/api/crm/leads/$id': typeof ApiCrmLeadsIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
@@ -410,6 +429,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/aluno'
     | '/bi'
     | '/crm'
     | '/feedback'
@@ -449,12 +469,14 @@ export interface FileRouteTypes {
     | '/api/integrations/evolution'
     | '/api/training/video'
     | '/api/webhooks/evolution'
+    | '/financeiro/aluno/$studentId'
     | '/api/crm/leads/$id'
     | '/api/gestao/channels/$id'
     | '/api/gestao/courses/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/aluno'
     | '/bi'
     | '/crm'
     | '/feedback'
@@ -494,12 +516,14 @@ export interface FileRouteTypes {
     | '/api/integrations/evolution'
     | '/api/training/video'
     | '/api/webhooks/evolution'
+    | '/financeiro/aluno/$studentId'
     | '/api/crm/leads/$id'
     | '/api/gestao/channels/$id'
     | '/api/gestao/courses/$id'
   id:
     | '__root__'
     | '/'
+    | '/aluno'
     | '/bi'
     | '/crm'
     | '/feedback'
@@ -539,6 +563,7 @@ export interface FileRouteTypes {
     | '/api/integrations/evolution'
     | '/api/training/video'
     | '/api/webhooks/evolution'
+    | '/financeiro/aluno/$studentId'
     | '/api/crm/leads/$id'
     | '/api/gestao/channels/$id'
     | '/api/gestao/courses/$id'
@@ -546,10 +571,11 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AlunoRoute: typeof AlunoRoute
   BiRoute: typeof BiRoute
   CrmRoute: typeof CrmRouteWithChildren
   FeedbackRoute: typeof FeedbackRoute
-  FinanceiroRoute: typeof FinanceiroRoute
+  FinanceiroRoute: typeof FinanceiroRouteWithChildren
   IaComercialRoute: typeof IaComercialRoute
   LoginRoute: typeof LoginRoute
   PerfilRoute: typeof PerfilRoute
@@ -589,6 +615,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/aluno': {
+      id: '/aluno'
+      path: '/aluno'
+      fullPath: '/aluno'
+      preLoaderRoute: typeof AlunoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/bi': {
@@ -864,6 +897,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWebhooksEvolutionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/financeiro/aluno/$studentId': {
+      id: '/financeiro/aluno/$studentId'
+      path: '/aluno/$studentId'
+      fullPath: '/financeiro/aluno/$studentId'
+      preLoaderRoute: typeof FinanceiroAlunoStudentIdRouteImport
+      parentRoute: typeof FinanceiroRoute
+    }
     '/api/crm/leads/$id': {
       id: '/api/crm/leads/$id'
       path: '/$id'
@@ -899,6 +939,18 @@ const CrmRouteChildren: CrmRouteChildren = {
 }
 
 const CrmRouteWithChildren = CrmRoute._addFileChildren(CrmRouteChildren)
+
+interface FinanceiroRouteChildren {
+  FinanceiroAlunoStudentIdRoute: typeof FinanceiroAlunoStudentIdRoute
+}
+
+const FinanceiroRouteChildren: FinanceiroRouteChildren = {
+  FinanceiroAlunoStudentIdRoute: FinanceiroAlunoStudentIdRoute,
+}
+
+const FinanceiroRouteWithChildren = FinanceiroRoute._addFileChildren(
+  FinanceiroRouteChildren,
+)
 
 interface ApiIaComercialRouteChildren {
   ApiIaComercialAnalisesRoute: typeof ApiIaComercialAnalisesRoute
@@ -962,10 +1014,11 @@ const ApiGestaoCoursesRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AlunoRoute: AlunoRoute,
   BiRoute: BiRoute,
   CrmRoute: CrmRouteWithChildren,
   FeedbackRoute: FeedbackRoute,
-  FinanceiroRoute: FinanceiroRoute,
+  FinanceiroRoute: FinanceiroRouteWithChildren,
   IaComercialRoute: IaComercialRoute,
   LoginRoute: LoginRoute,
   PerfilRoute: PerfilRoute,
