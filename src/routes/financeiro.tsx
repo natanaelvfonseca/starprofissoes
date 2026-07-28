@@ -134,6 +134,13 @@ const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL
 const percent = (received: number, expected: number) => Math.round((received / expected) * 100);
 const formatDate = (date: string) =>
   new Intl.DateTimeFormat("pt-BR").format(new Date(`${date}T12:00:00`));
+const financialTotals = {
+  expected: 572_415,
+  received: 216_982,
+  open: 572_415 - 216_982,
+  inGoodStanding: 87,
+  risk: 75,
+};
 
 export const Route = createFileRoute("/financeiro")({
   head: () => ({ meta: [{ title: "Star Financeiro · Star Profissões" }] }),
@@ -145,27 +152,11 @@ function FinancialPageRoute() {
   const [selectedClass, setSelectedClass] = React.useState(classes[0]);
   const [selectedStudent, setSelectedStudent] = React.useState<Student | null>(null);
 
-  const totals = React.useMemo(() => {
-    const expected = classes.reduce((sum, item) => sum + item.expected, 0);
-    const received = classes.reduce((sum, item) => sum + item.received, 0);
-    return {
-      expected,
-      received,
-      open: expected - received,
-      anticipated: percent(received, expected),
-      paid: students.filter((student) => student.status === "Quitado").length,
-      late: students.filter((student) => student.status.includes("Atrasado")).length,
-      risk: students.filter((student) => student.risk >= 70).length,
-    };
-  }, []);
-
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Star Financeiro"
-        title="Antecipação de recebíveis"
-        description="Transforme matrículas em previsibilidade financeira antes da turma acontecer."
-        actions={<Badge className="bg-gold text-gold-foreground">Ambiente demonstrativo</Badge>}
+        title="Plataforma de Cobrança Inteligente"
       />
 
       <div className="overflow-x-auto rounded-xl border bg-card p-1.5 shadow-card">
@@ -189,7 +180,7 @@ function FinancialPageRoute() {
         </div>
       </div>
 
-      {page === "dashboard" ? <Dashboard totals={totals} /> : null}
+      {page === "dashboard" ? <Dashboard totals={financialTotals} /> : null}
       {page === "turmas" ? (
         <ClassesPage selected={selectedClass} onSelect={setSelectedClass} />
       ) : null}
@@ -206,7 +197,7 @@ function FinancialPageRoute() {
   );
 }
 
-function Dashboard({ totals }: { totals: { expected: number; received: number; open: number; anticipated: number; paid: number; late: number; risk: number } }) {
+function Dashboard({ totals }: { totals: typeof financialTotals }) {
   return (
     <div className="space-y-6">
       <section className="overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#16006C_0%,#07154C_100%)] p-6 text-white shadow-card md:p-8">
@@ -214,14 +205,14 @@ function Dashboard({ totals }: { totals: { expected: number; received: number; o
           <div className="max-w-3xl">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-gold">Estratégia financeira</p>
             <h2 className="mt-2 text-2xl font-extrabold text-white md:text-3xl">
-              Antecipe o caixa de cada turma antes do curso acontecer.
+              Saúde financeira saudável
             </h2>
             <p className="mt-3 text-sm leading-6 text-white/70">
               Monitore matrículas, priorize cobranças e reduza o risco financeiro da operação.
             </p>
           </div>
-          <div className="grid h-36 w-36 shrink-0 place-items-center rounded-full border border-white/15 bg-white/10 text-center">
-            <div><strong className="block text-4xl">{totals.anticipated}%</strong><span className="text-xs text-white/65">antecipado</span></div>
+          <div className="grid h-36 w-36 shrink-0 place-items-center rounded-full border border-emerald-300/50 bg-emerald-500/20 text-center shadow-[0_0_40px_rgba(52,211,153,0.18)]">
+            <div><strong className="block text-4xl text-emerald-300">{totals.inGoodStanding}%</strong><span className="text-xs font-semibold text-emerald-100">em dia</span></div>
           </div>
         </div>
       </section>
@@ -230,7 +221,7 @@ function Dashboard({ totals }: { totals: { expected: number; received: number; o
         <StatCard label="Receita prevista" value={money.format(totals.expected)} icon={WalletCards} hint="Turmas ativas" />
         <StatCard label="Receita recebida" value={money.format(totals.received)} icon={Banknote} accent="success" hint="Caixa confirmado" />
         <StatCard label="Saldo em aberto" value={money.format(totals.open)} icon={ReceiptText} accent="gold" hint="Potencial para antecipar" />
-        <StatCard label="Alunos em risco" value={totals.risk} icon={AlertTriangle} accent="warning" hint={`${totals.late} alunos atrasados`} />
+        <StatCard label="Alunos em risco" value={totals.risk} icon={AlertTriangle} accent="warning" hint="Prioridade de cobrança" />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-2">
