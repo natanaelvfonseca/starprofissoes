@@ -8,13 +8,8 @@ import {
 import { getSessionFromRequest } from "@/lib/server/auth";
 
 function attendanceError(error: unknown) {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "23505"
-  ) {
-    return "Já existe um atendimento para este curso, cidade e UF.";
+  if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
+    return "Já existe uma turma para este curso, cidade, UF e data.";
   }
 
   return error instanceof Error ? error.message : "Falha ao salvar atendimento.";
@@ -35,7 +30,9 @@ async function authorize(request: Request, requestedUnitId: string) {
   const unitId = canChooseUnit ? requestedUnitId || session.activeUnit.id : session.activeUnit.id;
 
   if (!session.units.some((unit) => unit.id === unitId)) {
-    return { response: Response.json({ ok: false, error: "Unidade indisponível." }, { status: 403 }) };
+    return {
+      response: Response.json({ ok: false, error: "Unidade indisponível." }, { status: 403 }),
+    };
   }
 
   return { session, unitId };
@@ -71,10 +68,7 @@ export const Route = createFileRoute("/api/gestao/attendances")({
         } catch (error) {
           const message = attendanceError(error);
           const status =
-            typeof error === "object" &&
-            error !== null &&
-            "code" in error &&
-            error.code === "23505"
+            typeof error === "object" && error !== null && "code" in error && error.code === "23505"
               ? 409
               : 400;
           return Response.json({ ok: false, error: message }, { status });
@@ -93,10 +87,7 @@ export const Route = createFileRoute("/api/gestao/attendances")({
           await saveCourseAttendance({ ...(body ?? {}), unitId: auth.unitId });
           return Response.json({ ok: true });
         } catch (error) {
-          return Response.json(
-            { ok: false, error: attendanceError(error) },
-            { status: 400 },
-          );
+          return Response.json({ ok: false, error: attendanceError(error) }, { status: 400 });
         }
       },
       DELETE: async ({ request }) => {
@@ -113,7 +104,10 @@ export const Route = createFileRoute("/api/gestao/attendances")({
           return Response.json({ ok: true });
         } catch (error) {
           return Response.json(
-            { ok: false, error: error instanceof Error ? error.message : "Falha ao excluir atendimento." },
+            {
+              ok: false,
+              error: error instanceof Error ? error.message : "Falha ao excluir atendimento.",
+            },
             { status: 400 },
           );
         }

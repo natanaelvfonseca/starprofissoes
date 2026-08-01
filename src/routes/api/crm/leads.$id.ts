@@ -20,6 +20,7 @@ type LeadEditableRow = QueryResultRow & {
   phone2: string | null;
   email: string | null;
   city: string | null;
+  attendance_id: string | null;
   course_id: string | null;
   acquisition_channel_id: string | null;
   acquisition_channel_name_snapshot: string | null;
@@ -40,6 +41,16 @@ type ChannelSnapshotRow = QueryResultRow & {
 
 type AttendanceCityRow = QueryResultRow & {
   city: string;
+};
+
+type AttendanceSnapshotRow = QueryResultRow & {
+  id: string;
+  course_id: string;
+  course_name: string;
+  course_value: string;
+  city: string;
+  state: string;
+  status: "active" | "inactive";
 };
 
 const allowedStages: Array<LeadStage> = [
@@ -65,6 +76,7 @@ function parseLeadUpdate(body: unknown) {
     phone2?: unknown;
     email?: unknown;
     city?: unknown;
+    attendanceId?: unknown;
     courseId?: unknown;
     acquisitionChannelId?: unknown;
     observations?: unknown;
@@ -77,6 +89,7 @@ function parseLeadUpdate(body: unknown) {
     phone2: typeof data?.phone2 === "string" ? data.phone2.trim() : "",
     email: typeof data?.email === "string" ? data.email.trim() : "",
     city: typeof data?.city === "string" ? data.city.trim() : "",
+    attendanceId: typeof data?.attendanceId === "string" ? data.attendanceId.trim() : "",
     courseId: typeof data?.courseId === "string" ? data.courseId.trim() : "",
     acquisitionChannelId:
       typeof data?.acquisitionChannelId === "string" ? data.acquisitionChannelId.trim() : "",
@@ -243,6 +256,7 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
               phone2,
               email,
               city,
+              attendance_id,
               course_id,
               acquisition_channel_id,
               acquisition_channel_name_snapshot,
@@ -286,6 +300,7 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
           payload.phone2 !== "" ||
           payload.email !== "" ||
           payload.city !== "" ||
+          payload.attendanceId !== "" ||
           payload.courseId !== "" ||
           payload.acquisitionChannelId !== "" ||
           payload.observations !== "";
@@ -300,12 +315,29 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
             : lead.stage;
 
         if (payload.fullName && payload.phone) {
-          const courseResult = await getCourseSnapshot(payload.courseId, lead.unit_id);
-
-          if (courseResult.error) {
+          if (!isUuid(payload.attendanceId)) {
             return Response.json(
-              { ok: false, error: courseResult.error },
-              { status: courseResult.status },
+              { ok: false, error: "Selecione uma turma válida." },
+              { status: 400 },
+            );
+          }
+          const attendanceResult = await queryDb<AttendanceSnapshotRow>(
+            `
+              select a.id, a.course_id, c.name as course_name, c.value::text as course_value,
+                a.city, a.state, a.status
+              from app_course_attendances a
+              inner join app_courses c on c.id = a.course_id
+              where a.id = $1 and a.unit_id = $2
+                and (a.status = 'active' or a.id = $3)
+              limit 1
+            `,
+            [payload.attendanceId, lead.unit_id, lead.attendance_id],
+          );
+          const attendance = attendanceResult.rows[0];
+          if (!attendance) {
+            return Response.json(
+              { ok: false, error: "Não é permitido escolher outra turma inativa." },
+              { status: 400 },
             );
           }
 
@@ -321,9 +353,7 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
             );
           }
 
-          const resolvedCity =
-            (await getCourseCity(courseResult.course?.id ?? payload.courseId, lead.unit_id)) ??
-            payload.city;
+          const resolvedCity = `${attendance.city} - ${attendance.state}`;
 
           await queryDb(
             `
@@ -334,39 +364,40 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
                 phone2 = nullif($4, ''),
                 email = nullif($5, ''),
                 city = nullif($6, ''),
-                course_id = $7,
-                course_name_snapshot = $8,
-                course_value_snapshot = $9,
-                acquisition_channel_id = $10,
-                acquisition_channel_name_snapshot = $11,
-                observations = nullif($12, ''),
-                stage = $13,
+                attendance_id = $7,
+                course_id = $8,
+                course_name_snapshot = $9,
+                course_value_snapshot = $10,
+                acquisition_channel_id = $11,
+                acquisition_channel_name_snapshot = $12,
+                observations = nullif($13, ''),
+                stage = $14,
                 first_contact_at = case
-                  when $13 <> 'Novo lead' then coalesce(first_contact_at, now())
+                  when $14 <> 'Novo lead' then coalesce(first_contact_at, now())
                   else first_contact_at
                 end,
                 last_follow_up_at = case
-                  when $13 <> stage and $13 <> 'Novo lead' then now()
+                  when $14 <> stage and $14 <> 'Novo lead' then now()
                   else last_follow_up_at
                 end,
                 follow_up_count = case
-                  when $13 <> stage and $13 <> 'Novo lead' then follow_up_count + 1
+                  when $14 <> stage and $14 <> 'Novo lead' then follow_up_count + 1
                   else follow_up_count
                 end,
                 converted_at = case
-                  when $13 = 'Matriculado' then coalesce(converted_at, now())
+                  when $14 = 'Matriculado' then coalesce(converted_at, now())
                   else converted_at
                 end,
                 converted_by = case
-                  when $13 = 'Matriculado' then coalesce(converted_by, $14)
+                  when $14 = 'Matriculado' then coalesce(converted_by, $15)
                   else converted_by
                 end,
                 payment_status = case
-                  when $13 = 'Matriculado' then 'paid'
+                  when $14 = 'Matriculado' then 'paid'
                   else payment_status
                 end,
                 payment_confirmed_at = case
-                  when $13 = 'Matriculado' then coalesce(payment_confirmed_at, now())
+                  when $14 = 'Matriculado' then coalesce(payment_confirmed_at, now())
                   else payment_confirmed_at
                 end,
                 updated_at = now()
@@ -379,9 +410,10 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
               payload.phone2,
               payload.email,
               resolvedCity,
-              courseResult.course?.id ?? null,
-              courseResult.course?.name ?? null,
-              courseResult.course ? Number(courseResult.course.value) : null,
+              attendance.id,
+              attendance.course_id,
+              attendance.course_name,
+              Number(attendance.course_value),
               consultantEditingOwnLead
                 ? lead.acquisition_channel_id
                 : (channelResult.channel?.id ?? null),

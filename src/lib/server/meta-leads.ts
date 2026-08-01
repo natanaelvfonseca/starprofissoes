@@ -81,6 +81,11 @@ type MetaFormRow = QueryResultRow & {
   unit_name: string | null;
   course_id: string | null;
   course_name: string | null;
+  attendance_id: string | null;
+  attendance_city: string | null;
+  attendance_state: string | null;
+  attendance_class_date: string | null;
+  attendance_status: "active" | "inactive" | null;
   funnel_name: string | null;
   initial_stage: LeadStage;
   acquisition_channel_id: string | null;
@@ -124,7 +129,7 @@ type MetaEventRow = QueryResultRow & {
   distribution_reason: string | null;
   attendance_id: string | null;
   assigned_user_id: string | null;
-  routing_source: "campaign_matrix" | "form_fallback" | null;
+  routing_source: "form_turma" | "campaign_matrix" | "form_fallback" | null;
   routing_error: string | null;
   payload: Record<string, unknown>;
   lead_payload: Record<string, unknown> | null;
@@ -257,6 +262,10 @@ export async function ensureMetaLeadSchema() {
     create index if not exists app_meta_forms_page_idx on app_meta_forms (page_id);
     create index if not exists app_meta_forms_unit_idx on app_meta_forms (unit_id);
     create index if not exists app_meta_forms_status_idx on app_meta_forms (status);
+
+    alter table app_meta_forms add column if not exists attendance_id uuid
+      references app_course_attendances(id) on delete set null;
+    create index if not exists app_meta_forms_attendance_idx on app_meta_forms (attendance_id);
 
     create table if not exists app_meta_form_consultants (
       form_id uuid not null references app_meta_forms(id) on delete cascade,
@@ -595,7 +604,9 @@ function phoneFieldValue(fields: Record<string, string>) {
     return phoneLikeEntry[1];
   }
 
-  const relevantCandidate = phoneCandidatesFromFields(fields).find((candidate) => candidate.relevant);
+  const relevantCandidate = phoneCandidatesFromFields(fields).find(
+    (candidate) => candidate.relevant,
+  );
 
   if (relevantCandidate) {
     return relevantCandidate.value;
@@ -660,7 +671,8 @@ function phone2FieldValue(fields: Record<string, string>, primaryPhone: string) 
     phoneCandidatesFromFields(fields).find(
       (candidate) => candidate.relevant && isDifferentPhone(candidate.value),
     )?.value ??
-    phoneCandidatesFromFields(fields).find((candidate) => isDifferentPhone(candidate.value))?.value ??
+    phoneCandidatesFromFields(fields).find((candidate) => isDifferentPhone(candidate.value))
+      ?.value ??
     ""
   );
 }
@@ -1034,10 +1046,18 @@ export function verifyMetaSignature(
   return expected.length === signature.length && expected === signature;
 }
 
-export async function listMetaState() {
+export async function listMetaState(searchValue = "") {
   const integration = await ensureMetaIntegration();
+  const search = searchValue.trim().slice(0, 200);
 
-  const [pagesResult, formsResult, eventsResult, optionsResult, alertsResult] = await Promise.all([
+  const [
+    pagesResult,
+    formsResult,
+    processedEventsResult,
+    pendingEventsResult,
+    optionsResult,
+    alertsResult,
+  ] = await Promise.all([
     queryDb<MetaPageRow>(
       `
         select
@@ -1060,6 +1080,10 @@ export async function listMetaState() {
           p.page_id as meta_page_id,
           u.name as unit_name,
           c.name as course_name,
+          a.city as attendance_city,
+          a.state as attendance_state,
+          a.class_date::text as attendance_class_date,
+          a.status as attendance_status,
           ch.name as acquisition_channel_name,
           owner.name as default_responsible_name,
           coalesce(array_agg(fc.user_id::text) filter (where fc.user_id is not null), '{}') as selected_consultant_ids,
@@ -1072,10 +1096,11 @@ export async function listMetaState() {
         inner join app_meta_pages p on p.id = f.page_id
         left join app_units u on u.id = f.unit_id
         left join app_courses c on c.id = f.course_id
+        left join app_course_attendances a on a.id = f.attendance_id
         left join app_acquisition_channels ch on ch.id = f.acquisition_channel_id
         left join app_users owner on owner.id = f.default_responsible_id
         left join app_meta_form_consultants fc on fc.form_id = f.id
-        group by f.id, p.id, u.id, c.id, ch.id, owner.id
+        group by f.id, p.id, u.id, c.id, a.id, ch.id, owner.id
         order by f.created_at desc
       `,
     ),
@@ -1111,9 +1136,39 @@ export async function listMetaState() {
           lead_payload,
           mapped_payload
         from app_meta_lead_events
+        where status in ('processed', 'duplicate')
+          and (
+            $1 = '' or concat_ws(' ', id::text, leadgen_id, form_id, page_id, campaign_name,
+              adset_name, ad_name, error_message, routing_error, lead_payload->>'full_name',
+              lead_payload->>'phone_number', mapped_payload->>'fullName', mapped_payload->>'phone',
+              lead_payload::text) ilike '%' || $1 || '%'
+          )
         order by received_at desc
         limit 100
       `,
+      [search],
+    ),
+    queryDb<MetaEventRow>(
+      `
+        select
+          id, page_db_id, form_db_id, lead_id, page_id, form_id, leadgen_id,
+          campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name,
+          form_name, page_name, meta_created_time::text, received_at::text,
+          processed_at::text, status, error_message, distribution_reason,
+          attendance_id, assigned_user_id, routing_source, routing_error,
+          payload, lead_payload, mapped_payload
+        from app_meta_lead_events
+        where status in ('received', 'pending_configuration', 'processing', 'error')
+          and (
+            $1 = '' or concat_ws(' ', id::text, leadgen_id, form_id, page_id, campaign_name,
+              adset_name, ad_name, error_message, routing_error, lead_payload->>'full_name',
+              lead_payload->>'phone_number', mapped_payload->>'fullName', mapped_payload->>'phone',
+              lead_payload::text) ilike '%' || $1 || '%'
+          )
+        order by received_at desc
+        limit 100
+      `,
+      [search],
     ),
     queryDb<QueryResultRow>(
       `
@@ -1121,7 +1176,17 @@ export async function listMetaState() {
           coalesce((select jsonb_agg(jsonb_build_object('id', id, 'name', name, 'slug', slug) order by name) from app_units where status = 'active'), '[]'::jsonb) as units,
           coalesce((select jsonb_agg(jsonb_build_object('id', id, 'unitId', unit_id, 'name', name, 'status', status) order by name) from app_courses), '[]'::jsonb) as courses,
           coalesce((select jsonb_agg(jsonb_build_object('id', id, 'unitId', unit_id, 'name', name, 'status', status) order by name) from app_acquisition_channels), '[]'::jsonb) as channels,
-          coalesce((select jsonb_agg(jsonb_build_object('id', id, 'unitId', primary_unit_id, 'name', name, 'role', role, 'status', status) order by name) from app_users where role = 'CONSULTOR'), '[]'::jsonb) as consultants
+          coalesce((select jsonb_agg(jsonb_build_object('id', id, 'unitId', primary_unit_id, 'name', name, 'role', role, 'status', status) order by name) from app_users where role in ('CONSULTOR', 'GERENTE', 'DIRETOR')), '[]'::jsonb) as consultants,
+          coalesce((
+            select jsonb_agg(jsonb_build_object(
+              'id', a.id, 'unitId', a.unit_id, 'courseId', a.course_id,
+              'city', a.city, 'state', a.state, 'classDate', a.class_date,
+              'status', a.status,
+              'displayName', concat(c.name, ' · ', a.city, '/', a.state, ' · ', to_char(a.class_date, 'DD/MM/YYYY'))
+            ) order by a.class_date, c.name, a.city)
+            from app_course_attendances a
+            inner join app_courses c on c.id = a.course_id
+          ), '[]'::jsonb) as attendances
       `,
     ),
     queryDb<
@@ -1139,7 +1204,7 @@ export async function listMetaState() {
           routing_error,
           count(*)::text as affected_count
         from app_meta_lead_events
-        where routing_source = 'form_fallback'
+        where routing_source = 'campaign_matrix'
           and routing_error is not null
         group by campaign_id, campaign_name, routing_error
         order by max(received_at) desc
@@ -1160,8 +1225,14 @@ export async function listMetaState() {
       pageAccessTokenEncrypted: undefined,
       formsCount: Number(page.forms_count) || 0,
     })),
-    forms: formsResult.rows,
-    events: eventsResult.rows,
+    forms: formsResult.rows.map((form) => ({
+      ...form,
+      configurationMode: form.attendance_id ? "form_turma" : "campaign_matrix",
+      configurationLabel: form.attendance_id ? null : "Configuração legada",
+    })),
+    events: [...pendingEventsResult.rows, ...processedEventsResult.rows],
+    processedEvents: processedEventsResult.rows,
+    pendingEvents: pendingEventsResult.rows,
     campaignAlerts: alertsResult.rows.map((alert) => ({
       campaignId: alert.campaign_id,
       campaignName: alert.campaign_name,
@@ -1255,6 +1326,8 @@ export async function upsertMetaForm(input: Record<string, unknown>) {
   const metaFormId = stringOrNull(input.metaFormId);
   const formName = stringOrNull(input.formName) ?? metaFormId;
   const unitId = stringOrNull(input.unitId);
+  const attendanceId = stringOrNull(input.attendanceId);
+  const requestedStatus = input.status === "active" ? "active" : "inactive";
 
   if (!pageDbId || !isUuid(pageDbId) || !metaFormId || !formName) {
     throw new Error("Formulário inválido.");
@@ -1275,6 +1348,52 @@ export async function upsertMetaForm(input: Record<string, unknown>) {
       : "Novo lead";
 
   const form = await withTransaction(async (client) => {
+    const attendanceResult =
+      attendanceId && isUuid(attendanceId)
+        ? await client.query<{
+            id: string;
+            unit_id: string;
+            course_id: string;
+            status: "active" | "inactive";
+          }>(
+            `select id, unit_id, course_id, status from app_course_attendances where id = $1 limit 1`,
+            [attendanceId],
+          )
+        : null;
+    const attendance = attendanceResult?.rows[0] ?? null;
+
+    if (requestedStatus === "active" && !attendance) {
+      throw new Error("Selecione uma turma ativa para ativar o formulário.");
+    }
+
+    if (attendance?.status !== "active") {
+      if (attendance || requestedStatus === "active") {
+        throw new Error("A turma selecionada está inativa ou indisponível.");
+      }
+    }
+
+    if (attendance && unitId && attendance.unit_id !== unitId) {
+      throw new Error("A turma não pertence à unidade selecionada.");
+    }
+
+    const resolvedUnitId = attendance?.unit_id ?? (unitId && isUuid(unitId) ? unitId : null);
+    const resolvedCourseId =
+      attendance?.course_id ??
+      (isUuid(String(input.courseId ?? "")) ? String(input.courseId) : null);
+    const acquisitionChannelId = isUuid(String(input.acquisitionChannelId ?? ""))
+      ? String(input.acquisitionChannelId)
+      : null;
+
+    if (acquisitionChannelId) {
+      const channel = await client.query(
+        `select id from app_acquisition_channels where id = $1 and unit_id = $2 and status = 'active' limit 1`,
+        [acquisitionChannelId, resolvedUnitId],
+      );
+      if (!channel.rows[0]) {
+        throw new Error("O canal de aquisição não pertence à unidade da turma.");
+      }
+    }
+
     const formResult = await client.query<{ id: string }>(
       `
         insert into app_meta_forms (
@@ -1283,6 +1402,7 @@ export async function upsertMetaForm(input: Record<string, unknown>) {
           meta_form_id,
           unit_id,
           course_id,
+          attendance_id,
           funnel_name,
           initial_stage,
           acquisition_channel_id,
@@ -1293,12 +1413,13 @@ export async function upsertMetaForm(input: Record<string, unknown>) {
           status,
           configured_at
         )
-        values ($1, $2, $3, $4, $5, nullif($6, ''), $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, now())
+        values ($1, $2, $3, $4, $5, $6, nullif($7, ''), $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, now())
         on conflict (page_id, meta_form_id) do update
         set
           form_name = excluded.form_name,
           unit_id = excluded.unit_id,
           course_id = excluded.course_id,
+          attendance_id = excluded.attendance_id,
           funnel_name = excluded.funnel_name,
           initial_stage = excluded.initial_stage,
           acquisition_channel_id = excluded.acquisition_channel_id,
@@ -1315,16 +1436,17 @@ export async function upsertMetaForm(input: Record<string, unknown>) {
         pageDbId,
         formName,
         metaFormId,
-        unitId && isUuid(unitId) ? unitId : null,
-        isUuid(String(input.courseId ?? "")) ? input.courseId : null,
+        resolvedUnitId,
+        resolvedCourseId,
+        attendance?.id ?? null,
         stringOrNull(input.funnelName) ?? "",
         initialStage,
-        isUuid(String(input.acquisitionChannelId ?? "")) ? input.acquisitionChannelId : null,
+        acquisitionChannelId,
         null,
         "round_robin",
         JSON.stringify(normalizeMapping(fieldMapping)),
         JSON.stringify(settings),
-        input.status === "active" ? "active" : "inactive",
+        requestedStatus,
       ],
     );
     const formId = formResult.rows[0].id;
@@ -1355,6 +1477,7 @@ export async function duplicateMetaForm(input: Record<string, unknown>) {
           meta_form_id,
           unit_id,
           course_id,
+          attendance_id,
           funnel_name,
           initial_stage,
           acquisition_channel_id,
@@ -1371,6 +1494,7 @@ export async function duplicateMetaForm(input: Record<string, unknown>) {
           $3,
           unit_id,
           course_id,
+          attendance_id,
           funnel_name,
           initial_stage,
           acquisition_channel_id,
@@ -1682,6 +1806,10 @@ async function getFormForProcessing(client: PoolClient, pageId: string, formId: 
         p.page_id as meta_page_id,
         u.name as unit_name,
         c.name as course_name,
+        a.city as attendance_city,
+        a.state as attendance_state,
+        a.class_date::text as attendance_class_date,
+        a.status as attendance_status,
         ch.name as acquisition_channel_name,
         owner.name as default_responsible_name,
         '{}'::text[] as selected_consultant_ids,
@@ -1694,6 +1822,7 @@ async function getFormForProcessing(client: PoolClient, pageId: string, formId: 
       inner join app_meta_pages p on p.id = f.page_id
       left join app_units u on u.id = f.unit_id
       left join app_courses c on c.id = f.course_id
+      left join app_course_attendances a on a.id = f.attendance_id
       left join app_acquisition_channels ch on ch.id = f.acquisition_channel_id
       left join app_users owner on owner.id = f.default_responsible_id
       where p.page_id = $1
@@ -1913,15 +2042,20 @@ async function processEventById(eventId: string) {
     const form = await getFormForProcessing(client, event.page_id, event.form_id);
 
     if (!form || form.status !== "active" || !form.unit_id) {
+      const configurationReason = form?.attendance_id
+        ? "A turma vinculada ao formulário está inativa ou indisponível."
+        : "Formulário não configurado ou inativo.";
       await client.query(
         `
           update app_meta_lead_events
           set status = 'pending_configuration',
               form_db_id = $2,
+              error_message = $3,
+              routing_error = $3,
               updated_at = now()
           where id = $1
         `,
-        [event.id, form?.id ?? null],
+        [event.id, form?.id ?? null, configurationReason],
       );
       return { status: "pending_configuration", leadId: null };
     }
@@ -1955,41 +2089,69 @@ async function processEventById(eventId: string) {
       return { status: "error", leadId: null };
     }
 
-    const campaignRouting = await findCampaignAttendance(client, event.campaign_name);
-    const attendance = campaignRouting.attendance;
-    const attendanceAssignment = attendance
-      ? await chooseAttendanceConsultant(client, attendance)
+    const linkedAttendanceResult = form.attendance_id
+      ? await client.query<{
+          id: string;
+          unit_id: string;
+          course_id: string;
+          course_name: string;
+          city: string;
+          state: string;
+          round_robin_cursor: number;
+        }>(
+          `
+            select a.id, a.unit_id, a.course_id, c.name as course_name, a.city, a.state,
+              a.round_robin_cursor
+            from app_course_attendances a
+            inner join app_courses c on c.id = a.course_id
+            where a.id = $1 and a.unit_id = $2 and a.status = 'active' and c.status = 'active'
+            limit 1
+            for update of a
+          `,
+          [form.attendance_id, form.unit_id],
+        )
       : null;
-    const resolvedAttendance = attendanceAssignment?.userId ? attendance : null;
-    const routingError =
-      attendance && !resolvedAttendance ? attendanceAssignment?.reason : campaignRouting.error;
-    const targetUnitId = resolvedAttendance?.unit_id ?? form.unit_id;
-    const course = resolvedAttendance
-      ? await getCourseSnapshot(client, resolvedAttendance.course_id, resolvedAttendance.unit_id)
-      : ((await getCourseSnapshot(client, form.course_id, form.unit_id)) ??
-        (await getCourseByName(client, mapped.courseName, form.unit_id)));
-    const channel =
-      (await getChannelSnapshot(client, form.acquisition_channel_id, targetUnitId)) ??
-      (resolvedAttendance
-        ? await getChannelByName(client, form.acquisition_channel_name, targetUnitId)
-        : null);
-    const assignment =
-      resolvedAttendance && attendanceAssignment
-        ? attendanceAssignment
-        : await chooseConsultant(client, form);
-    const marketingFallback = assignment.userId
+    const campaignRouting = form.attendance_id
       ? null
-      : await defaultMarketingOwner(client, targetUnitId);
-    const finalAssignment = assignment.userId
-      ? assignment
-      : marketingFallback
-        ? {
-            userId: marketingFallback.id,
-            reason: `${assignment.reason} Lead atribuido automaticamente ao Marketing.`,
-          }
-        : assignment;
-    const routingSource = resolvedAttendance ? "campaign_matrix" : "form_fallback";
-    const leadCity = campaignCityValue(event.campaign_name, attendance?.city ?? null) || mapped.city;
+      : await findCampaignAttendance(client, event.campaign_name);
+    const attendance = linkedAttendanceResult?.rows[0] ?? campaignRouting?.attendance ?? null;
+    const routingSource = form.attendance_id ? "form_turma" : "campaign_matrix";
+
+    if (!attendance) {
+      const routingError = form.attendance_id
+        ? "A turma vinculada ao formulário está inativa ou indisponível."
+        : (campaignRouting?.error ?? "Turma legada não encontrada pela campanha.");
+      await client.query(
+        `
+          update app_meta_lead_events
+          set status = 'pending_configuration', form_db_id = $2, error_message = $3,
+              routing_source = $4, routing_error = $3, updated_at = now()
+          where id = $1
+        `,
+        [event.id, form.id, routingError, routingSource],
+      );
+      return { status: "pending_configuration", leadId: null };
+    }
+
+    const assignment = await chooseAttendanceConsultant(client, attendance);
+    if (!assignment.userId) {
+      await client.query(
+        `
+          update app_meta_lead_events
+          set status = 'pending_configuration', form_db_id = $2, attendance_id = $3,
+              error_message = $4, routing_source = $5, routing_error = $4, updated_at = now()
+          where id = $1
+        `,
+        [event.id, form.id, attendance.id, assignment.reason, routingSource],
+      );
+      return { status: "pending_configuration", leadId: null };
+    }
+
+    const targetUnitId = attendance.unit_id;
+    const course = await getCourseSnapshot(client, attendance.course_id, attendance.unit_id);
+    const channel =
+      (await getChannelSnapshot(client, form.acquisition_channel_id, targetUnitId)) ?? null;
+    const leadCity = `${attendance.city} - ${attendance.state}`;
     const leadFullName = mapped.fullName || `Lead Meta ${event.leadgen_id}`;
     const leadPhone = mapped.phone || "";
     const leadPhone2 = mapped.phone2 || "";
@@ -1997,6 +2159,7 @@ async function processEventById(eventId: string) {
       `
         insert into app_leads (
           unit_id,
+          attendance_id,
           full_name,
           phone,
           phone2,
@@ -2011,11 +2174,12 @@ async function processEventById(eventId: string) {
           stage,
           created_by
         )
-        values ($1, $2, $3, nullif($4, ''), nullif($5, ''), nullif($6, ''), $7, $8, $9, $10, $11, nullif($12, ''), $13, $14)
+        values ($1, $2, $3, $4, nullif($5, ''), nullif($6, ''), nullif($7, ''), $8, $9, $10, $11, $12, nullif($13, ''), $14, $15)
         returning id
       `,
       [
         targetUnitId,
+        attendance.id,
         leadFullName,
         leadPhone,
         leadPhone2,
@@ -2030,17 +2194,13 @@ async function processEventById(eventId: string) {
           [
             mapped.observations,
             event.ad_name ? `Anúncio: ${event.ad_name}` : "",
-            resolvedAttendance
-              ? `Roteamento: ${resolvedAttendance.course_name} - ${resolvedAttendance.city}-${resolvedAttendance.state}`
-              : routingError
-                ? `Roteamento padrão: ${routingError}`
-                : "",
+            `Roteamento: ${attendance.course_name} - ${attendance.city}-${attendance.state}`,
           ]
             .filter(Boolean)
             .join("\n"),
         ),
         form.initial_stage,
-        finalAssignment.userId,
+        assignment.userId,
       ],
     );
     const leadId = leadResult.rows[0].id;
@@ -2069,7 +2229,7 @@ async function processEventById(eventId: string) {
         leadId,
         event.page_id,
         form.id,
-        finalAssignment.reason,
+        assignment.reason,
         JSON.stringify({
           ...mapped,
           fullName: leadFullName,
@@ -2077,10 +2237,10 @@ async function processEventById(eventId: string) {
           phone2: leadPhone2,
           city: leadCity,
         }),
-        resolvedAttendance?.id ?? null,
-        finalAssignment.userId,
+        attendance.id,
+        assignment.userId,
         routingSource,
-        resolvedAttendance ? null : routingError,
+        null,
       ],
     );
 

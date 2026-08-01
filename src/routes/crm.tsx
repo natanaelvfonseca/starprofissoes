@@ -15,6 +15,7 @@ import {
   Phone,
   Plus,
   Search,
+  Smartphone,
   Trash2,
   UserCheck,
   UserPlus,
@@ -61,6 +62,7 @@ type LeadFormState = {
   phone2: string;
   email: string;
   city: string;
+  attendanceId: string;
   courseId: string;
   acquisitionChannelId: string;
   unitId: string;
@@ -82,6 +84,18 @@ type LeadsResponse = {
 
 type CoursesResponse = {
   courses: Array<CourseRecord>;
+  attendances: Array<AttendanceOption>;
+};
+
+type AttendanceOption = {
+  id: string;
+  unitId: string;
+  courseId: string;
+  city: string;
+  state: string;
+  classDate: string;
+  status: "active" | "inactive";
+  displayName: string;
 };
 
 type ChannelsResponse = {
@@ -225,6 +239,7 @@ function emptyLeadForm(unitId = ""): LeadFormState {
     phone2: "",
     email: "",
     city: "",
+    attendanceId: "",
     courseId: "",
     acquisitionChannelId: "",
     unitId,
@@ -248,6 +263,7 @@ function leadFormFromLead(lead: LeadRecord): LeadFormState {
     phone2: lead.phone2 ?? "",
     email: lead.email ?? "",
     city: lead.city ?? "",
+    attendanceId: lead.attendanceId ?? "",
     courseId: lead.courseId ?? "",
     acquisitionChannelId: lead.acquisitionChannelId ?? "",
     unitId: lead.unitId,
@@ -289,21 +305,16 @@ function getAgeHours(value: string) {
   return Math.max(0, Math.floor((Date.now() - createdAt) / 3_600_000));
 }
 
-function formatLeadAge(value: string) {
-  const ageHours = getAgeHours(value);
-
-  if (ageHours < 1) {
-    return "Criado agora";
-  }
-
-  if (ageHours < 24) {
-    return `Criado há ${ageHours}h`;
-  }
-
-  const days = Math.floor(ageHours / 24);
-  const hours = ageHours % 24;
-
-  return hours ? `Criado há ${days}d ${hours}h` : `Criado há ${days}d`;
+function formatLeadCreatedTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Horário indisponível";
+  const time = new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "America/Sao_Paulo",
+  }).format(date);
+  return `Criado às ${time}`;
 }
 
 function formatTransferLeadAge(lead: TransferLead) {
@@ -351,6 +362,7 @@ function CRMPipeline() {
   const activeUnitId = session?.activeUnit?.id ?? "";
   const [leads, setLeads] = React.useState<Array<LeadRecord>>([]);
   const [courses, setCourses] = React.useState<Array<CourseRecord>>([]);
+  const [attendances, setAttendances] = React.useState<Array<AttendanceOption>>([]);
   const [channels, setChannels] = React.useState<Array<AcquisitionChannelRecord>>([]);
   const [leadDialogOpen, setLeadDialogOpen] = React.useState(false);
   const [leadDialogMode, setLeadDialogMode] = React.useState<LeadDialogMode>("create");
@@ -390,6 +402,8 @@ function CRMPipeline() {
   const [transferringLeads, setTransferringLeads] = React.useState(false);
   const formUnitId = form.unitId || activeUnitId;
   const selectedCourse = courses.find((course) => course.id === form.courseId) ?? null;
+  const selectedAttendance =
+    attendances.find((attendance) => attendance.id === form.attendanceId) ?? null;
   const broadcastChannelRef = React.useRef<BroadcastChannel | null>(null);
   const canTransferUnitLeads = session ? canTransferLeads(session.user.role) : false;
   const canAccessTransfers = session ? canAccessLeadTransferCenter(session.user.role) : false;
@@ -475,6 +489,7 @@ function CRMPipeline() {
   const loadOptions = React.useCallback(async (unitId: string) => {
     if (!unitId) {
       setCourses([]);
+      setAttendances([]);
       setChannels([]);
       return;
     }
@@ -498,6 +513,7 @@ function CRMPipeline() {
       ]);
 
       setCourses(coursesData.courses.filter((course) => course.status === "active"));
+      setAttendances(coursesData.attendances);
       setChannels(channelsData.channels.filter((channel) => channel.status === "active"));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao carregar opções do lead.");
@@ -660,6 +676,10 @@ function CRMPipeline() {
       toast.error("Nome completo e telefone são obrigatórios.");
       return;
     }
+    if (!form.attendanceId) {
+      toast.error("Selecione a turma do lead.");
+      return;
+    }
 
     setSavingLead(true);
 
@@ -703,7 +723,8 @@ function CRMPipeline() {
           }),
         );
 
-        const course = courses.find((item) => item.id === (payload.courseId || ""));
+        const attendance = attendances.find((item) => item.id === payload.attendanceId);
+        const course = courses.find((item) => item.id === attendance?.courseId);
         const channel = channels.find((item) => item.id === (payload.acquisitionChannelId || ""));
 
         setLeads((current) =>
@@ -715,8 +736,13 @@ function CRMPipeline() {
                   phone: payload.phone,
                   phone2: payload.phone2 || null,
                   email: payload.email || null,
-                  city: payload.city || null,
-                  courseId: payload.courseId || null,
+                  city: attendance
+                    ? `${attendance.city} - ${attendance.state}`
+                    : payload.city || null,
+                  attendanceId: attendance?.id ?? null,
+                  attendanceName: attendance?.displayName ?? null,
+                  attendanceStatus: attendance?.status ?? null,
+                  courseId: attendance?.courseId ?? null,
                   courseName: course?.name ?? null,
                   courseValue: course?.value ?? null,
                   acquisitionChannelId: payload.acquisitionChannelId || null,
@@ -1370,9 +1396,11 @@ function CRMPipeline() {
         mode={leadDialogMode}
         form={form}
         courses={courses}
+        attendances={attendances}
         channels={channels}
         units={session?.units ?? []}
         selectedCourse={selectedCourse}
+        selectedAttendance={selectedAttendance}
         loadingOptions={loadingOptions}
         canViewAcquisitionChannel={canViewAcquisitionChannel}
         tasks={leadTasks}
@@ -1502,12 +1530,12 @@ function LeadPipelineCard({
           : "hover:-translate-y-0.5 hover:shadow-elegant"
       } ${syncing ? "ring-2 ring-primary/25" : ""}`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
           <button
             type="button"
             onClick={canEdit ? onEdit : undefined}
-            className={`truncate text-left text-sm font-semibold ${
+            className={`line-clamp-2 max-w-full text-left text-sm font-semibold [overflow-wrap:anywhere] ${
               canEdit ? "transition hover:text-primary" : "cursor-default"
             }`}
           >
@@ -1519,8 +1547,8 @@ function LeadPipelineCard({
           </div>
           {lead.phone2 ? (
             <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Phone className="h-3.5 w-3.5" />
-              <span className="truncate">Telefone 2: {lead.phone2}</span>
+              <Smartphone className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{lead.phone2}</span>
             </div>
           ) : null}
           {lead.email ? (
@@ -1529,16 +1557,10 @@ function LeadPipelineCard({
               <span className="truncate">{lead.email}</span>
             </div>
           ) : null}
-          {lead.city ? (
-            <div className="mt-1 flex items-center gap-1.5 text-xs font-medium text-foreground">
-              <MapPin className="h-3.5 w-3.5 text-primary" />
-              <span className="truncate">Cidade: {lead.city}</span>
-            </div>
-          ) : null}
           {canViewLeadAge ? (
             <div className="mt-1 flex items-center gap-1.5 text-xs text-primary">
               <Clock3 className="h-3.5 w-3.5" />
-              <span className="truncate">{formatLeadAge(lead.createdAt)}</span>
+              <span className="truncate">{formatLeadCreatedTime(lead.createdAt)}</span>
             </div>
           ) : null}
           {canViewOwner && lead.createdByName ? (
@@ -1553,7 +1575,7 @@ function LeadPipelineCard({
             type="button"
             size="icon"
             variant="ghost"
-            className="h-8 w-8 text-destructive opacity-70 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+            className="h-8 w-8 shrink-0 text-destructive opacity-70 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
             onClick={onRemove}
             disabled={removing}
             aria-label={`Remover ${lead.fullName}`}
@@ -1563,9 +1585,12 @@ function LeadPipelineCard({
         ) : null}
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5">
-        {lead.courseName ? (
-          <Badge variant="secondary" className="bg-primary/10 text-primary">
-            {lead.courseName}
+        {lead.attendanceName || lead.courseName ? (
+          <Badge
+            variant="secondary"
+            className="h-auto max-w-full whitespace-normal bg-gold/15 text-left text-gold-foreground [overflow-wrap:anywhere]"
+          >
+            {lead.attendanceName ?? lead.courseName}
           </Badge>
         ) : null}
         {canViewAcquisitionChannel && lead.acquisitionChannelName ? (
@@ -1801,9 +1826,11 @@ function CreateLeadDialog({
   mode,
   form,
   courses,
+  attendances,
   channels,
   units,
   selectedCourse,
+  selectedAttendance,
   loadingOptions,
   canViewAcquisitionChannel,
   tasks,
@@ -1828,9 +1855,11 @@ function CreateLeadDialog({
   mode: LeadDialogMode;
   form: LeadFormState;
   courses: Array<CourseRecord>;
+  attendances: Array<AttendanceOption>;
   channels: Array<AcquisitionChannelRecord>;
   units: Array<{ id: string; name: string; slug: string }>;
   selectedCourse: CourseRecord | null;
+  selectedAttendance: AttendanceOption | null;
   loadingOptions: boolean;
   canViewAcquisitionChannel: boolean;
   tasks: Array<CrmLeadTask>;
@@ -1963,45 +1992,48 @@ function CreateLeadDialog({
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="lead-city">Cidade</Label>
-              <Input
-                id="lead-city"
-                value={form.city}
-                onChange={(event) =>
-                  onFormChange((current) => ({ ...current, city: event.target.value }))
-                }
-                placeholder="Cidade do lead"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Curso de Interesse</Label>
+            <div className="space-y-2 md:col-span-2">
+              <Label>Turma</Label>
               <Select
-                value={form.courseId || NO_SELECTION}
-                onValueChange={(value) =>
+                value={form.attendanceId}
+                onValueChange={(value) => {
+                  const attendance = attendances.find((item) => item.id === value);
                   onFormChange((current) => ({
                     ...current,
-                    courseId: value === NO_SELECTION ? "" : value,
-                  }))
-                }
+                    attendanceId: value,
+                    courseId: attendance?.courseId ?? "",
+                    city: attendance ? `${attendance.city} - ${attendance.state}` : "",
+                  }));
+                }}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder={loadingOptions ? "Carregando..." : "Selecione"} />
+                  <SelectValue
+                    placeholder={loadingOptions ? "Carregando..." : "Selecione a turma"}
+                  />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NO_SELECTION}>Sem curso definido</SelectItem>
-                  {courses.map((course) => (
-                    <SelectItem key={course.id} value={course.id}>
-                      {course.name}
-                    </SelectItem>
-                  ))}
+                  {attendances
+                    .filter(
+                      (attendance) =>
+                        attendance.status === "active" || attendance.id === form.attendanceId,
+                    )
+                    .map((attendance) => (
+                      <SelectItem key={attendance.id} value={attendance.id}>
+                        {attendance.displayName}
+                        {attendance.status === "inactive" ? " · Inativa" : ""}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
-              {selectedCourse ? (
+              {!loadingOptions &&
+              !attendances.some((attendance) => attendance.status === "active") ? (
+                <p className="text-xs text-muted-foreground">Nenhuma turma ativa nesta unidade</p>
+              ) : null}
+              {selectedAttendance && selectedCourse ? (
                 <div className="flex items-center gap-2 rounded-md border border-primary/15 bg-primary/5 px-3 py-2 text-xs text-primary">
                   <BookOpenCheck className="h-3.5 w-3.5" />
-                  Valor conhecido: {currencyFormatter.format(selectedCourse.value)}
+                  {selectedAttendance.city}/{selectedAttendance.state} · Valor conhecido:{" "}
+                  {currencyFormatter.format(selectedCourse.value)}
                 </div>
               ) : null}
             </div>

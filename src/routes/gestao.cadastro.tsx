@@ -83,6 +83,8 @@ type AttendanceRecord = {
   courseName: string;
   city: string;
   state: string;
+  classDate: string;
+  displayName: string;
   status: CommercialStatus;
   consultantIds: Array<string>;
   consultantNames: Array<string>;
@@ -97,6 +99,7 @@ type AttendanceFormState = {
   courseId: string;
   city: string;
   state: string;
+  classDate: string;
   consultantIds: Array<string>;
   status: CommercialStatus;
 };
@@ -123,6 +126,9 @@ const initialAttendanceForm: AttendanceFormState = {
   courseId: "",
   city: "",
   state: "",
+  classDate: new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+  }).format(new Date()),
   consultantIds: [],
   status: "active",
 };
@@ -285,6 +291,7 @@ function CadastroPage() {
       courseId: attendance.courseId,
       city: attendance.city,
       state: attendance.state,
+      classDate: attendance.classDate,
       consultantIds: attendance.consultantIds,
       status: attendance.status,
     });
@@ -411,7 +418,7 @@ function CadastroPage() {
         }),
       );
 
-      toast.success(editingAttendanceId ? "Atendimento atualizado." : "Atendimento criado.");
+      toast.success(editingAttendanceId ? "Turma atualizada." : "Turma criada.");
       setAttendanceDialogOpen(false);
       await loadData();
     } catch (error) {
@@ -456,7 +463,7 @@ function CadastroPage() {
           ? "Curso excluído."
           : deleteTarget.kind === "channel"
             ? "Canal excluído."
-            : "Atendimento excluído.",
+            : "Turma inativada.",
       );
       setDeleteTarget(null);
       await loadData();
@@ -702,15 +709,15 @@ function CadastroPage() {
                 <MapPin className="h-5 w-5" />
               </div>
               <div>
-                <CardTitle className="text-base">Atendimentos por curso e cidade</CardTitle>
+                <CardTitle className="text-base">Turmas por curso, cidade e data</CardTitle>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Defina quem recebe cada combinação identificada no nome das campanhas.
+                  Defina a data e os responsáveis que receberão os leads de cada turma.
                 </p>
               </div>
             </div>
             <Button onClick={openNewAttendanceDialog} className="bg-gradient-primary">
               <Plus className="h-4 w-4" />
-              Novo Atendimento
+              Nova Turma
             </Button>
           </div>
         </CardHeader>
@@ -718,9 +725,9 @@ function CadastroPage() {
           <Table>
             <TableHeader className="bg-muted/50">
               <TableRow>
-                <TableHead className="px-5">Curso</TableHead>
-                <TableHead>Praça</TableHead>
-                <TableHead>Consultores</TableHead>
+                <TableHead className="px-5">Turma</TableHead>
+                <TableHead>Data</TableHead>
+                <TableHead>Responsáveis</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-[128px] pr-5 text-right">Ações</TableHead>
               </TableRow>
@@ -735,9 +742,11 @@ function CadastroPage() {
               ) : attendances.length ? (
                 attendances.map((attendance) => (
                   <TableRow key={attendance.id}>
-                    <TableCell className="px-5 font-semibold">{attendance.courseName}</TableCell>
+                    <TableCell className="max-w-sm whitespace-normal px-5 font-semibold">
+                      {attendance.displayName}
+                    </TableCell>
                     <TableCell>
-                      {attendance.city}-{attendance.state}
+                      {new Date(`${attendance.classDate}T12:00:00`).toLocaleDateString("pt-BR")}
                     </TableCell>
                     <TableCell className="max-w-md">
                       <div className="flex flex-wrap gap-1">
@@ -771,10 +780,10 @@ function CadastroPage() {
                             setDeleteTarget({
                               kind: "attendance",
                               id: attendance.id,
-                              name: `${attendance.courseName} - ${attendance.city}-${attendance.state}`,
+                              name: attendance.displayName,
                             })
                           }
-                          aria-label={`Excluir atendimento ${attendance.courseName}`}
+                          aria-label={`Inativar turma ${attendance.courseName}`}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -785,7 +794,7 @@ function CadastroPage() {
               ) : (
                 <TableRow>
                   <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
-                    Nenhuma combinação cadastrada.
+                    Nenhuma turma cadastrada.
                   </TableCell>
                 </TableRow>
               )}
@@ -1102,9 +1111,9 @@ function AttendanceDialog({
       <DialogContent className="border-primary/20 bg-card shadow-elegant sm:max-w-2xl">
         <form onSubmit={onSubmit}>
           <DialogHeader>
-            <DialogTitle>{editing ? "Editar atendimento" : "Novo atendimento"}</DialogTitle>
+            <DialogTitle>{editing ? "Editar turma" : "Nova turma"}</DialogTitle>
             <DialogDescription>
-              O nome da campanha deve conter [Curso] [Cidade-UF] para usar esta distribuição.
+              O nome é gerado automaticamente a partir do curso, local e data.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-5 md:grid-cols-2">
@@ -1157,7 +1166,19 @@ function AttendanceDialog({
               />
             </div>
             <div className="space-y-2 md:col-span-2">
-              <Label>Consultores participantes</Label>
+              <Label htmlFor="attendance-date">Data da turma</Label>
+              <Input
+                id="attendance-date"
+                type="date"
+                value={form.classDate}
+                onChange={(event) =>
+                  onFormChange((current) => ({ ...current, classDate: event.target.value }))
+                }
+                required
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label>Responsáveis participantes</Label>
               <div className="grid max-h-52 gap-2 overflow-y-auto rounded-lg border bg-background/70 p-3 sm:grid-cols-2">
                 {consultants.length ? (
                   consultants.map((consultant) => (
@@ -1175,7 +1196,7 @@ function AttendanceDialog({
                   ))
                 ) : (
                   <span className="text-sm text-muted-foreground">
-                    Cadastre consultores ativos nesta unidade.
+                    Cadastre consultores, gerentes ou diretores ativos nesta unidade.
                   </span>
                 )}
               </div>
@@ -1213,10 +1234,11 @@ function AttendanceDialog({
                 !form.courseId ||
                 !form.city.trim() ||
                 form.state.length !== 2 ||
+                !form.classDate ||
                 !form.consultantIds.length
               }
             >
-              {saving ? "Salvando..." : editing ? "Salvar alterações" : "Criar atendimento"}
+              {saving ? "Salvando..." : editing ? "Salvar alterações" : "Criar turma"}
             </Button>
           </DialogFooter>
         </form>
@@ -1240,11 +1262,15 @@ function DeleteDialog({
     <Dialog open={Boolean(target)} onOpenChange={(open) => !open && onCancel()}>
       <DialogContent className="border-destructive/25 bg-card shadow-elegant sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Confirmar exclusão</DialogTitle>
+          <DialogTitle>
+            {target?.kind === "attendance" ? "Confirmar inativação" : "Confirmar exclusão"}
+          </DialogTitle>
           <DialogDescription>
-            {target
-              ? `Deseja excluir "${target.name}"? Esta ação remove o registro do banco de dados.`
-              : "Deseja excluir este registro?"}
+            {target?.kind === "attendance"
+              ? `Deseja inativar "${target.name}"? O histórico e os leads vinculados serão preservados.`
+              : target
+                ? `Deseja excluir "${target.name}"? Esta ação remove o registro do banco de dados.`
+                : "Deseja excluir este registro?"}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -1252,7 +1278,7 @@ function DeleteDialog({
             Cancelar
           </Button>
           <Button type="button" variant="destructive" onClick={onConfirm} disabled={deleting}>
-            {deleting ? "Excluindo..." : "Excluir"}
+            {deleting ? "Processando..." : target?.kind === "attendance" ? "Inativar" : "Excluir"}
           </Button>
         </DialogFooter>
       </DialogContent>

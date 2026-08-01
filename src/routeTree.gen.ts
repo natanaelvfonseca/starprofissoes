@@ -50,6 +50,7 @@ import { Route as ApiIaComercialScriptsRouteImport } from './routes/api/ia-comer
 import { Route as ApiIntegrationsEvolutionRouteImport } from './routes/api/integrations/evolution'
 import { Route as ApiTrainingVideoRouteImport } from './routes/api/training.video'
 import { Route as ApiWebhooksEvolutionRouteImport } from './routes/api/webhooks/evolution'
+import { Route as ApiWebhooksMetaLeadsRouteImport } from './routes/api/webhooks/meta-leads'
 import { Route as FinanceiroAlunoStudentIdRouteImport } from './routes/financeiro.aluno.$studentId'
 import { Route as ApiCrmLeadsIdRouteImport } from './routes/api/crm/leads.$id'
 import { Route as ApiGestaoChannelsIdRouteImport } from './routes/api/gestao/channels.$id'
@@ -261,6 +262,11 @@ const ApiWebhooksEvolutionRoute = ApiWebhooksEvolutionRouteImport.update({
   path: '/api/webhooks/evolution',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiWebhooksMetaLeadsRoute = ApiWebhooksMetaLeadsRouteImport.update({
+  id: '/api/webhooks/meta-leads',
+  path: '/api/webhooks/meta-leads',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const FinanceiroAlunoStudentIdRoute =
   FinanceiroAlunoStudentIdRouteImport.update({
     id: '/aluno/$studentId',
@@ -325,6 +331,7 @@ export interface FileRoutesByFullPath {
   '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
   '/api/training/video': typeof ApiTrainingVideoRoute
   '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
+  '/api/webhooks/meta-leads': typeof ApiWebhooksMetaLeadsRoute
   '/financeiro/aluno/$studentId': typeof FinanceiroAlunoStudentIdRoute
   '/api/crm/leads/$id': typeof ApiCrmLeadsIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
@@ -372,6 +379,7 @@ export interface FileRoutesByTo {
   '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
   '/api/training/video': typeof ApiTrainingVideoRoute
   '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
+  '/api/webhooks/meta-leads': typeof ApiWebhooksMetaLeadsRoute
   '/financeiro/aluno/$studentId': typeof FinanceiroAlunoStudentIdRoute
   '/api/crm/leads/$id': typeof ApiCrmLeadsIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
@@ -420,6 +428,7 @@ export interface FileRoutesById {
   '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
   '/api/training/video': typeof ApiTrainingVideoRoute
   '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
+  '/api/webhooks/meta-leads': typeof ApiWebhooksMetaLeadsRoute
   '/financeiro/aluno/$studentId': typeof FinanceiroAlunoStudentIdRoute
   '/api/crm/leads/$id': typeof ApiCrmLeadsIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
@@ -469,6 +478,7 @@ export interface FileRouteTypes {
     | '/api/integrations/evolution'
     | '/api/training/video'
     | '/api/webhooks/evolution'
+    | '/api/webhooks/meta-leads'
     | '/financeiro/aluno/$studentId'
     | '/api/crm/leads/$id'
     | '/api/gestao/channels/$id'
@@ -516,6 +526,7 @@ export interface FileRouteTypes {
     | '/api/integrations/evolution'
     | '/api/training/video'
     | '/api/webhooks/evolution'
+    | '/api/webhooks/meta-leads'
     | '/financeiro/aluno/$studentId'
     | '/api/crm/leads/$id'
     | '/api/gestao/channels/$id'
@@ -563,6 +574,7 @@ export interface FileRouteTypes {
     | '/api/integrations/evolution'
     | '/api/training/video'
     | '/api/webhooks/evolution'
+    | '/api/webhooks/meta-leads'
     | '/financeiro/aluno/$studentId'
     | '/api/crm/leads/$id'
     | '/api/gestao/channels/$id'
@@ -606,6 +618,7 @@ export interface RootRouteChildren {
   ApiHealthDbRoute: typeof ApiHealthDbRoute
   ApiIntegrationsEvolutionRoute: typeof ApiIntegrationsEvolutionRoute
   ApiWebhooksEvolutionRoute: typeof ApiWebhooksEvolutionRoute
+  ApiWebhooksMetaLeadsRoute: typeof ApiWebhooksMetaLeadsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -897,6 +910,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWebhooksEvolutionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/webhooks/meta-leads': {
+      id: '/api/webhooks/meta-leads'
+      path: '/api/webhooks/meta-leads'
+      fullPath: '/api/webhooks/meta-leads'
+      preLoaderRoute: typeof ApiWebhooksMetaLeadsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/financeiro/aluno/$studentId': {
       id: '/financeiro/aluno/$studentId'
       path: '/aluno/$studentId'
@@ -1049,6 +1069,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiHealthDbRoute: ApiHealthDbRoute,
   ApiIntegrationsEvolutionRoute: ApiIntegrationsEvolutionRoute,
   ApiWebhooksEvolutionRoute: ApiWebhooksEvolutionRoute,
+  ApiWebhooksMetaLeadsRoute: ApiWebhooksMetaLeadsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

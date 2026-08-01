@@ -16,7 +16,7 @@ import {
   type AuthSession,
   type UnitSummary,
 } from "@/lib/auth-types";
-import { ensureCommercialSchema } from "@/lib/server/commercial-schema";
+import { ensureCommercialSchema, isUuid } from "@/lib/server/commercial-schema";
 import { getSessionFromRequest } from "@/lib/server/auth";
 import { queryDb } from "@/lib/server/db";
 import { ensureMetaLeadSchema } from "@/lib/server/meta-leads";
@@ -131,6 +131,16 @@ type ConsultantRow = QueryResultRow & {
 type TaskSummaryRow = QueryResultRow & {
   overdue_follow_ups: string | number;
   today_follow_ups: string | number;
+};
+
+type AttendanceMetricRow = QueryResultRow & {
+  id: string;
+  name: string;
+  status: "active" | "inactive";
+  leads: string | number;
+  enrollments: string | number;
+  confirmed_revenue: string | number | null;
+  pipeline_potential: string | number | null;
 };
 
 function toNumber(value: string | number | null | undefined) {
@@ -280,7 +290,12 @@ function mapCampaigns(rows: Array<CampaignRow>): Array<GrowthCampaignMetric> {
   return rows.map((row) => {
     const leads = toNumber(row.leads);
     const enrollments = toNumber(row.enrollments);
-    return { campaign: row.campaign, leads, enrollments, conversionRate: percentage(enrollments, leads) };
+    return {
+      campaign: row.campaign,
+      leads,
+      enrollments,
+      conversionRate: percentage(enrollments, leads),
+    };
   });
 }
 
@@ -346,6 +361,7 @@ function emptyResponse(scope: GrowthScopeSelection) {
     trend: [],
     campaigns: [],
     consultants: [],
+    attendances: [],
   };
 }
 
@@ -372,11 +388,15 @@ export const Route = createFileRoute("/api/growth")({
         await Promise.all([ensureCommercialSchema(), ensureMetaLeadSchema()]);
 
         const periodDays = readPeriod(request);
-        const params = [scope.unitIds, scope.consultantId, periodDays] as const;
+        const requestedAttendanceId =
+          new URL(request.url).searchParams.get("attendanceId")?.trim() ?? "";
+        const attendanceId = isUuid(requestedAttendanceId) ? requestedAttendanceId : null;
+        const params = [scope.unitIds, scope.consultantId, periodDays, attendanceId] as const;
         const scopedWhere = `
           unit_id = any($1::uuid[])
           and ($2::uuid is null or created_by = $2)
           and created_at >= current_date - make_interval(days => $3::int)
+          and ($4::uuid is null or attendance_id = $4)
         `;
 
         const [
@@ -391,6 +411,7 @@ export const Route = createFileRoute("/api/growth")({
           campaignResult,
           consultantResult,
           metaSummaryResult,
+          attendanceResult,
         ] = await Promise.all([
           queryDb<SummaryRow>(
             `
@@ -585,6 +606,7 @@ export const Route = createFileRoute("/api/growth")({
               left join app_leads l on l.unit_id = u.id
                 and ($2::uuid is null or l.created_by = $2)
                 and l.created_at >= current_date - make_interval(days => $3::int)
+                and ($4::uuid is null or l.attendance_id = $4)
               left join paid_by_lead p on p.lead_id = l.id
               group by u.id, u.name, selected.ord
               order by selected.ord
@@ -626,6 +648,7 @@ export const Route = createFileRoute("/api/growth")({
               where l.unit_id = any($1::uuid[])
                 and ($2::uuid is null or l.created_by = $2)
                 and l.created_at >= current_date - make_interval(days => $3::int)
+                and ($4::uuid is null or l.attendance_id = $4)
               group by 1
               order by count(*) desc
               limit 12
@@ -663,6 +686,7 @@ export const Route = createFileRoute("/api/growth")({
               left join app_leads l on l.created_by = u.id
                 and l.unit_id = uu.unit_id
                 and l.created_at >= current_date - make_interval(days => $3::int)
+                and ($4::uuid is null or l.attendance_id = $4)
               left join paid_by_lead p on p.lead_id = l.id
               where u.role = 'CONSULTOR' and u.status = 'active'
                 and ($2::uuid is null or u.id = $2)
@@ -671,7 +695,9 @@ export const Route = createFileRoute("/api/growth")({
             `,
             params,
           ),
-          queryDb<{ meta_leads: string | number; campaign_count: string | number } & QueryResultRow>(
+          queryDb<
+            { meta_leads: string | number; campaign_count: string | number } & QueryResultRow
+          >(
             `
               select count(*) as meta_leads,
                      count(distinct nullif(e.campaign_id, '')) as campaign_count
@@ -680,6 +706,36 @@ export const Route = createFileRoute("/api/growth")({
               where l.unit_id = any($1::uuid[])
                 and ($2::uuid is null or l.created_by = $2)
                 and l.created_at >= current_date - make_interval(days => $3::int)
+                and ($4::uuid is null or l.attendance_id = $4)
+            `,
+            params,
+          ),
+          queryDb<AttendanceMetricRow>(
+            `
+              with paid_by_lead as (
+                select lead_id, sum(amount) as paid_amount
+                from app_student_payments
+                where status = 'paid'
+                group by lead_id
+              )
+              select a.id,
+                concat(c.name, ' · ', a.city, '/', a.state, ' · ', to_char(a.class_date, 'DD/MM/YYYY')) as name,
+                a.status,
+                count(l.id) as leads,
+                count(l.id) filter (where l.stage = 'Matriculado') as enrollments,
+                coalesce(sum(coalesce(p.paid_amount, case when l.stage = 'Matriculado' then l.course_value_snapshot else 0 end)), 0) as confirmed_revenue,
+                coalesce(sum(l.course_value_snapshot) filter (where l.stage <> 'Matriculado'), 0) as pipeline_potential
+              from app_course_attendances a
+              inner join app_courses c on c.id = a.course_id
+              left join app_leads l on l.attendance_id = a.id
+                and l.unit_id = any($1::uuid[])
+                and ($2::uuid is null or l.created_by = $2)
+                and l.created_at >= current_date - make_interval(days => $3::int)
+              left join paid_by_lead p on p.lead_id = l.id
+              where a.unit_id = any($1::uuid[])
+                and ($4::uuid is null or a.id = $4)
+              group by a.id, c.name
+              order by a.class_date desc, c.name, a.city
             `,
             params,
           ),
@@ -715,7 +771,10 @@ export const Route = createFileRoute("/api/growth")({
               followUpRate: percentage(toNumber(summary?.follow_up_leads), leadsReceived),
               averageTicket: toNumber(summary?.average_ticket),
               leadsWithSource,
-              sourceConversionRate: percentage(toNumber(summary?.sourced_enrollments), leadsWithSource),
+              sourceConversionRate: percentage(
+                toNumber(summary?.sourced_enrollments),
+                leadsWithSource,
+              ),
               activeChannels: toNumber(channelSummary?.active_channels),
               paidChannels: toNumber(channelSummary?.paid_channels),
               revenue: toNumber(summary?.revenue),
@@ -743,6 +802,20 @@ export const Route = createFileRoute("/api/growth")({
             })),
             campaigns: mapCampaigns(campaignResult.rows),
             consultants: mapConsultants(consultantResult.rows),
+            attendances: attendanceResult.rows.map((row) => {
+              const leads = toNumber(row.leads);
+              const enrollments = toNumber(row.enrollments);
+              return {
+                id: row.id,
+                name: row.name,
+                status: row.status,
+                leads,
+                enrollments,
+                confirmedRevenue: toNumber(row.confirmed_revenue),
+                pipelinePotential: toNumber(row.pipeline_potential),
+                conversionRate: percentage(enrollments, leads),
+              };
+            }),
           },
           { headers: { "Cache-Control": "no-store" } },
         );

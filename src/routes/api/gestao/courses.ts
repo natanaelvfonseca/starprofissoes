@@ -9,6 +9,7 @@ import {
   isUniqueError,
 } from "@/lib/server/commercial-schema";
 import { getSessionFromRequest } from "@/lib/server/auth";
+import { ensureCourseAttendanceSchema } from "@/lib/server/course-attendances";
 import { queryDb } from "@/lib/server/db";
 
 type CourseRow = QueryResultRow & {
@@ -19,6 +20,17 @@ type CourseRow = QueryResultRow & {
   category: string | null;
   status: CommercialStatus;
   created_at: string;
+};
+
+type AttendanceOptionRow = QueryResultRow & {
+  id: string;
+  unit_id: string;
+  course_id: string;
+  city: string;
+  state: string;
+  class_date: string;
+  status: CommercialStatus;
+  display_name: string;
 };
 
 function mapCourse(row: CourseRow): CourseRecord {
@@ -75,9 +87,11 @@ export const Route = createFileRoute("/api/gestao/courses")({
         }
 
         await ensureCommercialSchema();
+        await ensureCourseAttendanceSchema();
 
-        const result = await queryDb<CourseRow>(
-          `
+        const [result, attendances] = await Promise.all([
+          queryDb<CourseRow>(
+            `
             select id, unit_id, name, value::text, category, status, created_at::text
             from app_courses
             where unit_id = $1
@@ -85,11 +99,36 @@ export const Route = createFileRoute("/api/gestao/courses")({
               case status when 'active' then 1 else 2 end,
               name asc
           `,
-          [unit.id],
-        );
+            [unit.id],
+          ),
+          queryDb<AttendanceOptionRow>(
+            `
+            select a.id, a.unit_id, a.course_id, a.city, a.state, a.class_date::text,
+              a.status,
+              concat(c.name, ' · ', a.city, '/', a.state, ' · ', to_char(a.class_date, 'DD/MM/YYYY')) as display_name
+            from app_course_attendances a
+            inner join app_courses c on c.id = a.course_id
+            where a.unit_id = $1
+            order by case a.status when 'active' then 1 else 2 end, a.class_date, c.name, a.city
+          `,
+            [unit.id],
+          ),
+        ]);
 
         return Response.json(
-          { courses: result.rows.map(mapCourse) },
+          {
+            courses: result.rows.map(mapCourse),
+            attendances: attendances.rows.map((attendance) => ({
+              id: attendance.id,
+              unitId: attendance.unit_id,
+              courseId: attendance.course_id,
+              city: attendance.city,
+              state: attendance.state,
+              classDate: attendance.class_date,
+              status: attendance.status,
+              displayName: attendance.display_name,
+            })),
+          },
           { headers: { "Cache-Control": "no-store" } },
         );
       },

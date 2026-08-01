@@ -102,6 +102,17 @@ export type GrowthConsultantMetric = {
   followUpRate: number;
 };
 
+export type GrowthAttendanceMetric = {
+  id: string;
+  name: string;
+  status: "active" | "inactive";
+  leads: number;
+  enrollments: number;
+  confirmedRevenue: number;
+  pipelinePotential: number;
+  conversionRate: number;
+};
+
 export type GrowthResponse = {
   scope: GrowthScope;
   availableUnits: Array<UnitSummary>;
@@ -115,4 +126,5 @@ export type GrowthResponse = {
   trend: Array<GrowthTrendMetric>;
   campaigns: Array<GrowthCampaignMetric>;
   consultants: Array<GrowthConsultantMetric>;
+  attendances: Array<GrowthAttendanceMetric>;
 };

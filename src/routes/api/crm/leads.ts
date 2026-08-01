@@ -9,7 +9,10 @@ import {
 } from "@/lib/server/commercial-schema";
 import { canOperateCrm, canViewAllUnitLeads, canViewStudents } from "@/lib/auth-types";
 import { getSessionFromRequest } from "@/lib/server/auth";
-import { ensureCourseAttendanceSchema, normalizeRoutingText } from "@/lib/server/course-attendances";
+import {
+  ensureCourseAttendanceSchema,
+  normalizeRoutingText,
+} from "@/lib/server/course-attendances";
 import { queryDb } from "@/lib/server/db";
 
 type LeadRow = QueryResultRow & {
@@ -21,6 +24,9 @@ type LeadRow = QueryResultRow & {
   phone2: string | null;
   email: string | null;
   city: string | null;
+  attendance_id: string | null;
+  attendance_name: string | null;
+  attendance_status: "active" | "inactive" | null;
   course_id: string | null;
   course_name_snapshot: string | null;
   course_value_snapshot: string | null;
@@ -50,6 +56,16 @@ type AttendanceCityRow = QueryResultRow & {
   city: string;
 };
 
+type AttendanceSnapshotRow = QueryResultRow & {
+  id: string;
+  unit_id: string;
+  course_id: string;
+  course_name: string;
+  course_value: string;
+  city: string;
+  state: string;
+};
+
 type MetaLeadCampaignRow = QueryResultRow & {
   id: string;
   city: string | null;
@@ -72,6 +88,9 @@ function mapLead(row: LeadRow, exposeAcquisitionChannel: boolean): LeadRecord {
     phone2: row.phone2,
     email: row.email,
     city: row.city,
+    attendanceId: row.attendance_id,
+    attendanceName: row.attendance_name,
+    attendanceStatus: row.attendance_status,
     courseId: row.course_id,
     courseName: row.course_name_snapshot,
     courseValue: row.course_value_snapshot ? Number(row.course_value_snapshot) : null,
@@ -94,6 +113,7 @@ function parseLeadPayload(body: unknown) {
     phone2?: unknown;
     email?: unknown;
     city?: unknown;
+    attendanceId?: unknown;
     courseId?: unknown;
     acquisitionChannelId?: unknown;
     unitId?: unknown;
@@ -106,6 +126,7 @@ function parseLeadPayload(body: unknown) {
     phone2: typeof data?.phone2 === "string" ? data.phone2.trim() : "",
     email: typeof data?.email === "string" ? data.email.trim() : "",
     city: typeof data?.city === "string" ? data.city.trim() : "",
+    attendanceId: typeof data?.attendanceId === "string" ? data.attendanceId.trim() : "",
     courseId: typeof data?.courseId === "string" ? data.courseId.trim() : "",
     acquisitionChannelId:
       typeof data?.acquisitionChannelId === "string" ? data.acquisitionChannelId.trim() : "",
@@ -329,8 +350,6 @@ export const Route = createFileRoute("/api/crm/leads")({
 
         await ensureCommercialSchema();
         await ensureCourseAttendanceSchema();
-        await fillMetaLeadCitiesFromCampaigns(unit.id);
-        await fillLeadCitiesFromAttendances(unit.id);
 
         const listView = getLeadListView(request);
         if (listView === "students" && !canViewStudents(session.user.role)) {
@@ -349,15 +368,12 @@ export const Route = createFileRoute("/api/crm/leads")({
               l.phone,
               l.phone2,
               l.email,
-              coalesce(l.city, (
-                select a.city
-                from app_course_attendances a
-                where a.unit_id = l.unit_id
-                  and a.course_id = l.course_id
-                  and a.status = 'active'
-                order by a.created_at asc
-                limit 1
-              )) as city,
+              l.city,
+              l.attendance_id,
+              case when attendance.id is not null then
+                concat(attendance_course.name, ' · ', attendance.city, '/', attendance.state, ' · ', to_char(attendance.class_date, 'DD/MM/YYYY'))
+              end as attendance_name,
+              attendance.status as attendance_status,
               l.course_id,
               l.course_name_snapshot,
               l.course_value_snapshot::text,
@@ -373,6 +389,8 @@ export const Route = createFileRoute("/api/crm/leads")({
             from app_leads l
             inner join app_units un on un.id = l.unit_id
             left join app_users owner on owner.id = l.created_by
+            left join app_course_attendances attendance on attendance.id = l.attendance_id
+            left join app_courses attendance_course on attendance_course.id = attendance.course_id
             left join app_lead_import_rows import_info on import_info.lead_id = l.id
             left join lateral (
               select e.campaign_name, e.form_id
@@ -429,12 +447,26 @@ export const Route = createFileRoute("/api/crm/leads")({
         await ensureCommercialSchema();
         await ensureCourseAttendanceSchema();
 
-        const courseResult = await getCourseSnapshot(payload.courseId, unit.id);
+        if (!isUuid(payload.attendanceId)) {
+          return Response.json({ ok: false, error: "Selecione uma turma ativa." }, { status: 400 });
+        }
 
-        if (courseResult.error) {
+        const attendanceResult = await queryDb<AttendanceSnapshotRow>(
+          `
+            select a.id, a.unit_id, a.course_id, c.name as course_name, c.value::text as course_value,
+              a.city, a.state
+            from app_course_attendances a
+            inner join app_courses c on c.id = a.course_id
+            where a.id = $1 and a.unit_id = $2 and a.status = 'active' and c.status = 'active'
+            limit 1
+          `,
+          [payload.attendanceId, unit.id],
+        );
+        const attendance = attendanceResult.rows[0];
+        if (!attendance) {
           return Response.json(
-            { ok: false, error: courseResult.error },
-            { status: courseResult.status },
+            { ok: false, error: "Turma inativa ou indisponível nesta unidade." },
+            { status: 400 },
           );
         }
 
@@ -447,14 +479,13 @@ export const Route = createFileRoute("/api/crm/leads")({
           );
         }
 
-        const course = courseResult.course;
         const channel = channelResult.channel;
-        const resolvedCity =
-          (await getCourseCity(course?.id ?? payload.courseId, unit.id)) ?? payload.city;
+        const resolvedCity = `${attendance.city} - ${attendance.state}`;
         const result = await queryDb<LeadRow>(
           `
             insert into app_leads (
               unit_id,
+              attendance_id,
               full_name,
               phone,
               phone2,
@@ -468,7 +499,7 @@ export const Route = createFileRoute("/api/crm/leads")({
               observations,
               created_by
             )
-            values ($1, $2, $3, nullif($4, ''), nullif($5, ''), nullif($6, ''), $7, $8, $9, $10, $11, nullif($12, ''), $13)
+            values ($1, $2, $3, $4, nullif($5, ''), nullif($6, ''), nullif($7, ''), $8, $9, $10, $11, $12, nullif($13, ''), $14)
             returning
               id,
               unit_id,
@@ -478,13 +509,17 @@ export const Route = createFileRoute("/api/crm/leads")({
               phone2,
               email,
               city,
+              attendance_id,
+              (select concat(c.name, ' · ', a.city, '/', a.state, ' · ', to_char(a.class_date, 'DD/MM/YYYY'))
+                from app_course_attendances a inner join app_courses c on c.id = a.course_id where a.id = attendance_id) as attendance_name,
+              'active'::text as attendance_status,
               course_id,
               course_name_snapshot,
               course_value_snapshot::text,
               acquisition_channel_id,
               acquisition_channel_name_snapshot,
               created_by,
-              $14::text as created_by_name,
+              $15::text as created_by_name,
               observations,
               null::text as campaign_name,
               null::text as form_id,
@@ -493,14 +528,15 @@ export const Route = createFileRoute("/api/crm/leads")({
           `,
           [
             unit.id,
+            attendance.id,
             payload.fullName,
             payload.phone,
             payload.phone2,
             payload.email,
             resolvedCity,
-            course?.id ?? null,
-            course?.name ?? null,
-            course ? Number(course.value) : null,
+            attendance.course_id,
+            attendance.course_name,
+            Number(attendance.course_value),
             channel?.id ?? null,
             channel?.name ?? null,
             payload.observations,
