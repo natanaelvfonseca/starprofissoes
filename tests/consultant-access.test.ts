@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  canReturnStudentToLead,
   canTransferLeads,
   canViewAllUnitLeads,
   canViewGrowth,
@@ -16,6 +17,7 @@ test("consultor acessa alunos, mas não acessa relatórios", () => {
 test("consultor permanece limitado aos próprios leads e alunos", () => {
   assert.equal(canViewAllUnitLeads("CONSULTOR"), false);
   assert.equal(canTransferLeads("CONSULTOR"), false);
+  assert.equal(canReturnStudentToLead("CONSULTOR"), true);
 });
 
 test("consultor acessa a conexão da IA Comercial", () => {
@@ -27,5 +29,10 @@ test("liderança mantém acesso aos alunos e relatórios", () => {
   for (const role of ["DEV", "CVO", "CEO", "DIRETOR", "GERENTE"] as const) {
     assert.equal(canViewStudents(role), true);
     assert.equal(canViewGrowth(role), true);
+    assert.equal(canReturnStudentToLead(role), true);
   }
+});
+
+test("marketing não altera matrícula nem retorna aluno para lead", () => {
+  assert.equal(canReturnStudentToLead("MARKETING"), false);
 });

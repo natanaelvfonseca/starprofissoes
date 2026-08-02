@@ -11,6 +11,8 @@ type LeadPipelineRow = QueryResultRow & {
   attendance_id: string | null;
   stage: LeadStage;
   pipeline_column_id: string | null;
+  pre_enrollment_stage?: LeadStage | null;
+  pre_enrollment_pipeline_column_id?: string | null;
   shared_queue: boolean;
 };
 
@@ -79,7 +81,8 @@ export async function moveLeadToPipelineColumn(params: {
   return withTransaction(async (client) => {
     const leadResult = await client.query<LeadPipelineRow>(
       `
-        select id, unit_id, created_by, attendance_id, stage, pipeline_column_id, shared_queue
+        select id, unit_id, created_by, attendance_id, stage, pipeline_column_id,
+          pre_enrollment_stage, pre_enrollment_pipeline_column_id, shared_queue
         from app_leads
         where id = $1
         limit 1
@@ -134,10 +137,7 @@ export async function moveLeadToPipelineColumn(params: {
         !claimUserId ||
         !(await hasActiveAttendanceConsultant(client, lead.attendance_id, claimUserId))
       ) {
-        throw new LeadPipelineMoveError(
-          "Um consultor da turma deve assumir este lead.",
-          403,
-        );
+        throw new LeadPipelineMoveError("Um consultor da turma deve assumir este lead.", 403);
       }
 
       const claimed = await client.query<{ id: string }>(
@@ -211,6 +211,99 @@ export async function moveLeadToPipelineColumn(params: {
       stage: column.semantic_stage,
       createdById: releaseToSharedQueue ? null : lead.created_by,
       sharedQueue: releaseToSharedQueue,
+    };
+  });
+}
+
+export async function returnStudentToLead(leadId: string) {
+  if (!isUuid(leadId)) {
+    throw new LeadPipelineMoveError("Aluno inválido.", 400);
+  }
+
+  await ensureCommercialSchema();
+
+  return withTransaction(async (client) => {
+    const leadResult = await client.query<LeadPipelineRow>(
+      `
+        select id, unit_id, created_by, attendance_id, stage, pipeline_column_id,
+          pre_enrollment_stage, pre_enrollment_pipeline_column_id, shared_queue
+        from app_leads
+        where id = $1
+        limit 1
+        for update
+      `,
+      [leadId],
+    );
+    const lead = leadResult.rows[0];
+
+    if (!lead) throw new LeadPipelineMoveError("Aluno não encontrado.", 404);
+    if (lead.stage !== "Matriculado") {
+      throw new LeadPipelineMoveError("Este registro já voltou para o pipeline de leads.", 409);
+    }
+
+    const previousStage =
+      lead.pre_enrollment_stage && lead.pre_enrollment_stage !== "Matriculado"
+        ? lead.pre_enrollment_stage
+        : "Pagamento pendente";
+    const columnResult = await client.query<{ id: string }>(
+      `
+        select id
+        from app_pipeline_columns
+        where unit_id = $1
+          and pipeline_type = 'leads'
+          and (
+            id = $2::uuid
+            or semantic_stage = $3
+            or ($3 = 'Pagamento pendente' and system_key = 'pending_payment')
+          )
+        order by case
+            when id = $2::uuid then 0
+            when $3 = 'Pagamento pendente' and system_key = 'pending_payment' then 1
+            else 2
+          end,
+          position,
+          created_at
+        limit 1
+      `,
+      [lead.unit_id, lead.pre_enrollment_pipeline_column_id ?? null, previousStage],
+    );
+    const pipelineColumnId = columnResult.rows[0]?.id ?? null;
+
+    await client.query(
+      `
+        update app_leads
+        set stage = $3,
+            pipeline_column_id = $2,
+            student_pipeline_column_id = null,
+            pre_enrollment_stage = null,
+            pre_enrollment_pipeline_column_id = null,
+            converted_at = null,
+            converted_by = null,
+            payment_status = 'pending',
+            payment_confirmed_at = null,
+            updated_at = now()
+        where id = $1
+      `,
+      [lead.id, pipelineColumnId, previousStage],
+    );
+
+    const payments = await client.query(
+      `
+        update app_student_payments
+        set status = 'cancelled',
+            paid_at = null,
+            updated_at = now()
+        where lead_id = $1
+          and status = 'paid'
+          and description = 'Taxa/matrícula confirmada'
+      `,
+      [lead.id],
+    );
+
+    return {
+      stage: previousStage,
+      pipelineColumnId,
+      cancelledPayments: payments.rowCount ?? 0,
     };
   });
 }

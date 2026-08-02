@@ -1,12 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { QueryResultRow } from "pg";
 import type { LeadStage } from "@/lib/commercial-types";
-import { canOperateCrm, canTransferLeads } from "@/lib/auth-types";
+import { canOperateCrm, canReturnStudentToLead, canTransferLeads } from "@/lib/auth-types";
 import { ensureCommercialSchema, isUuid } from "@/lib/server/commercial-schema";
 import { getSessionFromRequest } from "@/lib/server/auth";
 import { ensureCourseAttendanceSchema } from "@/lib/server/course-attendances";
 import { queryDb } from "@/lib/server/db";
-import { LeadPipelineMoveError, moveLeadToPipelineColumn } from "@/lib/server/lead-pipeline";
+import {
+  LeadPipelineMoveError,
+  moveLeadToPipelineColumn,
+  returnStudentToLead,
+} from "@/lib/server/lead-pipeline";
 
 type LeadUnitRow = QueryResultRow & {
   unit_id: string;
@@ -276,6 +280,7 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
         const pipelineMove = body as {
           pipelineColumnId?: unknown;
           studentPipelineColumnId?: unknown;
+          returnToLead?: unknown;
         } | null;
 
         await ensureCommercialSchema();
@@ -338,6 +343,22 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
             },
             { status: session.user.role === "CONSULTOR" ? 409 : 403 },
           );
+        }
+
+        if (pipelineMove?.returnToLead === true) {
+          if (!canReturnStudentToLead(session.user.role)) {
+            return Response.json({ ok: false, error: "Acesso negado." }, { status: 403 });
+          }
+
+          try {
+            const reverted = await returnStudentToLead(params.id);
+            return Response.json({ ok: true, ...reverted });
+          } catch (error) {
+            if (error instanceof LeadPipelineMoveError) {
+              return Response.json({ ok: false, error: error.message }, { status: error.status });
+            }
+            throw error;
+          }
         }
 
         const requestedLeadColumnId =
@@ -520,6 +541,14 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
                 acquisition_channel_id = $11,
                 acquisition_channel_name_snapshot = $12,
                 observations = nullif($13, ''),
+                pre_enrollment_stage = case
+                  when $14 = 'Matriculado' and stage <> 'Matriculado' then stage
+                  else pre_enrollment_stage
+                end,
+                pre_enrollment_pipeline_column_id = case
+                  when $14 = 'Matriculado' and stage <> 'Matriculado' then pipeline_column_id
+                  else pre_enrollment_pipeline_column_id
+                end,
                 pipeline_column_id = case when $14 <> stage then null else pipeline_column_id end,
                 stage = $14,
                 shared_queue = $16,
@@ -601,6 +630,14 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
           `
             update app_leads
             set
+              pre_enrollment_stage = case
+                when $2 = 'Matriculado' and stage <> 'Matriculado' then stage
+                else pre_enrollment_stage
+              end,
+              pre_enrollment_pipeline_column_id = case
+                when $2 = 'Matriculado' and stage <> 'Matriculado' then pipeline_column_id
+                else pre_enrollment_pipeline_column_id
+              end,
               pipeline_column_id = case when $2 <> stage then null else pipeline_column_id end,
               stage = $2,
               shared_queue = $4,

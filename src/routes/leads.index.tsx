@@ -9,6 +9,7 @@ import {
   Phone,
   Search,
   Trash2,
+  Undo2,
   UserCheck,
   Users,
   X,
@@ -16,7 +17,12 @@ import {
 import { toast } from "sonner";
 import type { LeadRecord, PipelineColumn } from "@/lib/commercial-types";
 import { useAuth } from "@/lib/auth";
-import { canOperateCrm, canTransferLeads, canViewStudents } from "@/lib/auth-types";
+import {
+  canOperateCrm,
+  canReturnStudentToLead,
+  canTransferLeads,
+  canViewStudents,
+} from "@/lib/auth-types";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Badge } from "@/components/ui/badge";
@@ -146,6 +152,7 @@ function LeadsList() {
   const canViewStudentList = session ? canViewStudents(session.user.role) : false;
   const canRemoveStudents = session ? canTransferLeads(session.user.role) : false;
   const canMoveStudents = session ? canOperateCrm(session.user.role) : false;
+  const canReturnStudents = session ? canReturnStudentToLead(session.user.role) : false;
   const isConsultant = session?.user.role === "CONSULTOR";
   const [leads, setLeads] = React.useState<Array<LeadRecord>>([]);
   const [pipelineColumns, setPipelineColumns] = React.useState<Array<PipelineColumn>>([]);
@@ -154,6 +161,7 @@ function LeadsList() {
   const [filters, setFilters] = React.useState<StudentFilters>(() => emptyStudentFilters());
   const [loading, setLoading] = React.useState(true);
   const [removingLeadId, setRemovingLeadId] = React.useState<string | null>(null);
+  const [returningLeadId, setReturningLeadId] = React.useState<string | null>(null);
   const [syncingLeadId, setSyncingLeadId] = React.useState<string | null>(null);
   const [draggingLeadId, setDraggingLeadId] = React.useState<string | null>(null);
   const [dropTargetColumnId, setDropTargetColumnId] = React.useState<string | null>(null);
@@ -326,6 +334,40 @@ function LeadsList() {
       setSyncingLeadId(null);
       setDraggingLeadId(null);
       setDropTargetColumnId(null);
+    }
+  }
+
+  async function handleReturnToLeads(lead: LeadRecord) {
+    if (
+      !window.confirm(
+        `Voltar “${lead.fullName}” para leads? A confirmação da taxa será desfeita e o registro voltará para a etapa anterior do CRM.`,
+      )
+    ) {
+      return;
+    }
+
+    setReturningLeadId(lead.id);
+
+    try {
+      const result = await readJson<{
+        ok: true;
+        stage: LeadRecord["stage"];
+        pipelineColumnId: string | null;
+      }>(
+        await fetch(`/api/crm/leads/${lead.id}`, {
+          method: "PATCH",
+          credentials: "same-origin",
+          headers: { Accept: "application/json", "Content-Type": "application/json" },
+          body: JSON.stringify({ returnToLead: true }),
+        }),
+      );
+
+      setLeads((current) => current.filter((item) => item.id !== lead.id));
+      toast.success(`${lead.fullName} voltou para ${result.stage} no CRM.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao voltar o aluno para leads.");
+    } finally {
+      setReturningLeadId(null);
     }
   }
 
@@ -617,6 +659,23 @@ function LeadsList() {
                                     : "--"}
                                 </strong>
                               </div>
+                              {canReturnStudents ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => void handleReturnToLeads(lead)}
+                                  disabled={
+                                    returningLeadId === lead.id || syncingLeadId === lead.id
+                                  }
+                                  className="mt-3 w-full border-[#224C99]/20 bg-[#224C99]/5 text-[#224C99] hover:bg-[#224C99]/10 hover:text-[#07154C]"
+                                >
+                                  <Undo2 className="mr-2 h-4 w-4" />
+                                  {returningLeadId === lead.id
+                                    ? "Retornando..."
+                                    : "Voltar para leads"}
+                                </Button>
+                              ) : null}
                             </div>
                           </Card>
                         ))

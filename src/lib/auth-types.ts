@@ -165,6 +165,10 @@ export function canOperateCrm(role: UserRole) {
   return role !== "MARKETING";
 }
 
+export function canReturnStudentToLead(role: UserRole) {
+  return canViewStudents(role) && canOperateCrm(role);
+}
+
 export function canViewAllUnitLeads(role: UserRole) {
   return canTransferLeads(role) || role === "MARKETING";
 }

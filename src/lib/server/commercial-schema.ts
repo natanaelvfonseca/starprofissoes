@@ -155,6 +155,18 @@ export async function ensureCommercialSchema() {
       payment_confirmed_at timestamptz,
       pipeline_column_id uuid references app_pipeline_columns(id) on delete set null,
       student_pipeline_column_id uuid references app_pipeline_columns(id) on delete set null,
+      pre_enrollment_stage text check (
+        pre_enrollment_stage is null or pre_enrollment_stage in (
+          'Novo lead',
+          'Em contato',
+          'Qualificado',
+          'Proposta',
+          'Pagamento pendente',
+          'Confirmado',
+          'Recuperação'
+        )
+      ),
+      pre_enrollment_pipeline_column_id uuid references app_pipeline_columns(id) on delete set null,
       shared_queue boolean not null default false,
       created_by uuid references app_users(id) on delete set null,
       created_at timestamptz not null default now(),
@@ -174,6 +186,18 @@ export async function ensureCommercialSchema() {
     alter table app_leads add column if not exists payment_confirmed_at timestamptz;
     alter table app_leads add column if not exists pipeline_column_id uuid references app_pipeline_columns(id) on delete set null;
     alter table app_leads add column if not exists student_pipeline_column_id uuid references app_pipeline_columns(id) on delete set null;
+    alter table app_leads add column if not exists pre_enrollment_stage text check (
+      pre_enrollment_stage is null or pre_enrollment_stage in (
+        'Novo lead',
+        'Em contato',
+        'Qualificado',
+        'Proposta',
+        'Pagamento pendente',
+        'Confirmado',
+        'Recuperação'
+      )
+    );
+    alter table app_leads add column if not exists pre_enrollment_pipeline_column_id uuid references app_pipeline_columns(id) on delete set null;
     alter table app_leads add column if not exists shared_queue boolean not null default false;
 
     create index if not exists app_leads_unit_stage_idx on app_leads (unit_id, stage);
