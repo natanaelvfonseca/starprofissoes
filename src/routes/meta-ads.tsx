@@ -328,8 +328,23 @@ function MetaAdsPage() {
   }
 
   function connectWithMeta() {
+    const width = 600;
+    const height = 750;
+    const left = window.screenX + (window.outerWidth - width) / 2;
+    const top = window.screenY + (window.outerHeight - height) / 2;
+    const popup = window.open(
+      META_CONNECT_URL,
+      "meta_oauth",
+      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`,
+    );
+
+    if (!popup) {
+      toast.error("O navegador bloqueou a janela da Meta. Permita popups e tente novamente.");
+      return;
+    }
+
+    popup.focus();
     setMetaConnectionStatus("connecting");
-    window.location.href = META_CONNECT_URL;
   }
 
   function editForm(form: MetaForm) {
