@@ -18,6 +18,11 @@ export type LeadMatchCandidate = {
   createdAt: string;
 };
 
+export type PipelineColumnCandidate = {
+  id: string;
+  name: string;
+};
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -29,7 +34,9 @@ export function digitsOnly(value: unknown) {
 }
 
 export function phoneFromWhatsappJid(value: unknown) {
-  const jid = String(value ?? "").trim().toLowerCase();
+  const jid = String(value ?? "")
+    .trim()
+    .toLowerCase();
 
   if (!jid || jid.endsWith("@g.us") || jid.endsWith("@lid")) {
     return "";
@@ -72,6 +79,30 @@ export function phonesMatch(first: unknown, second: unknown) {
   }
 
   return false;
+}
+
+export function normalizeWhatsappLabelName(value: unknown) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("pt-BR");
+}
+
+export function choosePipelineColumnByLabelName<T extends PipelineColumnCandidate>(
+  columns: Array<T>,
+  labelName: string,
+) {
+  const normalizedLabel = normalizeWhatsappLabelName(labelName);
+  const matches = normalizedLabel
+    ? columns.filter((column) => normalizeWhatsappLabelName(column.name) === normalizedLabel)
+    : [];
+
+  return {
+    column: matches.length === 1 ? matches[0] : null,
+    ambiguous: matches.length > 1,
+  };
 }
 
 export function parseWhatsappLabelAssociation(payload: unknown): WhatsappLabelAssociation | null {

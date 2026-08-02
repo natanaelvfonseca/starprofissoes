@@ -145,10 +145,6 @@ export function canViewSalesAi(role: UserRole) {
   return canViewAttendances(role) || role === "CONSULTOR";
 }
 
-export function canManageWhatsappLabelAutomation(role: UserRole) {
-  return canViewAttendances(role);
-}
-
 export function canManageBrandPlen(role: UserRole) {
   return isMasterRole(role) || role === "MARKETING";
 }

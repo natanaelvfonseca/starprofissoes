@@ -51,7 +51,6 @@ import { Route as ApiHealthDbRouteImport } from './routes/api/health/db'
 import { Route as ApiIaComercialAnalisesRouteImport } from './routes/api/ia-comercial.analises'
 import { Route as ApiIaComercialScriptsRouteImport } from './routes/api/ia-comercial.scripts'
 import { Route as ApiIntegrationsEvolutionRouteImport } from './routes/api/integrations/evolution'
-import { Route as ApiIntegrationsEvolutionLabelsRouteImport } from './routes/api/integrations/evolution-labels'
 import { Route as ApiMetaConnectUrlRouteImport } from './routes/api/meta/connect-url'
 import { Route as ApiMetaOauthCompleteRouteImport } from './routes/api/meta/oauth-complete'
 import { Route as ApiTrainingVideoRouteImport } from './routes/api/training.video'
@@ -274,12 +273,6 @@ const ApiIntegrationsEvolutionRoute =
     path: '/api/integrations/evolution',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiIntegrationsEvolutionLabelsRoute =
-  ApiIntegrationsEvolutionLabelsRouteImport.update({
-    id: '/api/integrations/evolution-labels',
-    path: '/api/integrations/evolution-labels',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const ApiMetaConnectUrlRoute = ApiMetaConnectUrlRouteImport.update({
   id: '/api/meta/connect-url',
   path: '/api/meta/connect-url',
@@ -370,7 +363,6 @@ export interface FileRoutesByFullPath {
   '/api/ia-comercial/analises': typeof ApiIaComercialAnalisesRoute
   '/api/ia-comercial/scripts': typeof ApiIaComercialScriptsRoute
   '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
-  '/api/integrations/evolution-labels': typeof ApiIntegrationsEvolutionLabelsRoute
   '/api/meta/connect-url': typeof ApiMetaConnectUrlRoute
   '/api/meta/oauth-complete': typeof ApiMetaOauthCompleteRoute
   '/api/training/video': typeof ApiTrainingVideoRoute
@@ -424,7 +416,6 @@ export interface FileRoutesByTo {
   '/api/ia-comercial/analises': typeof ApiIaComercialAnalisesRoute
   '/api/ia-comercial/scripts': typeof ApiIaComercialScriptsRoute
   '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
-  '/api/integrations/evolution-labels': typeof ApiIntegrationsEvolutionLabelsRoute
   '/api/meta/connect-url': typeof ApiMetaConnectUrlRoute
   '/api/meta/oauth-complete': typeof ApiMetaOauthCompleteRoute
   '/api/training/video': typeof ApiTrainingVideoRoute
@@ -479,7 +470,6 @@ export interface FileRoutesById {
   '/api/ia-comercial/analises': typeof ApiIaComercialAnalisesRoute
   '/api/ia-comercial/scripts': typeof ApiIaComercialScriptsRoute
   '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
-  '/api/integrations/evolution-labels': typeof ApiIntegrationsEvolutionLabelsRoute
   '/api/meta/connect-url': typeof ApiMetaConnectUrlRoute
   '/api/meta/oauth-complete': typeof ApiMetaOauthCompleteRoute
   '/api/training/video': typeof ApiTrainingVideoRoute
@@ -535,7 +525,6 @@ export interface FileRouteTypes {
     | '/api/ia-comercial/analises'
     | '/api/ia-comercial/scripts'
     | '/api/integrations/evolution'
-    | '/api/integrations/evolution-labels'
     | '/api/meta/connect-url'
     | '/api/meta/oauth-complete'
     | '/api/training/video'
@@ -589,7 +578,6 @@ export interface FileRouteTypes {
     | '/api/ia-comercial/analises'
     | '/api/ia-comercial/scripts'
     | '/api/integrations/evolution'
-    | '/api/integrations/evolution-labels'
     | '/api/meta/connect-url'
     | '/api/meta/oauth-complete'
     | '/api/training/video'
@@ -643,7 +631,6 @@ export interface FileRouteTypes {
     | '/api/ia-comercial/analises'
     | '/api/ia-comercial/scripts'
     | '/api/integrations/evolution'
-    | '/api/integrations/evolution-labels'
     | '/api/meta/connect-url'
     | '/api/meta/oauth-complete'
     | '/api/training/video'
@@ -694,7 +681,6 @@ export interface RootRouteChildren {
   ApiGestaoPipelineColumnsRoute: typeof ApiGestaoPipelineColumnsRoute
   ApiHealthDbRoute: typeof ApiHealthDbRoute
   ApiIntegrationsEvolutionRoute: typeof ApiIntegrationsEvolutionRoute
-  ApiIntegrationsEvolutionLabelsRoute: typeof ApiIntegrationsEvolutionLabelsRoute
   ApiMetaConnectUrlRoute: typeof ApiMetaConnectUrlRoute
   ApiMetaOauthCompleteRoute: typeof ApiMetaOauthCompleteRoute
   ApiWebhooksEvolutionRoute: typeof ApiWebhooksEvolutionRoute
@@ -997,13 +983,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiIntegrationsEvolutionRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/integrations/evolution-labels': {
-      id: '/api/integrations/evolution-labels'
-      path: '/api/integrations/evolution-labels'
-      fullPath: '/api/integrations/evolution-labels'
-      preLoaderRoute: typeof ApiIntegrationsEvolutionLabelsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/meta/connect-url': {
       id: '/api/meta/connect-url'
       path: '/api/meta/connect-url'
@@ -1193,7 +1172,6 @@ const rootRouteChildren: RootRouteChildren = {
   ApiGestaoPipelineColumnsRoute: ApiGestaoPipelineColumnsRoute,
   ApiHealthDbRoute: ApiHealthDbRoute,
   ApiIntegrationsEvolutionRoute: ApiIntegrationsEvolutionRoute,
-  ApiIntegrationsEvolutionLabelsRoute: ApiIntegrationsEvolutionLabelsRoute,
   ApiMetaConnectUrlRoute: ApiMetaConnectUrlRoute,
   ApiMetaOauthCompleteRoute: ApiMetaOauthCompleteRoute,
   ApiWebhooksEvolutionRoute: ApiWebhooksEvolutionRoute,
