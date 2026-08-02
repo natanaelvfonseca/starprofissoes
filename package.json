@@ -9,6 +9,7 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
+    "test:meta-disconnect": "node --test tests/meta-disconnect.test.ts",
     "format": "prettier --write ."
   },
   "dependencies": {

@@ -19,6 +19,16 @@ import {
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -144,6 +154,8 @@ type MetaState = {
 
 type MetaConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
+type MetaDisconnectTarget = { scope: "page"; page: MetaPage } | { scope: "all" };
+
 type FormDraft = {
   id: string;
   pageDbId: string;
@@ -243,6 +255,8 @@ function MetaAdsPage() {
     React.useState<MetaConnectionStatus>("disconnected");
   const [formDialogOpen, setFormDialogOpen] = React.useState(false);
   const [formDraft, setFormDraft] = React.useState<FormDraft>(emptyFormDraft);
+  const [metaDisconnectTarget, setMetaDisconnectTarget] =
+    React.useState<MetaDisconnectTarget | null>(null);
   const metaOAuthPopupTimerRef = React.useRef<ReturnType<typeof window.setInterval> | null>(null);
   const metaOAuthSucceededRef = React.useRef(false);
   const metaConnectionStatusBeforeOAuthRef = React.useRef<MetaConnectionStatus>("disconnected");
@@ -337,7 +351,9 @@ function MetaAdsPage() {
   }
 
   async function syncConnectedAssets() {
-    const connectedPages = (data?.pages ?? []).filter((page) => page.status === "active");
+    const connectedPages = (data?.pages ?? []).filter(
+      (page) => page.status === "active" && Boolean(page.tokenMasked),
+    );
 
     if (!connectedPages.length) return;
 
@@ -358,6 +374,38 @@ function MetaAdsPage() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao sincronizar a Meta.");
     } finally {
+      setWorkingKey("");
+    }
+  }
+
+  async function disconnectMetaTarget() {
+    if (!metaDisconnectTarget) return;
+
+    const disconnectingAll = metaDisconnectTarget.scope === "all";
+    const key = disconnectingAll
+      ? "disconnectMeta"
+      : `disconnectPage-${metaDisconnectTarget.page.id}`;
+    const body = disconnectingAll
+      ? { action: "disconnectMeta" }
+      : { action: "disconnectPage", pageId: metaDisconnectTarget.page.id };
+
+    setWorkingKey(key);
+
+    try {
+      await readJson(
+        await fetch("/api/meta-ads", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify(body),
+        }),
+      );
+      toast.success(disconnectingAll ? "Meta desconectada." : "Página desconectada.");
+      setMetaDisconnectTarget(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao desconectar a Meta.");
+    } finally {
+      await loadData();
       setWorkingKey("");
     }
   }
@@ -514,8 +562,11 @@ function MetaAdsPage() {
             canManage={canManage}
             canConnect={canConnect}
             syncing={workingKey === "syncConnection"}
+            disconnecting={workingKey.startsWith("disconnect")}
             onConnect={connectWithMeta}
             onSync={() => void syncConnectedAssets()}
+            onDisconnectPage={(page) => setMetaDisconnectTarget({ scope: "page", page })}
+            onDisconnectAll={() => setMetaDisconnectTarget({ scope: "all" })}
           />
         </TabsContent>
 
@@ -783,6 +834,48 @@ function MetaAdsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={Boolean(metaDisconnectTarget)}
+        onOpenChange={(open) =>
+          !open && !workingKey.startsWith("disconnect") && setMetaDisconnectTarget(null)
+        }
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {metaDisconnectTarget?.scope === "all"
+                ? "Desconectar a Meta da Star Profissões?"
+                : "Desconectar esta página?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {metaDisconnectTarget?.scope === "all"
+                ? "Todas as páginas conectadas deixarão de enviar novos leads para o CRM. Os dados e leads existentes serão preservados."
+                : "A Star deixará de receber novos leads e sincronizar formulários desta página. Os leads que já entraram no CRM serão preservados."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={workingKey.startsWith("disconnect")}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={workingKey.startsWith("disconnect")}
+              onClick={(event) => {
+                event.preventDefault();
+                void disconnectMetaTarget();
+              }}
+            >
+              {workingKey.startsWith("disconnect") ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <Unplug />
+              )}
+              {metaDisconnectTarget?.scope === "all" ? "Desconectar Meta" : "Desconectar página"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -795,8 +888,11 @@ function MetaConnectionPanel({
   canManage,
   canConnect,
   syncing,
+  disconnecting,
   onConnect,
   onSync,
+  onDisconnectPage,
+  onDisconnectAll,
 }: {
   status: MetaConnectionStatus;
   pages: Array<MetaPage>;
@@ -805,10 +901,15 @@ function MetaConnectionPanel({
   canManage: boolean;
   canConnect: boolean;
   syncing: boolean;
+  disconnecting: boolean;
   onConnect: () => void;
   onSync: () => void;
+  onDisconnectPage: (page: MetaPage) => void;
+  onDisconnectAll: () => void;
 }) {
-  const connectedPages = pages.filter((page) => page.status === "active");
+  const connectedPages = pages.filter(
+    (page) => page.status === "active" && Boolean(page.tokenMasked),
+  );
   const primaryPage = connectedPages[0] ?? null;
 
   if (loading && !pages.length) {
@@ -942,23 +1043,20 @@ function MetaConnectionPanel({
               {syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />}
               Sincronizar agora
             </Button>
-            <Button variant="outline" disabled title="Disponível após a conclusão do fluxo OAuth">
+            <Button variant="outline" onClick={onConnect} disabled={!canConnect || disconnecting}>
               <Settings2 />
               Gerenciar conexão
             </Button>
             <Button
               variant="ghost"
-              className="text-muted-foreground"
-              disabled
-              title="Disponível após a conclusão do fluxo OAuth"
+              className="text-destructive hover:text-destructive"
+              onClick={onDisconnectAll}
+              disabled={!canManage || !connectedPages.length || disconnecting}
             >
               <Unplug />
               Desconectar Meta
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Gerenciamento e desconexão estarão disponíveis quando o retorno OAuth estiver ativo.
-          </p>
         </CardContent>
       </Card>
 
@@ -973,7 +1071,7 @@ function MetaConnectionPanel({
           {connectedPages.map((page) => (
             <div
               key={page.id}
-              className="flex items-center justify-between gap-4 rounded-xl border bg-muted/20 p-4"
+              className="flex flex-col gap-4 rounded-xl border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="flex min-w-0 items-center gap-3">
                 <div className="rounded-lg bg-[#0866ff]/10 p-2 text-[#0866ff]">
@@ -983,11 +1081,23 @@ function MetaConnectionPanel({
                   <p className="text-xs text-muted-foreground">Página</p>
                   <p className="truncate font-semibold">{page.page_name}</p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {page.formsCount} formulário(s) autorizado(s)
+                    ID: {page.page_id} · {page.formsCount} formulário(s)
                   </p>
                 </div>
               </div>
-              <Badge className="shrink-0 bg-emerald-100 text-emerald-700">Conectado</Badge>
+              <div className="flex shrink-0 items-center gap-2">
+                <Badge className="bg-emerald-100 text-emerald-700">Conectado</Badge>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => onDisconnectPage(page)}
+                  disabled={!canManage || disconnecting}
+                >
+                  <Unplug />
+                  Desconectar página
+                </Button>
+              </div>
             </div>
           ))}
           <div className="flex items-center justify-between gap-4 rounded-xl border border-dashed bg-muted/10 p-4">

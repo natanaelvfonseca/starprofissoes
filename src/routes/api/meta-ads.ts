@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { canManageMetaAds, canViewMetaAds } from "@/lib/auth-types";
 import { getSessionFromRequest } from "@/lib/server/auth";
 import {
+  disconnectAllMetaPages,
+  disconnectMetaPage,
   duplicateMetaForm,
   listMetaState,
   reprocessMetaEvent,
@@ -67,6 +69,14 @@ export const Route = createFileRoute("/api/meta-ads")({
           }
           if (action === "subscribePage") {
             return Response.json({ result: await subscribeMetaPage(String(body?.pageDbId ?? "")) });
+          }
+          if (action === "disconnectPage") {
+            return Response.json({
+              result: await disconnectMetaPage(String(body?.pageId ?? "")),
+            });
+          }
+          if (action === "disconnectMeta") {
+            return Response.json({ result: await disconnectAllMetaPages() });
           }
           if (action === "reprocessEvent") {
             return Response.json({ result: await reprocessMetaEvent(String(body?.eventId ?? "")) });

@@ -9,6 +9,10 @@ import {
   parseCampaignRoute,
 } from "@/lib/server/course-attendances";
 import { queryDb, withTransaction } from "@/lib/server/db";
+import {
+  isMetaConnectionAlreadyUnavailable,
+  type MetaGraphErrorPayload,
+} from "@/lib/server/meta-disconnect";
 
 export type MetaDistributionRule =
   | "fixed"
@@ -1684,6 +1688,203 @@ export async function subscribeMetaPage(pageDbId: string) {
   return { subscribed };
 }
 
+async function unsubscribeMetaPage(page: MetaPageRow, graphApiVersion: string) {
+  const token = decryptPageToken(page.page_access_token_encrypted);
+
+  if (!token) {
+    return { alreadyDisconnected: true };
+  }
+
+  let response: Response;
+
+  try {
+    response = await fetch(
+      `https://graph.facebook.com/${graphApiVersion}/${encodeURIComponent(page.page_id)}/subscribed_apps`,
+      {
+        method: "DELETE",
+        body: new URLSearchParams({ access_token: token }),
+      },
+    );
+  } catch (error) {
+    console.error("[Meta Ads] Falha de rede ao desinscrever página", {
+      pageDbId: page.id,
+      metaPageId: page.page_id,
+      error: error instanceof Error ? error.message : "Erro desconhecido",
+    });
+    throw new Error("Não foi possível contatar a Meta para desconectar a página. Tente novamente.");
+  }
+
+  const data = (await response.json().catch(() => ({}))) as MetaGraphErrorPayload;
+
+  if (response.ok && data.success !== false) {
+    return { alreadyDisconnected: false };
+  }
+
+  if (isMetaConnectionAlreadyUnavailable(data)) {
+    return { alreadyDisconnected: true };
+  }
+
+  console.error("[Meta Ads] Falha ao desinscrever página", {
+    pageDbId: page.id,
+    metaPageId: page.page_id,
+    httpStatus: response.status,
+    code: data.error?.code,
+    subcode: data.error?.error_subcode,
+    type: data.error?.type,
+    message: data.error?.message,
+  });
+
+  throw new Error(
+    "A Meta não confirmou a desinscrição da página. Tente novamente antes de remover a conexão.",
+  );
+}
+
+export async function disconnectMetaPage(pageDbId: string) {
+  if (!isUuid(pageDbId)) {
+    throw new Error("Página inválida.");
+  }
+
+  const integration = await ensureMetaIntegration();
+  return withTransaction(async (client) => {
+    const pageResult = await client.query<MetaPageRow>(
+      `
+        select p.*, '0'::text as forms_count,
+          p.created_at::text, p.updated_at::text, p.last_validated_at::text
+        from app_meta_pages p
+        where p.id = $1
+        limit 1
+        for update
+      `,
+      [pageDbId],
+    );
+    const page = pageResult.rows[0];
+
+    if (!page) {
+      throw new Error("Página não encontrada.");
+    }
+
+    const { alreadyDisconnected } = await unsubscribeMetaPage(
+      page,
+      integration.graph_api_version || "v23.0",
+    );
+
+    await client.query(
+      `
+        update app_meta_forms
+        set status = 'inactive', updated_at = now()
+        where page_id = $1
+      `,
+      [page.id],
+    );
+
+    await client.query(
+      `
+        update app_meta_pages
+        set page_access_token_encrypted = null,
+            token_status = 'invalid',
+            subscription_status = 'not_subscribed',
+            status = 'inactive',
+            last_error = null,
+            updated_at = now()
+        where id = $1
+      `,
+      [page.id],
+    );
+
+    await client.query(
+      `
+        update app_meta_integrations
+        set status = case
+              when exists (
+                select 1
+                from app_meta_pages
+                where integration_id = $1
+                  and status = 'active'
+                  and page_access_token_encrypted is not null
+              ) then 'active'
+              else 'inactive'
+            end,
+            updated_at = now()
+        where id = $1
+      `,
+      [page.integration_id],
+    );
+
+    return {
+      disconnected: true,
+      alreadyDisconnected,
+      page: { id: page.id, pageId: page.page_id, name: page.page_name },
+    };
+  });
+}
+
+export async function disconnectAllMetaPages() {
+  const integration = await ensureMetaIntegration();
+  const pagesResult = await queryDb<{ id: string }>(
+    `
+      select id
+      from app_meta_pages
+      where integration_id = $1
+        and (status = 'active' or page_access_token_encrypted is not null)
+      order by created_at asc
+    `,
+    [integration.id],
+  );
+  const disconnectedPages = [];
+
+  for (const page of pagesResult.rows) {
+    disconnectedPages.push(await disconnectMetaPage(page.id));
+  }
+
+  const remainingConnectedPages = await withTransaction(async (client) => {
+    await client.query(
+      `
+        update app_meta_forms f
+        set status = 'inactive', updated_at = now()
+        where exists (
+          select 1
+          from app_meta_pages p
+          where p.id = f.page_id
+            and p.integration_id = $1
+            and (p.status <> 'active' or p.page_access_token_encrypted is null)
+        )
+      `,
+      [integration.id],
+    );
+
+    const remainingResult = await client.query<{ count: string }>(
+      `
+        select count(*)::text as count
+        from app_meta_pages
+        where integration_id = $1
+          and status = 'active'
+          and page_access_token_encrypted is not null
+      `,
+      [integration.id],
+    );
+    const count = Number(remainingResult.rows[0]?.count ?? 0);
+
+    await client.query(
+      `
+        update app_meta_integrations
+        set status = $2, updated_at = now()
+        where id = $1
+      `,
+      [integration.id, count > 0 ? "active" : "inactive"],
+    );
+
+    return count;
+  });
+
+  if (remainingConnectedPages > 0) {
+    throw new Error(
+      "Uma nova página foi conectada durante a operação. Recarregue a tela e tente novamente.",
+    );
+  }
+
+  return { disconnected: true, count: disconnectedPages.length, pages: disconnectedPages };
+}
+
 async function candidateConsultants(client: PoolClient, form: MetaFormRow) {
   if (!form.unit_id) {
     return [];
@@ -2334,6 +2535,11 @@ export async function receiveMetaWebhook(rawBody: string, signature: string | nu
     [parsed.pageId],
   );
   const page = pageResult.rows[0] ?? null;
+
+  if (page && (page.status !== "active" || !page.page_access_token_encrypted)) {
+    return { ok: true, status: 200, result: "ignored_disconnected_page" };
+  }
+
   let leadPayload = leadPayloadFromWebhookValue(parsed.value, parsed);
   let leadFetchError: string | null = null;
 
