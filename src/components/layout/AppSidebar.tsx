@@ -53,7 +53,6 @@ type NavigationItem = {
   systemFeedbackOnly?: boolean;
   attendancesOnly?: boolean;
   devOnly?: boolean;
-  metaAdsOnly?: boolean;
 };
 
 type NavigationGroup = {
@@ -76,10 +75,7 @@ const groups: Array<NavigationGroup> = [
   },
   {
     label: "Crescimento",
-    items: [
-      { title: "Relatórios", url: "/bi", icon: ChartNoAxesCombined },
-      { title: "Meta Ads", url: "/meta-ads", icon: Megaphone, metaAdsOnly: true },
-    ],
+    items: [{ title: "Relatórios", url: "/bi", icon: ChartNoAxesCombined }],
   },
   {
     label: "Área de Membros",
@@ -126,24 +122,25 @@ export function AppSidebar() {
           (!item.studentViewOnly || canViewStudentList) &&
           (!item.systemFeedbackOnly || canViewSystemFeedback) &&
           (!item.attendancesOnly || canSeeAttendances) &&
-          (!item.devOnly || user?.role === "DEV") &&
-          (!item.metaAdsOnly || (user ? canViewMetaAds(user.role) : false)),
+          (!item.devOnly || user?.role === "DEV"),
       ),
     }))
     .filter((group) => group.items.length > 0);
-  const navGroups = session?.canRegisterUsers
-    ? [
-        ...visibleGroups,
-        {
-          label: "Administração",
-          items: [
-            { title: "Usuários", url: "/usuarios", icon: UsersRound },
-            ...(user && canManageUnits(user.role)
-              ? [{ title: "Unidades", url: "/unidades", icon: MapPinned }]
-              : []),
-          ],
-        },
-      ]
+  const administrationItems: Array<NavigationItem> = [
+    ...(user && canViewMetaAds(user.role)
+      ? [{ title: "Meta Ads", url: "/meta-ads", icon: Megaphone }]
+      : []),
+    ...(session?.canRegisterUsers
+      ? [
+          { title: "Usuários", url: "/usuarios", icon: UsersRound },
+          ...(user && canManageUnits(user.role)
+            ? [{ title: "Unidades", url: "/unidades", icon: MapPinned }]
+            : []),
+        ]
+      : []),
+  ];
+  const navGroups = administrationItems.length
+    ? [...visibleGroups, { label: "Administração", items: administrationItems }]
     : visibleGroups;
 
   return (
