@@ -243,8 +243,18 @@ function MetaAdsPage() {
     React.useState<MetaConnectionStatus>("disconnected");
   const [formDialogOpen, setFormDialogOpen] = React.useState(false);
   const [formDraft, setFormDraft] = React.useState<FormDraft>(emptyFormDraft);
+  const metaOAuthPopupTimerRef = React.useRef<ReturnType<typeof window.setInterval> | null>(null);
+  const metaOAuthSucceededRef = React.useRef(false);
+  const metaConnectionStatusBeforeOAuthRef = React.useRef<MetaConnectionStatus>("disconnected");
   const canManage = session ? canManageMetaAds(session.user.role) : false;
   const canConnect = session ? canConnectMetaAds(session.user.role) : false;
+
+  const stopMetaOAuthPopupMonitor = React.useCallback(() => {
+    if (metaOAuthPopupTimerRef.current !== null) {
+      window.clearInterval(metaOAuthPopupTimerRef.current);
+      metaOAuthPopupTimerRef.current = null;
+    }
+  }, []);
 
   const loadData = React.useCallback(
     async (query = appliedSearch) => {
@@ -270,6 +280,32 @@ function MetaAdsPage() {
   React.useEffect(() => {
     if (session && canViewMetaAds(session.user.role)) void loadData();
   }, [loadData, session]);
+
+  React.useEffect(() => {
+    const handleMetaOAuthMessage = (event: MessageEvent) => {
+      if (event.origin !== "https://kogna.online" || event.data?.type !== "META_OAUTH_SUCCESS") {
+        return;
+      }
+
+      metaOAuthSucceededRef.current = true;
+      stopMetaOAuthPopupMonitor();
+      setMetaConnectionStatus((current) =>
+        current === "connecting" ? metaConnectionStatusBeforeOAuthRef.current : current,
+      );
+      void loadData();
+    };
+
+    window.addEventListener("message", handleMetaOAuthMessage);
+
+    return () => window.removeEventListener("message", handleMetaOAuthMessage);
+  }, [loadData, stopMetaOAuthPopupMonitor]);
+
+  React.useEffect(
+    () => () => {
+      stopMetaOAuthPopupMonitor();
+    },
+    [stopMetaOAuthPopupMonitor],
+  );
 
   if (session && !canViewMetaAds(session.user.role)) return <Navigate to="/" />;
 
@@ -342,6 +378,23 @@ function MetaAdsPage() {
       return;
     }
 
+    stopMetaOAuthPopupMonitor();
+    metaOAuthSucceededRef.current = false;
+    metaConnectionStatusBeforeOAuthRef.current = metaConnectionStatus;
+    metaOAuthPopupTimerRef.current = window.setInterval(() => {
+      if (!popup.closed) {
+        return;
+      }
+
+      stopMetaOAuthPopupMonitor();
+
+      if (!metaOAuthSucceededRef.current) {
+        setMetaConnectionStatus((current) =>
+          current === "connecting" ? metaConnectionStatusBeforeOAuthRef.current : current,
+        );
+      }
+    }, 500);
+
     popup.focus();
     setMetaConnectionStatus("connecting");
 
@@ -360,7 +413,13 @@ function MetaAdsPage() {
 
       popup.location.href = data.url;
     } catch (error) {
-      setMetaConnectionStatus(data ? connectionStatusFromState(data) : "disconnected");
+      stopMetaOAuthPopupMonitor();
+
+      if (!popup.closed) {
+        popup.close();
+      }
+
+      setMetaConnectionStatus(metaConnectionStatusBeforeOAuthRef.current);
       toast.error(error instanceof Error ? error.message : "Falha ao iniciar a conexão Meta.");
     }
   }
