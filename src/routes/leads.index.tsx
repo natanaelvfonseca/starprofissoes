@@ -4,7 +4,7 @@ import { Filter, Lock, Search, Trash2, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import type { LeadRecord } from "@/lib/commercial-types";
 import { useAuth } from "@/lib/auth";
-import { canViewStudents } from "@/lib/auth-types";
+import { canTransferLeads, canViewStudents } from "@/lib/auth-types";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Badge } from "@/components/ui/badge";
@@ -72,7 +72,10 @@ export const Route = createFileRoute("/leads/")({
 function LeadsList() {
   const { session } = useAuth();
   const activeUnitId = session?.activeUnit?.id ?? "";
-  const canViewStudentList = session ? canViewStudents(session.user.role) : false;  const [leads, setLeads] = React.useState<Array<LeadRecord>>([]);
+  const canViewStudentList = session ? canViewStudents(session.user.role) : false;
+  const canRemoveStudents = session ? canTransferLeads(session.user.role) : false;
+  const isConsultant = session?.user.role === "CONSULTOR";
+  const [leads, setLeads] = React.useState<Array<LeadRecord>>([]);
   const [search, setSearch] = React.useState("");
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [filters, setFilters] = React.useState<StudentFilters>(() => emptyStudentFilters());
@@ -206,10 +209,15 @@ function LeadsList() {
   }
 
   return (
-    <div>      <PageHeader
+    <div>
+      <PageHeader
         eyebrow="Comercial"
         title="Alunos"
-        description="Base de alunos convertidos quando a taxa foi confirmada no CRM Pipeline."
+        description={
+          isConsultant
+            ? "Seus alunos convertidos quando a taxa foi confirmada no CRM Pipeline."
+            : "Base de alunos convertidos quando a taxa foi confirmada no CRM Pipeline."
+        }
       />
       <Card className="shadow-card">
         <div className="border-b border-border p-4">
@@ -345,13 +353,18 @@ function LeadsList() {
               <TableHead>Origem</TableHead>
               <TableHead>Situação</TableHead>
               <TableHead className="text-right">Valor</TableHead>
-              <TableHead className="w-[72px] text-right">Ações</TableHead>
+              {canRemoveStudents ? (
+                <TableHead className="w-[72px] text-right">Ações</TableHead>
+              ) : null}
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                <TableCell
+                  colSpan={canRemoveStudents ? 8 : 7}
+                  className="h-24 text-center text-muted-foreground"
+                >
                   Carregando alunos...
                 </TableCell>
               </TableRow>
@@ -382,25 +395,27 @@ function LeadsList() {
                         })
                       : "--"}
                   </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => void handleRemoveStudent(lead)}
-                      disabled={removingLeadId === lead.id}
-                      aria-label={`Remover ${lead.fullName}`}
-                      title="Remover cliente"
-                      className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
+                  {canRemoveStudents ? (
+                    <TableCell className="text-right">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => void handleRemoveStudent(lead)}
+                        disabled={removingLeadId === lead.id}
+                        aria-label={`Remover ${lead.fullName}`}
+                        title="Remover cliente"
+                        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  ) : null}
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={8} className="p-4">
+                <TableCell colSpan={canRemoveStudents ? 8 : 7} className="p-4">
                   <EmptyState
                     icon={Users}
                     title="Nenhum aluno convertido"
@@ -425,7 +440,7 @@ function StudentsAccessDenied() {
         </div>
         <h1 className="text-xl font-bold">Acesso restrito</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          A lista de alunos fica disponível para liderança e administração.
+          A lista de alunos não está disponível para este perfil.
         </p>
       </div>
     </div>

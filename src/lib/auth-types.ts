@@ -86,7 +86,7 @@ export function canManageUnits(role: UserRole) {
 }
 
 export function canViewGrowth(role: UserRole) {
-  return USER_ROLES.includes(role);
+  return role !== "CONSULTOR";
 }
 
 export function canViewNetworkGrowth(role: UserRole) {
@@ -104,7 +104,13 @@ export function canViewManagement(role: UserRole) {
 }
 
 export function canViewStudents(role: UserRole) {
-  return isMasterRole(role) || isExecutiveRole(role) || role === "DIRETOR" || role === "GERENTE";
+  return (
+    isMasterRole(role) ||
+    isExecutiveRole(role) ||
+    role === "DIRETOR" ||
+    role === "GERENTE" ||
+    role === "CONSULTOR"
+  );
 }
 
 export function canTransferLeads(role: UserRole) {

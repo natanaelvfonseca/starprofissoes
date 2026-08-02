@@ -1,5 +1,5 @@
 import * as React from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
 import {
   Activity,
   BarChart3,
@@ -51,7 +51,7 @@ import {
   metricValue,
 } from "@/components/growth/GrowthDashboardPrimitives";
 import { useAuth } from "@/lib/auth";
-import { canViewNetworkGrowth } from "@/lib/auth-types";
+import { canViewGrowth, canViewNetworkGrowth } from "@/lib/auth-types";
 import { useGrowthData } from "@/lib/use-growth-data";
 
 const chartColors = [
@@ -101,6 +101,7 @@ function BI() {
     Array<{ id: string; name: string; status: "active" | "inactive" }>
   >([]);
   const canViewNetwork = session ? canViewNetworkGrowth(session.user.role) : false;
+  const canViewReports = session ? canViewGrowth(session.user.role) : false;
   const activeUnitId = session?.activeUnit?.id ?? "";
 
   React.useEffect(() => {
@@ -115,7 +116,7 @@ function BI() {
 
   const { data, loading } = useGrowthData(
     scopeValue,
-    Boolean(session && scopeValue),
+    Boolean(session && scopeValue && canViewReports),
     periodDays,
     attendanceId === "all" ? "" : attendanceId,
   );
@@ -132,6 +133,14 @@ function BI() {
   const sourceMax = Math.max(...(data?.sources.map((item) => item.leads) ?? [0]), 1);
   const sourcePie = data?.sources.map((item) => ({ name: item.source, value: item.leads })) ?? [];
   const funnelData = data?.funnel.filter((item) => item.leads > 0) ?? [];
+
+  if (authLoading) {
+    return null;
+  }
+
+  if (session && !canViewReports) {
+    return <Navigate to="/leads" replace />;
+  }
 
   return (
     <div className="space-y-6">
