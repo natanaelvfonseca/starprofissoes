@@ -17,12 +17,14 @@ import { Route as FeedbackRouteImport } from './routes/feedback'
 import { Route as FinanceiroRouteImport } from './routes/financeiro'
 import { Route as IaComercialRouteImport } from './routes/ia-comercial'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as MetaAdsRouteImport } from './routes/meta-ads'
 import { Route as PerfilRouteImport } from './routes/perfil'
 import { Route as TreinamentosRouteImport } from './routes/treinamentos'
 import { Route as UnidadesRouteImport } from './routes/unidades'
 import { Route as UsuariosRouteImport } from './routes/usuarios'
 import { Route as ApiGrowthRouteImport } from './routes/api/growth'
 import { Route as ApiIaComercialRouteImport } from './routes/api/ia-comercial'
+import { Route as ApiMetaAdsRouteImport } from './routes/api/meta-ads'
 import { Route as ApiProfileRouteImport } from './routes/api/profile'
 import { Route as ApiSystemFeedbackRouteImport } from './routes/api/system-feedback'
 import { Route as ApiSystemSettingsRouteImport } from './routes/api/system-settings'
@@ -96,6 +98,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MetaAdsRoute = MetaAdsRouteImport.update({
+  id: '/meta-ads',
+  path: '/meta-ads',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PerfilRoute = PerfilRouteImport.update({
   id: '/perfil',
   path: '/perfil',
@@ -124,6 +131,11 @@ const ApiGrowthRoute = ApiGrowthRouteImport.update({
 const ApiIaComercialRoute = ApiIaComercialRouteImport.update({
   id: '/api/ia-comercial',
   path: '/api/ia-comercial',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMetaAdsRoute = ApiMetaAdsRouteImport.update({
+  id: '/api/meta-ads',
+  path: '/api/meta-ads',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiProfileRoute = ApiProfileRouteImport.update({
@@ -298,12 +310,14 @@ export interface FileRoutesByFullPath {
   '/financeiro': typeof FinanceiroRouteWithChildren
   '/ia-comercial': typeof IaComercialRoute
   '/login': typeof LoginRoute
+  '/meta-ads': typeof MetaAdsRoute
   '/perfil': typeof PerfilRoute
   '/treinamentos': typeof TreinamentosRoute
   '/unidades': typeof UnidadesRoute
   '/usuarios': typeof UsuariosRoute
   '/api/growth': typeof ApiGrowthRoute
   '/api/ia-comercial': typeof ApiIaComercialRouteWithChildren
+  '/api/meta-ads': typeof ApiMetaAdsRoute
   '/api/profile': typeof ApiProfileRoute
   '/api/system-feedback': typeof ApiSystemFeedbackRoute
   '/api/system-settings': typeof ApiSystemSettingsRoute
@@ -346,12 +360,14 @@ export interface FileRoutesByTo {
   '/financeiro': typeof FinanceiroRouteWithChildren
   '/ia-comercial': typeof IaComercialRoute
   '/login': typeof LoginRoute
+  '/meta-ads': typeof MetaAdsRoute
   '/perfil': typeof PerfilRoute
   '/treinamentos': typeof TreinamentosRoute
   '/unidades': typeof UnidadesRoute
   '/usuarios': typeof UsuariosRoute
   '/api/growth': typeof ApiGrowthRoute
   '/api/ia-comercial': typeof ApiIaComercialRouteWithChildren
+  '/api/meta-ads': typeof ApiMetaAdsRoute
   '/api/profile': typeof ApiProfileRoute
   '/api/system-feedback': typeof ApiSystemFeedbackRoute
   '/api/system-settings': typeof ApiSystemSettingsRoute
@@ -395,12 +411,14 @@ export interface FileRoutesById {
   '/financeiro': typeof FinanceiroRouteWithChildren
   '/ia-comercial': typeof IaComercialRoute
   '/login': typeof LoginRoute
+  '/meta-ads': typeof MetaAdsRoute
   '/perfil': typeof PerfilRoute
   '/treinamentos': typeof TreinamentosRoute
   '/unidades': typeof UnidadesRoute
   '/usuarios': typeof UsuariosRoute
   '/api/growth': typeof ApiGrowthRoute
   '/api/ia-comercial': typeof ApiIaComercialRouteWithChildren
+  '/api/meta-ads': typeof ApiMetaAdsRoute
   '/api/profile': typeof ApiProfileRoute
   '/api/system-feedback': typeof ApiSystemFeedbackRoute
   '/api/system-settings': typeof ApiSystemSettingsRoute
@@ -445,12 +463,14 @@ export interface FileRouteTypes {
     | '/financeiro'
     | '/ia-comercial'
     | '/login'
+    | '/meta-ads'
     | '/perfil'
     | '/treinamentos'
     | '/unidades'
     | '/usuarios'
     | '/api/growth'
     | '/api/ia-comercial'
+    | '/api/meta-ads'
     | '/api/profile'
     | '/api/system-feedback'
     | '/api/system-settings'
@@ -493,12 +513,14 @@ export interface FileRouteTypes {
     | '/financeiro'
     | '/ia-comercial'
     | '/login'
+    | '/meta-ads'
     | '/perfil'
     | '/treinamentos'
     | '/unidades'
     | '/usuarios'
     | '/api/growth'
     | '/api/ia-comercial'
+    | '/api/meta-ads'
     | '/api/profile'
     | '/api/system-feedback'
     | '/api/system-settings'
@@ -541,12 +563,14 @@ export interface FileRouteTypes {
     | '/financeiro'
     | '/ia-comercial'
     | '/login'
+    | '/meta-ads'
     | '/perfil'
     | '/treinamentos'
     | '/unidades'
     | '/usuarios'
     | '/api/growth'
     | '/api/ia-comercial'
+    | '/api/meta-ads'
     | '/api/profile'
     | '/api/system-feedback'
     | '/api/system-settings'
@@ -590,12 +614,14 @@ export interface RootRouteChildren {
   FinanceiroRoute: typeof FinanceiroRouteWithChildren
   IaComercialRoute: typeof IaComercialRoute
   LoginRoute: typeof LoginRoute
+  MetaAdsRoute: typeof MetaAdsRoute
   PerfilRoute: typeof PerfilRoute
   TreinamentosRoute: typeof TreinamentosRoute
   UnidadesRoute: typeof UnidadesRoute
   UsuariosRoute: typeof UsuariosRoute
   ApiGrowthRoute: typeof ApiGrowthRoute
   ApiIaComercialRoute: typeof ApiIaComercialRouteWithChildren
+  ApiMetaAdsRoute: typeof ApiMetaAdsRoute
   ApiProfileRoute: typeof ApiProfileRoute
   ApiSystemFeedbackRoute: typeof ApiSystemFeedbackRoute
   ApiSystemSettingsRoute: typeof ApiSystemSettingsRoute
@@ -679,6 +705,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/meta-ads': {
+      id: '/meta-ads'
+      path: '/meta-ads'
+      fullPath: '/meta-ads'
+      preLoaderRoute: typeof MetaAdsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/perfil': {
       id: '/perfil'
       path: '/perfil'
@@ -719,6 +752,13 @@ declare module '@tanstack/react-router' {
       path: '/api/ia-comercial'
       fullPath: '/api/ia-comercial'
       preLoaderRoute: typeof ApiIaComercialRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/meta-ads': {
+      id: '/api/meta-ads'
+      path: '/api/meta-ads'
+      fullPath: '/api/meta-ads'
+      preLoaderRoute: typeof ApiMetaAdsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/profile': {
@@ -1041,12 +1081,14 @@ const rootRouteChildren: RootRouteChildren = {
   FinanceiroRoute: FinanceiroRouteWithChildren,
   IaComercialRoute: IaComercialRoute,
   LoginRoute: LoginRoute,
+  MetaAdsRoute: MetaAdsRoute,
   PerfilRoute: PerfilRoute,
   TreinamentosRoute: TreinamentosRoute,
   UnidadesRoute: UnidadesRoute,
   UsuariosRoute: UsuariosRoute,
   ApiGrowthRoute: ApiGrowthRoute,
   ApiIaComercialRoute: ApiIaComercialRouteWithChildren,
+  ApiMetaAdsRoute: ApiMetaAdsRoute,
   ApiProfileRoute: ApiProfileRoute,
   ApiSystemFeedbackRoute: ApiSystemFeedbackRoute,
   ApiSystemSettingsRoute: ApiSystemSettingsRoute,

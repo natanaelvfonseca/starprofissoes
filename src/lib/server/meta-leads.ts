@@ -1213,16 +1213,17 @@ export async function listMetaState(searchValue = "") {
     ),
   ]);
 
+  const { app_secret: appSecret, verify_token: verifyToken, ...safeIntegration } = integration;
+
   return {
     integration: {
-      ...integration,
-      appSecret: integration.app_secret ? "configured" : null,
-      verifyToken: integration.verify_token ? "configured" : null,
+      ...safeIntegration,
+      appSecret: appSecret ? "configured" : null,
+      verifyToken: verifyToken ? "configured" : null,
     },
-    pages: pagesResult.rows.map((page) => ({
+    pages: pagesResult.rows.map(({ page_access_token_encrypted: encryptedToken, ...page }) => ({
       ...page,
-      tokenMasked: maskToken(page.page_access_token_encrypted),
-      pageAccessTokenEncrypted: undefined,
+      tokenMasked: maskToken(encryptedToken),
       formsCount: Number(page.forms_count) || 0,
     })),
     forms: formsResult.rows.map((form) => ({

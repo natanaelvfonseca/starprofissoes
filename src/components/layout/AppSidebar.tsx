@@ -8,6 +8,7 @@ import {
   LibraryBig,
   LogOut,
   MapPinned,
+  Megaphone,
   MessagesSquare,
   UserRoundCheck,
   UsersRound,
@@ -36,6 +37,7 @@ import {
   canViewAttendances,
   canViewGrowth,
   canViewManagement,
+  canViewMetaAds,
   canViewStudents,
   getInitials,
   ROLE_LABELS,
@@ -51,6 +53,7 @@ type NavigationItem = {
   systemFeedbackOnly?: boolean;
   attendancesOnly?: boolean;
   devOnly?: boolean;
+  metaAdsOnly?: boolean;
 };
 
 type NavigationGroup = {
@@ -73,7 +76,10 @@ const groups: Array<NavigationGroup> = [
   },
   {
     label: "Crescimento",
-    items: [{ title: "Relatórios", url: "/bi", icon: ChartNoAxesCombined }],
+    items: [
+      { title: "Relatórios", url: "/bi", icon: ChartNoAxesCombined },
+      { title: "Meta Ads", url: "/meta-ads", icon: Megaphone, metaAdsOnly: true },
+    ],
   },
   {
     label: "Área de Membros",
@@ -120,7 +126,8 @@ export function AppSidebar() {
           (!item.studentViewOnly || canViewStudentList) &&
           (!item.systemFeedbackOnly || canViewSystemFeedback) &&
           (!item.attendancesOnly || canSeeAttendances) &&
-          (!item.devOnly || user?.role === "DEV"),
+          (!item.devOnly || user?.role === "DEV") &&
+          (!item.metaAdsOnly || (user ? canViewMetaAds(user.role) : false)),
       ),
     }))
     .filter((group) => group.items.length > 0);
@@ -140,10 +147,18 @@ export function AppSidebar() {
     : visibleGroups;
 
   return (
-    <Sidebar collapsible="icon" className="border-r border-sidebar-border/80 shadow-[12px_0_36px_-34px_rgba(15,23,42,0.45)]">
+    <Sidebar
+      collapsible="icon"
+      className="border-r border-sidebar-border/80 shadow-[12px_0_36px_-34px_rgba(15,23,42,0.45)]"
+    >
       <SidebarHeader className="border-b border-sidebar-border/80 bg-transparent">
         <div className="px-3 py-4">
-          <div className={cn("flex items-center gap-2", collapsed ? "justify-center" : "justify-between")}>
+          <div
+            className={cn(
+              "flex items-center gap-2",
+              collapsed ? "justify-center" : "justify-between",
+            )}
+          >
             {!collapsed ? (
               <img
                 src={starLogo}
