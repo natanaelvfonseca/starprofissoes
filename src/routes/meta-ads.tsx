@@ -144,8 +144,6 @@ type MetaState = {
 
 type MetaConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
-const META_CONNECT_URL = "https://kogna.online/meta/connect";
-
 type FormDraft = {
   id: string;
   pageDbId: string;
@@ -327,13 +325,13 @@ function MetaAdsPage() {
     }
   }
 
-  function connectWithMeta() {
+  async function connectWithMeta() {
     const width = 600;
     const height = 750;
     const left = window.screenX + (window.outerWidth - width) / 2;
     const top = window.screenY + (window.outerHeight - height) / 2;
     const popup = window.open(
-      META_CONNECT_URL,
+      "",
       "meta_oauth",
       `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`,
     );
@@ -345,6 +343,25 @@ function MetaAdsPage() {
 
     popup.focus();
     setMetaConnectionStatus("connecting");
+
+    try {
+      const data = await readJson<{ url: string }>(
+        await fetch("/api/meta/connect-url", {
+          credentials: "same-origin",
+          headers: { Accept: "application/json" },
+        }),
+      );
+      const connectUrl = new URL(data.url);
+
+      if (connectUrl.origin !== "https://kogna.online" || connectUrl.pathname !== "/meta/connect") {
+        throw new Error("URL de conexão Meta inválida.");
+      }
+
+      popup.location.href = data.url;
+    } catch (error) {
+      setMetaConnectionStatus(data ? connectionStatusFromState(data) : "disconnected");
+      toast.error(error instanceof Error ? error.message : "Falha ao iniciar a conexão Meta.");
+    }
   }
 
   function editForm(form: MetaForm) {
