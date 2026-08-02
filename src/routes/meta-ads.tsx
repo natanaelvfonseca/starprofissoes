@@ -2,14 +2,18 @@ import * as React from "react";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import {
   AlertCircle,
+  BadgeDollarSign,
+  Building2,
   CheckCircle2,
-  Copy,
+  Clock3,
+  ExternalLink,
   Loader2,
-  Plus,
+  PanelsTopLeft,
   RefreshCw,
   Save,
   Search,
   Settings2,
+  Unplug,
   Webhook,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -65,6 +69,7 @@ type MetaPage = {
   page_id: string;
   tokenMasked: string | null;
   token_status: "unknown" | "valid" | "invalid";
+  last_validated_at: string | null;
   subscription_status: "unknown" | "subscribed" | "not_subscribed" | "error";
   formsCount: number;
   leads_received_count: number;
@@ -93,6 +98,7 @@ type MetaForm = {
   status: "active" | "inactive";
   leads_received_count: number;
   last_lead_received_at: string | null;
+  synced_at: string | null;
   configurationLabel: string | null;
 };
 
@@ -135,6 +141,10 @@ type MetaState = {
     channels: Array<ChannelOption>;
   };
 };
+
+type MetaConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
+
+const META_CONNECT_URL = "https://kogna.online/meta/connect";
 
 type FormDraft = {
   id: string;
@@ -192,6 +202,33 @@ function eventLabel(event: MetaEvent) {
   return event.mapped_payload?.fullName || event.form_name || `Evento ${event.leadgen_id}`;
 }
 
+function connectionStatusFromState(data: MetaState): MetaConnectionStatus {
+  const activePages = data.pages.filter((page) => page.status === "active");
+  const hasConnectionError = activePages.some(
+    (page) => page.token_status === "invalid" || page.subscription_status === "error",
+  );
+
+  if (data.integration.status === "active" && hasConnectionError) return "error";
+  if (
+    data.integration.status === "active" &&
+    activePages.some((page) => Boolean(page.tokenMasked))
+  ) {
+    return "connected";
+  }
+
+  return "disconnected";
+}
+
+function mostRecentDate(values: Array<string | null>) {
+  const dates = values
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value))
+    .filter((value) => !Number.isNaN(value.getTime()))
+    .sort((left, right) => right.getTime() - left.getTime());
+
+  return dates[0]?.toISOString() ?? null;
+}
+
 export const Route = createFileRoute("/meta-ads")({
   head: () => ({ meta: [{ title: "Meta Ads · Star Profissões" }] }),
   component: MetaAdsPage,
@@ -204,21 +241,8 @@ function MetaAdsPage() {
   const [workingKey, setWorkingKey] = React.useState("");
   const [search, setSearch] = React.useState("");
   const [appliedSearch, setAppliedSearch] = React.useState("");
-  const [integrationForm, setIntegrationForm] = React.useState({
-    appId: "",
-    appSecret: "",
-    verifyToken: "",
-    graphApiVersion: "v23.0",
-    callbackUrl: "",
-    status: "inactive" as "active" | "inactive",
-  });
-  const [pageDialogOpen, setPageDialogOpen] = React.useState(false);
-  const [pageForm, setPageForm] = React.useState({
-    pageName: "",
-    pageId: "",
-    pageAccessToken: "",
-    status: "active" as "active" | "inactive",
-  });
+  const [metaConnectionStatus, setMetaConnectionStatus] =
+    React.useState<MetaConnectionStatus>("disconnected");
   const [formDialogOpen, setFormDialogOpen] = React.useState(false);
   const [formDraft, setFormDraft] = React.useState<FormDraft>(emptyFormDraft);
   const canManage = session ? canManageMetaAds(session.user.role) : false;
@@ -234,14 +258,7 @@ function MetaAdsPage() {
           }),
         );
         setData(next);
-        setIntegrationForm((current) => ({
-          ...current,
-          appId: next.integration.app_id ?? "",
-          graphApiVersion: next.integration.graph_api_version || "v23.0",
-          callbackUrl:
-            next.integration.callback_url || `${window.location.origin}/api/webhooks/meta-leads`,
-          status: next.integration.status,
-        }));
+        setMetaConnectionStatus(connectionStatusFromState(next));
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Falha ao carregar Meta Ads.");
       } finally {
@@ -284,6 +301,37 @@ function MetaAdsPage() {
     }
   }
 
+  async function syncConnectedAssets() {
+    const connectedPages = (data?.pages ?? []).filter((page) => page.status === "active");
+
+    if (!connectedPages.length) return;
+
+    setWorkingKey("syncConnection");
+    try {
+      for (const page of connectedPages) {
+        await readJson(
+          await fetch("/api/meta-ads", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({ action: "syncForms", pageDbId: page.id }),
+          }),
+        );
+      }
+      toast.success("Ativos da Meta sincronizados.");
+      await loadData();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao sincronizar a Meta.");
+    } finally {
+      setWorkingKey("");
+    }
+  }
+
+  function connectWithMeta() {
+    setMetaConnectionStatus("connecting");
+    window.location.href = META_CONNECT_URL;
+  }
+
   function editForm(form: MetaForm) {
     setFormDraft({
       id: form.id,
@@ -310,6 +358,13 @@ function MetaAdsPage() {
     (item) => item.unitId === formDraft.unitId && item.status === "active",
   );
   const metrics = data?.integration;
+  const lastSynchronization = data
+    ? mostRecentDate([
+        ...data.forms.map((form) => form.synced_at),
+        ...data.pages.map((page) => page.last_validated_at),
+        data.integration.last_communication_at,
+      ])
+    : null;
 
   return (
     <div className="space-y-6">
@@ -351,12 +406,25 @@ function MetaAdsPage() {
         />
       </div>
 
-      <Tabs defaultValue="forms" className="space-y-4">
+      <Tabs defaultValue="connection" className="space-y-4">
         <TabsList className="h-auto flex-wrap justify-start">
+          <TabsTrigger value="connection">Conexão Meta</TabsTrigger>
           <TabsTrigger value="forms">Formulários</TabsTrigger>
-          <TabsTrigger value="pages">Páginas e integração</TabsTrigger>
           <TabsTrigger value="events">Eventos</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="connection">
+          <MetaConnectionPanel
+            status={metaConnectionStatus}
+            pages={data?.pages ?? []}
+            lastSynchronization={lastSynchronization}
+            loading={loading}
+            canManage={canManage}
+            syncing={workingKey === "syncConnection"}
+            onConnect={connectWithMeta}
+            onSync={() => void syncConnectedAssets()}
+          />
+        </TabsContent>
 
         <TabsContent value="forms">
           <Card className="overflow-hidden border-primary/10 shadow-card">
@@ -428,236 +496,9 @@ function MetaAdsPage() {
                       text={
                         data?.pages.length
                           ? "Sincronize uma página para trazer os formulários."
-                          : "Cadastre uma página da Meta para começar."
+                          : "Conecte a Meta para trazer os formulários."
                       }
                     />
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="pages" className="space-y-4">
-          <Card className="border-primary/10 shadow-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Settings2 className="h-4 w-4 text-primary" />
-                Integração
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              <Field label="App ID">
-                <Input
-                  value={integrationForm.appId}
-                  onChange={(event) =>
-                    setIntegrationForm((current) => ({ ...current, appId: event.target.value }))
-                  }
-                  disabled={!canManage}
-                />
-              </Field>
-              <Field label={`App Secret${metrics?.appSecret ? " · configurado" : ""}`}>
-                <Input
-                  type="password"
-                  value={integrationForm.appSecret}
-                  onChange={(event) =>
-                    setIntegrationForm((current) => ({ ...current, appSecret: event.target.value }))
-                  }
-                  placeholder={metrics?.appSecret ? "Manter segredo atual" : "Informe o App Secret"}
-                  disabled={!canManage}
-                />
-              </Field>
-              <Field label={`Token de verificação${metrics?.verifyToken ? " · configurado" : ""}`}>
-                <Input
-                  type="password"
-                  value={integrationForm.verifyToken}
-                  onChange={(event) =>
-                    setIntegrationForm((current) => ({
-                      ...current,
-                      verifyToken: event.target.value,
-                    }))
-                  }
-                  placeholder={metrics?.verifyToken ? "Manter token atual" : "Informe o token"}
-                  disabled={!canManage}
-                />
-              </Field>
-              <Field label="Versão Graph API">
-                <Input
-                  value={integrationForm.graphApiVersion}
-                  onChange={(event) =>
-                    setIntegrationForm((current) => ({
-                      ...current,
-                      graphApiVersion: event.target.value,
-                    }))
-                  }
-                  disabled={!canManage}
-                />
-              </Field>
-              <Field label="URL do webhook">
-                <div className="flex gap-2">
-                  <Input
-                    value={integrationForm.callbackUrl}
-                    onChange={(event) =>
-                      setIntegrationForm((current) => ({
-                        ...current,
-                        callbackUrl: event.target.value,
-                      }))
-                    }
-                    disabled={!canManage}
-                  />
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="outline"
-                    aria-label="Copiar URL"
-                    onClick={() =>
-                      void navigator.clipboard
-                        .writeText(integrationForm.callbackUrl)
-                        .then(() => toast.success("URL copiada."))
-                    }
-                  >
-                    <Copy />
-                  </Button>
-                </div>
-              </Field>
-              <Field label="Status">
-                <Select
-                  value={integrationForm.status}
-                  onValueChange={(value) =>
-                    setIntegrationForm((current) => ({
-                      ...current,
-                      status: value as "active" | "inactive",
-                    }))
-                  }
-                  disabled={!canManage}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Ativa</SelectItem>
-                    <SelectItem value="inactive">Inativa</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <div className="md:col-span-2 xl:col-span-3">
-                <Button
-                  onClick={() =>
-                    void runAction("saveIntegration", integrationForm, "Integração salva.")
-                  }
-                  disabled={!canManage || workingKey === "saveIntegration"}
-                >
-                  {workingKey === "saveIntegration" ? (
-                    <Loader2 className="animate-spin" />
-                  ) : (
-                    <Save />
-                  )}
-                  Salvar integração
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="overflow-hidden border-primary/10 shadow-card">
-            <CardHeader className="flex-row items-center justify-between border-b bg-primary/5">
-              <CardTitle className="text-base">Páginas conectadas</CardTitle>
-              <Button onClick={() => setPageDialogOpen(true)} disabled={!canManage}>
-                <Plus />
-                Adicionar página
-              </Button>
-            </CardHeader>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="pl-5">Página</TableHead>
-                    <TableHead>Token</TableHead>
-                    <TableHead>Assinatura</TableHead>
-                    <TableHead>Formulários</TableHead>
-                    <TableHead className="pr-5 text-right">Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
-                    <LoadingRow columns={5} />
-                  ) : data?.pages.length ? (
-                    data.pages.map((page) => (
-                      <TableRow key={page.id}>
-                        <TableCell className="pl-5">
-                          <div className="font-semibold">{page.page_name}</div>
-                          <div className="text-xs text-muted-foreground">{page.page_id}</div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{page.tokenMasked ?? "Não informado"}</Badge>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {page.token_status}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {page.subscription_status === "subscribed" ? (
-                            <Badge className="bg-emerald-100 text-emerald-700">Inscrita</Badge>
-                          ) : (
-                            <Badge variant="outline">{page.subscription_status}</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>{page.formsCount}</TableCell>
-                        <TableCell className="pr-5">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={!canManage || Boolean(workingKey)}
-                              onClick={() =>
-                                void runAction(
-                                  "validatePage",
-                                  { pageDbId: page.id },
-                                  "Token validado.",
-                                  `validate-${page.id}`,
-                                )
-                              }
-                            >
-                              Validar
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={!canManage || Boolean(workingKey)}
-                              onClick={() =>
-                                void runAction(
-                                  "subscribePage",
-                                  { pageDbId: page.id },
-                                  "Página inscrita no webhook.",
-                                  `subscribe-${page.id}`,
-                                )
-                              }
-                            >
-                              Inscrever
-                            </Button>
-                            <Button
-                              size="sm"
-                              disabled={!canManage || Boolean(workingKey)}
-                              onClick={() =>
-                                void runAction(
-                                  "syncForms",
-                                  { pageDbId: page.id },
-                                  "Formulários sincronizados.",
-                                  `sync-${page.id}`,
-                                )
-                              }
-                            >
-                              {workingKey === `sync-${page.id}` ? (
-                                <Loader2 className="animate-spin" />
-                              ) : (
-                                <RefreshCw />
-                              )}
-                              Sincronizar
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <EmptyRow columns={5} text="Nenhuma página conectada." />
                   )}
                 </TableBody>
               </Table>
@@ -709,62 +550,6 @@ function MetaAdsPage() {
           />
         </TabsContent>
       </Tabs>
-
-      <Dialog open={pageDialogOpen} onOpenChange={setPageDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Adicionar página da Meta</DialogTitle>
-            <DialogDescription>
-              Informe os dados da página que receberá os formulários de leads.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-3">
-            <Field label="Nome da página">
-              <Input
-                value={pageForm.pageName}
-                onChange={(event) =>
-                  setPageForm((current) => ({ ...current, pageName: event.target.value }))
-                }
-              />
-            </Field>
-            <Field label="Page ID">
-              <Input
-                value={pageForm.pageId}
-                onChange={(event) =>
-                  setPageForm((current) => ({ ...current, pageId: event.target.value }))
-                }
-              />
-            </Field>
-            <Field label="Token de acesso da página">
-              <Input
-                type="password"
-                value={pageForm.pageAccessToken}
-                onChange={(event) =>
-                  setPageForm((current) => ({ ...current, pageAccessToken: event.target.value }))
-                }
-              />
-            </Field>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPageDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button
-              disabled={
-                !pageForm.pageName.trim() || !pageForm.pageId.trim() || workingKey === "savePage"
-              }
-              onClick={async () => {
-                if (await runAction("savePage", pageForm, "Página salva.")) {
-                  setPageDialogOpen(false);
-                  setPageForm({ pageName: "", pageId: "", pageAccessToken: "", status: "active" });
-                }
-              }}
-            >
-              {workingKey === "savePage" ? <Loader2 className="animate-spin" /> : <Save />}Salvar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={formDialogOpen} onOpenChange={setFormDialogOpen}>
         <DialogContent className="sm:max-w-2xl">
@@ -905,6 +690,262 @@ function MetaAdsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function MetaConnectionPanel({
+  status,
+  pages,
+  lastSynchronization,
+  loading,
+  canManage,
+  syncing,
+  onConnect,
+  onSync,
+}: {
+  status: MetaConnectionStatus;
+  pages: Array<MetaPage>;
+  lastSynchronization: string | null;
+  loading: boolean;
+  canManage: boolean;
+  syncing: boolean;
+  onConnect: () => void;
+  onSync: () => void;
+}) {
+  const connectedPages = pages.filter((page) => page.status === "active");
+  const primaryPage = connectedPages[0] ?? null;
+
+  if (loading && !pages.length) {
+    return (
+      <Card className="border-primary/10 shadow-card">
+        <CardContent className="flex min-h-80 flex-col items-center justify-center gap-3 text-center">
+          <Loader2 className="h-7 w-7 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Carregando conexão Meta...</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (status === "connecting") {
+    return (
+      <Card className="border-primary/10 shadow-card" aria-live="polite">
+        <CardContent className="flex min-h-80 flex-col items-center justify-center gap-4 text-center">
+          <MetaBrandMark />
+          <Loader2 className="h-7 w-7 animate-spin text-[#0866ff]" />
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight">Conectando à Meta...</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Você será direcionado para concluir a autorização com segurança.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <Card className="border-red-200/80 shadow-card">
+        <CardContent className="flex min-h-80 flex-col items-center justify-center gap-5 px-6 text-center">
+          <MetaBrandMark />
+          <div className="max-w-xl">
+            <h2 className="text-xl font-semibold tracking-tight">
+              Não foi possível concluir a conexão com a Meta
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Tente autorizar novamente. Nenhuma credencial técnica precisa ser informada nesta
+              tela.
+            </p>
+          </div>
+          <Button onClick={onConnect} disabled={!canManage}>
+            <ExternalLink />
+            Tentar novamente
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (status === "disconnected") {
+    return (
+      <Card className="overflow-hidden border-primary/10 shadow-card">
+        <CardContent className="relative flex min-h-[25rem] flex-col items-center justify-center gap-6 px-6 py-14 text-center">
+          <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-[#0866ff]/8 to-transparent" />
+          <MetaBrandMark />
+          <div className="relative max-w-2xl">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#0866ff]">
+              Meta
+            </p>
+            <h2 className="text-2xl font-semibold tracking-tight">
+              Conecte a Star Profissões à Meta
+            </h2>
+            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+              Conecte o portfólio empresarial da Star Profissões para acessar suas páginas, contas
+              de anúncios, formulários instantâneos e leads.
+            </p>
+          </div>
+          <Button size="lg" onClick={onConnect} disabled={!canManage}>
+            <ExternalLink />
+            Conectar com a Meta
+          </Button>
+          <p className="relative max-w-xl text-xs leading-5 text-muted-foreground">
+            A conexão é realizada diretamente pela Meta. Sua senha do Facebook não é compartilhada
+            com a plataforma.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card className="overflow-hidden border-emerald-200/70 shadow-card">
+        <CardHeader className="border-b bg-gradient-to-r from-emerald-50/90 via-background to-[#0866ff]/5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <MetaBrandMark compact />
+              <div>
+                <CardTitle className="text-lg">Meta conectada</CardTitle>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Anúncios e formulários integrados à Star Profissões.
+                </p>
+              </div>
+            </div>
+            <Badge className="border border-emerald-200 bg-emerald-100 text-emerald-700">
+              <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+              Conectado
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6 p-5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <ConnectionInfo
+              icon={Building2}
+              label="Portfólio empresarial"
+              value="Será identificado pela autorização OAuth"
+            />
+            <ConnectionInfo
+              icon={PanelsTopLeft}
+              label="Página"
+              value={primaryPage?.page_name ?? "Nenhuma página autorizada"}
+            />
+            <ConnectionInfo
+              icon={BadgeDollarSign}
+              label="Conta de anúncios"
+              value="Será identificada pela autorização OAuth"
+            />
+            <ConnectionInfo
+              icon={Clock3}
+              label="Última sincronização"
+              value={dateTime(lastSynchronization)}
+            />
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={onSync} disabled={!canManage || syncing || !connectedPages.length}>
+              {syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+              Sincronizar agora
+            </Button>
+            <Button variant="outline" disabled title="Disponível após a conclusão do fluxo OAuth">
+              <Settings2 />
+              Gerenciar conexão
+            </Button>
+            <Button
+              variant="ghost"
+              className="text-muted-foreground"
+              disabled
+              title="Disponível após a conclusão do fluxo OAuth"
+            >
+              <Unplug />
+              Desconectar Meta
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Gerenciamento e desconexão estarão disponíveis quando o retorno OAuth estiver ativo.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card className="border-primary/10 shadow-card">
+        <CardHeader>
+          <CardTitle className="text-base">Ativos conectados</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Páginas e contas autorizadas diretamente pela Meta.
+          </p>
+        </CardHeader>
+        <CardContent className="grid gap-3 lg:grid-cols-2">
+          {connectedPages.map((page) => (
+            <div
+              key={page.id}
+              className="flex items-center justify-between gap-4 rounded-xl border bg-muted/20 p-4"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="rounded-lg bg-[#0866ff]/10 p-2 text-[#0866ff]">
+                  <PanelsTopLeft className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">Página</p>
+                  <p className="truncate font-semibold">{page.page_name}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {page.formsCount} formulário(s) autorizado(s)
+                  </p>
+                </div>
+              </div>
+              <Badge className="shrink-0 bg-emerald-100 text-emerald-700">Conectado</Badge>
+            </div>
+          ))}
+          <div className="flex items-center justify-between gap-4 rounded-xl border border-dashed bg-muted/10 p-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="rounded-lg bg-muted p-2 text-muted-foreground">
+                <BadgeDollarSign className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">Conta de anúncios</p>
+                <p className="font-semibold">Aguardando autorização OAuth</p>
+              </div>
+            </div>
+            <Badge variant="outline" className="shrink-0">
+              Em breve
+            </Badge>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function MetaBrandMark({ compact = false }: { compact?: boolean }) {
+  return (
+    <div
+      aria-label="Meta"
+      className={`relative flex items-center justify-center rounded-2xl bg-[#0866ff] font-semibold text-white shadow-[0_16px_35px_-18px_rgba(8,102,255,0.8)] ${
+        compact ? "h-11 w-11 text-3xl" : "h-16 w-16 text-5xl"
+      }`}
+    >
+      <span className="-translate-y-0.5" aria-hidden="true">
+        ∞
+      </span>
+    </div>
+  );
+}
+
+function ConnectionInfo({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Building2;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl border bg-muted/20 p-4">
+      <div className="mb-3 flex items-center gap-2 text-muted-foreground">
+        <Icon className="h-4 w-4" />
+        <span className="text-xs font-medium">{label}</span>
+      </div>
+      <p className="text-sm font-semibold leading-5">{value}</p>
     </div>
   );
 }
