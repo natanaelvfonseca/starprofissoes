@@ -35,6 +35,7 @@ type LeadRow = QueryResultRow & {
   acquisition_channel_name_snapshot: string | null;
   created_by: string | null;
   created_by_name: string | null;
+  shared_queue: boolean;
   observations: string | null;
   campaign_name: string | null;
   form_id: string | null;
@@ -78,6 +79,7 @@ type AttendanceSnapshotRow = QueryResultRow & {
   course_value: string;
   city: string;
   state: string;
+  has_consultants: boolean;
 };
 
 type MetaLeadCampaignRow = QueryResultRow & {
@@ -112,6 +114,7 @@ function mapLead(row: LeadRow, exposeAcquisitionChannel: boolean): LeadRecord {
     acquisitionChannelName: exposeAcquisitionChannel ? row.acquisition_channel_name_snapshot : null,
     createdById: row.created_by,
     createdByName: row.created_by_name,
+    sharedQueue: row.shared_queue,
     observations: row.observations,
     campaignName: row.campaign_name,
     formId: row.form_id,
@@ -411,6 +414,7 @@ export const Route = createFileRoute("/api/crm/leads")({
               l.acquisition_channel_name_snapshot,
               l.created_by,
               owner.name as created_by_name,
+              l.shared_queue,
               l.observations,
               coalesce(import_info.campaign_name, meta_info.campaign_name) as campaign_name,
               coalesce(import_info.form_id, meta_info.form_id) as form_id,
@@ -432,14 +436,34 @@ export const Route = createFileRoute("/api/crm/leads")({
               limit 1
             ) meta_info on true
             where l.unit_id = $1
-              and ($4::boolean or l.created_by = $2)
+              and (
+                $4::boolean
+                or l.created_by = $2
+                or (
+                  $5::boolean
+                  and l.shared_queue = true
+                  and l.stage = 'Novo lead'
+                  and exists (
+                    select 1
+                    from app_course_attendance_consultants attendance_consultant
+                    where attendance_consultant.attendance_id = l.attendance_id
+                      and attendance_consultant.user_id = $2
+                  )
+                )
+              )
               and (
                 ($3 = 'students' and l.stage = 'Matriculado')
                 or ($3 = 'pipeline' and l.stage <> 'Matriculado')
               )
             order by l.created_at desc
           `,
-            [unit.id, session.user.id, listView, canManageUnitLeads],
+            [
+              unit.id,
+              session.user.id,
+              listView,
+              canManageUnitLeads,
+              session.user.role === "CONSULTOR",
+            ],
           ),
           queryDb<PipelineColumnRow>(
             `
@@ -499,7 +523,15 @@ export const Route = createFileRoute("/api/crm/leads")({
         const attendanceResult = await queryDb<AttendanceSnapshotRow>(
           `
             select a.id, a.unit_id, a.course_id, c.name as course_name, c.value::text as course_value,
-              a.city, a.state
+              a.city, a.state,
+              exists (
+                select 1
+                from app_course_attendance_consultants attendance_consultant
+                inner join app_users consultant on consultant.id = attendance_consultant.user_id
+                where attendance_consultant.attendance_id = a.id
+                  and consultant.role = 'CONSULTOR'
+                  and consultant.status = 'active'
+              ) as has_consultants
             from app_course_attendances a
             inner join app_courses c on c.id = a.course_id
             where a.id = $1 and a.unit_id = $2 and a.status = 'active' and c.status = 'active'
@@ -511,6 +543,12 @@ export const Route = createFileRoute("/api/crm/leads")({
         if (!attendance) {
           return Response.json(
             { ok: false, error: "Turma inativa ou indisponível nesta unidade." },
+            { status: 400 },
+          );
+        }
+        if (!attendance.has_consultants) {
+          return Response.json(
+            { ok: false, error: "Selecione ao menos um consultor ativo no cadastro desta turma." },
             { status: 400 },
           );
         }
@@ -542,9 +580,10 @@ export const Route = createFileRoute("/api/crm/leads")({
               acquisition_channel_id,
               acquisition_channel_name_snapshot,
               observations,
+              shared_queue,
               created_by
             )
-            values ($1, $2, $3, $4, nullif($5, ''), nullif($6, ''), nullif($7, ''), $8, $9, $10, $11, $12, nullif($13, ''), $14)
+            values ($1, $2, $3, $4, nullif($5, ''), nullif($6, ''), nullif($7, ''), $8, $9, $10, $11, $12, nullif($13, ''), true, null)
             returning
               id,
               unit_id,
@@ -564,7 +603,8 @@ export const Route = createFileRoute("/api/crm/leads")({
               acquisition_channel_id,
               acquisition_channel_name_snapshot,
               created_by,
-              $15::text as created_by_name,
+              null::text as created_by_name,
+              shared_queue,
               observations,
               null::text as campaign_name,
               null::text as form_id,
@@ -585,8 +625,6 @@ export const Route = createFileRoute("/api/crm/leads")({
             channel?.id ?? null,
             channel?.name ?? null,
             payload.observations,
-            session.user.id,
-            session.user.name,
           ],
         );
 

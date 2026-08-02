@@ -1,10 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { QueryResultRow } from "pg";
 import type { LeadStage } from "@/lib/commercial-types";
-import {
-  canAccessLeadTransferCenter,
-  canTransferLeadsImmediately,
-} from "@/lib/auth-types";
+import { canAccessLeadTransferCenter, canTransferLeadsImmediately } from "@/lib/auth-types";
 import {
   ensureCommercialSchema,
   getUnitFromBody,
@@ -113,7 +110,11 @@ async function listAssignableUsers(unitId: string) {
   return result.rows;
 }
 
-async function listTransferLeads(unitId: string, immediateTransfer: boolean, includeMetaEvents: boolean) {
+async function listTransferLeads(
+  unitId: string,
+  immediateTransfer: boolean,
+  includeMetaEvents: boolean,
+) {
   const metaSelect = includeMetaEvents
     ? "meta.campaign_name, meta.ad_name,"
     : "null::text as campaign_name, null::text as ad_name,";
@@ -350,6 +351,7 @@ export const Route = createFileRoute("/api/crm/transfer")({
             `
               update app_leads
               set created_by = $2,
+                  shared_queue = false,
                   updated_at = now()
               where id = any($1::uuid[])
                 and unit_id = $3

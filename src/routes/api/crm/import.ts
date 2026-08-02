@@ -1,4 +1,3 @@
-import { randomInt } from "node:crypto";
 import { createFileRoute } from "@tanstack/react-router";
 import type { QueryResultRow } from "pg";
 import { isDevRole } from "@/lib/auth-types";
@@ -12,7 +11,6 @@ import { getSessionFromRequest } from "@/lib/server/auth";
 import { ensureCourseAttendanceSchema } from "@/lib/server/course-attendances";
 import { queryDb, withTransaction } from "@/lib/server/db";
 
-type ConsultantRow = QueryResultRow & { id: string; name: string; email: string };
 type CourseRow = QueryResultRow & {
   id: string;
   name: string;
@@ -26,6 +24,8 @@ type AttendanceRow = QueryResultRow & {
   state: string;
   classDate: string;
   displayName: string;
+  consultantIds: Array<string>;
+  consultantNames: Array<string>;
 };
 type ImportRow = {
   fullName: string;
@@ -76,22 +76,6 @@ function parseRows(value: unknown): Array<ImportRow> {
   });
 }
 
-async function listConsultants(unitId: string) {
-  const result = await queryDb<ConsultantRow>(
-    `
-    select distinct u.id, u.name, u.email
-    from app_users u
-    left join app_user_units uu on uu.user_id = u.id and uu.unit_id = $1
-    where u.status = 'active'
-      and u.role = 'CONSULTOR'
-      and (u.primary_unit_id = $1 or uu.user_id is not null)
-    order by u.name
-  `,
-    [unitId],
-  );
-  return result.rows;
-}
-
 async function listCourses(unitId: string) {
   const result = await queryDb<CourseRow>(
     `
@@ -119,10 +103,30 @@ async function listAttendances(unitId: string) {
     state: string;
     class_date: string;
     display_name: string;
+    consultant_ids: Array<string>;
+    consultant_names: Array<string>;
   }>(
     `
     select a.id, a.course_id, a.city, a.state, a.class_date::text,
-      concat(c.name, ' · ', a.city, '/', a.state, ' · ', to_char(a.class_date, 'DD/MM/YYYY')) as display_name
+      concat(c.name, ' · ', a.city, '/', a.state, ' · ', to_char(a.class_date, 'DD/MM/YYYY')) as display_name,
+      array(
+        select consultant.id::text
+        from app_course_attendance_consultants attendance_consultant
+        inner join app_users consultant on consultant.id = attendance_consultant.user_id
+        where attendance_consultant.attendance_id = a.id
+          and consultant.role = 'CONSULTOR'
+          and consultant.status = 'active'
+        order by consultant.name
+      ) as consultant_ids,
+      array(
+        select consultant.name
+        from app_course_attendance_consultants attendance_consultant
+        inner join app_users consultant on consultant.id = attendance_consultant.user_id
+        where attendance_consultant.attendance_id = a.id
+          and consultant.role = 'CONSULTOR'
+          and consultant.status = 'active'
+        order by consultant.name
+      ) as consultant_names
     from app_course_attendances a
     inner join app_courses c on c.id = a.course_id
     where a.unit_id = $1 and a.status = 'active' and c.status = 'active'
@@ -138,6 +142,8 @@ async function listAttendances(unitId: string) {
       state: row.state,
       classDate: row.class_date,
       displayName: row.display_name,
+      consultantIds: row.consultant_ids,
+      consultantNames: row.consultant_names,
     }),
   );
 }
@@ -155,13 +161,12 @@ export const Route = createFileRoute("/api/crm/import")({
         await ensureCommercialSchema();
         await ensureCourseAttendanceSchema();
         await ensureLeadImportSchema();
-        const [consultants, courses, attendances] = await Promise.all([
-          listConsultants(unit.id),
+        const [courses, attendances] = await Promise.all([
           listCourses(unit.id),
           listAttendances(unit.id),
         ]);
         return Response.json(
-          { consultants, courses, attendances },
+          { courses, attendances },
           { headers: { "Cache-Control": "no-store" } },
         );
       },
@@ -175,23 +180,12 @@ export const Route = createFileRoute("/api/crm/import")({
         const unit = getUnitFromBody(session, body?.unitId);
         if (!unit) return Response.json({ error: "Unidade indisponível." }, { status: 403 });
         const rows = parseRows(body?.rows);
-        const consultantIds = Array.isArray(body?.consultantIds)
-          ? Array.from(
-              new Set(
-                body.consultantIds.filter(
-                  (id): id is string => typeof id === "string" && isUuid(id),
-                ),
-              ),
-            )
-          : [];
         const skipDuplicates = body?.skipDuplicates !== false;
         const courseId = typeof body?.courseId === "string" ? body.courseId.trim() : "";
         const attendanceId = typeof body?.attendanceId === "string" ? body.attendanceId.trim() : "";
 
         if (!rows.length)
           return Response.json({ error: "Nenhuma linha para importar." }, { status: 400 });
-        if (!consultantIds.length)
-          return Response.json({ error: "Selecione ao menos um consultor." }, { status: 400 });
         if (!isUuid(courseId))
           return Response.json({ error: "Selecione um curso válido." }, { status: 400 });
         if (!isUuid(attendanceId))
@@ -206,16 +200,35 @@ export const Route = createFileRoute("/api/crm/import")({
         await ensureCommercialSchema();
         await ensureCourseAttendanceSchema();
         await ensureLeadImportSchema();
-        const available = await listConsultants(unit.id);
         const courseResult = await queryDb<{
           id: string;
           name: string;
           value: string;
           city: string;
           state: string;
+          consultant_ids: Array<string>;
+          consultant_names: Array<string>;
         }>(
           `
-          select c.id, c.name, c.value::text, a.city, a.state
+          select c.id, c.name, c.value::text, a.city, a.state,
+            array(
+              select consultant.id::text
+              from app_course_attendance_consultants attendance_consultant
+              inner join app_users consultant on consultant.id = attendance_consultant.user_id
+              where attendance_consultant.attendance_id = a.id
+                and consultant.role = 'CONSULTOR'
+                and consultant.status = 'active'
+              order by consultant.name
+            ) as consultant_ids,
+            array(
+              select consultant.name
+              from app_course_attendance_consultants attendance_consultant
+              inner join app_users consultant on consultant.id = attendance_consultant.user_id
+              where attendance_consultant.attendance_id = a.id
+                and consultant.role = 'CONSULTOR'
+                and consultant.status = 'active'
+              order by consultant.name
+            ) as consultant_names
           from app_course_attendances a
           inner join app_courses c on c.id = a.course_id
           where a.id = $1 and a.course_id = $2 and a.unit_id = $3
@@ -230,20 +243,17 @@ export const Route = createFileRoute("/api/crm/import")({
             { error: "A turma não pertence ao curso ou à unidade selecionada." },
             { status: 400 },
           );
-        const city = `${course.city} - ${course.state}`;
-        const availableIds = new Set(available.map((item) => item.id));
-        if (consultantIds.some((id) => !availableIds.has(id))) {
+        if (!course.consultant_ids.length)
           return Response.json(
-            { error: "Há consultores inválidos ou fora da unidade." },
+            { error: "Selecione ao menos um consultor ativo no cadastro desta turma." },
             { status: 400 },
           );
-        }
+        const city = `${course.city} - ${course.state}`;
 
         const result = await withTransaction(async (client) => {
           let imported = 0;
           let duplicates = 0;
           let updated = 0;
-          const distribution = new Map<string, number>();
           for (const row of rows) {
             const phone = normalizePhone(row.phone);
             const phone2 = normalizePhone(row.phone2);
@@ -268,6 +278,8 @@ export const Route = createFileRoute("/api/crm/import")({
                         course_id = $4,
                         course_name_snapshot = $5,
                         course_value_snapshot = $6,
+                        shared_queue = case when stage = 'Novo lead' then true else shared_queue end,
+                        created_by = case when stage = 'Novo lead' then null else created_by end,
                         updated_at = now()
                     where id = $1
                   `,
@@ -287,17 +299,13 @@ export const Route = createFileRoute("/api/crm/import")({
                 continue;
               }
             }
-            const consultantId =
-              consultantIds.length === 1
-                ? consultantIds[0]
-                : consultantIds[randomInt(consultantIds.length)];
             const lead = await client.query<{ id: string }>(
               `
               insert into app_leads (
                 unit_id, full_name, phone, phone2, city, attendance_id, course_id, course_name_snapshot,
-                course_value_snapshot, observations, stage, created_by
+                course_value_snapshot, observations, stage, shared_queue, created_by
               )
-              values ($1, $2, $3, nullif($4, ''), $5, $6, $7, $8, $9, nullif($10, ''), 'Novo lead', $11)
+              values ($1, $2, $3, nullif($4, ''), $5, $6, $7, $8, $9, nullif($10, ''), 'Novo lead', true, null)
               returning id
             `,
               [
@@ -311,7 +319,6 @@ export const Route = createFileRoute("/api/crm/import")({
                 course.name,
                 Number(course.value),
                 row.observations,
-                consultantId,
               ],
             );
             await client.query(
@@ -322,9 +329,13 @@ export const Route = createFileRoute("/api/crm/import")({
               [lead.rows[0].id, row.campaignName, row.formId, phone2, session.user.id],
             );
             imported += 1;
-            distribution.set(consultantId, (distribution.get(consultantId) ?? 0) + 1);
           }
-          return { imported, updated, duplicates, distribution: Object.fromEntries(distribution) };
+          return {
+            imported,
+            updated,
+            duplicates,
+            sharedConsultants: course.consultant_names,
+          };
         });
         return Response.json({ ok: true, ...result });
       },

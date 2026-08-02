@@ -3,9 +3,9 @@ import type { PoolClient, QueryResultRow } from "pg";
 import type { LeadStage } from "@/lib/commercial-types";
 import { ensureCommercialSchema, isUuid } from "@/lib/server/commercial-schema";
 import {
-  chooseAttendanceConsultant,
   ensureCourseAttendanceSchema,
   findCampaignAttendance,
+  getAttendanceConsultants,
   parseCampaignRoute,
 } from "@/lib/server/course-attendances";
 import { queryDb, withTransaction } from "@/lib/server/db";
@@ -138,12 +138,6 @@ type MetaEventRow = QueryResultRow & {
   payload: Record<string, unknown>;
   lead_payload: Record<string, unknown> | null;
   mapped_payload: Record<string, unknown> | null;
-};
-
-type ConsultantCandidateRow = QueryResultRow & {
-  id: string;
-  name: string;
-  open_leads: string;
 };
 
 type DefaultMarketingOwnerRow = QueryResultRow & {
@@ -1885,64 +1879,6 @@ export async function disconnectAllMetaPages() {
   return { disconnected: true, count: disconnectedPages.length, pages: disconnectedPages };
 }
 
-async function candidateConsultants(client: PoolClient, form: MetaFormRow) {
-  if (!form.unit_id) {
-    return [];
-  }
-
-  const result = await client.query<ConsultantCandidateRow>(
-    `
-      select
-        u.id,
-        u.name,
-        count(l.id) filter (where l.stage <> 'Matriculado')::text as open_leads
-      from app_users u
-      left join app_leads l on l.created_by = u.id and l.unit_id = $1 and l.stage <> 'Matriculado'
-      where u.status = 'active'
-        and u.role = 'CONSULTOR'
-        and (
-          u.primary_unit_id = $1
-          or exists (
-            select 1
-            from app_user_units uu
-            where uu.user_id = u.id and uu.unit_id = $1
-          )
-        )
-      group by u.id
-      order by u.name asc
-    `,
-    [form.unit_id],
-  );
-
-  return result.rows;
-}
-
-async function chooseConsultant(client: PoolClient, form: MetaFormRow) {
-  const candidates = await candidateConsultants(client, form);
-
-  if (!candidates.length) {
-    return { userId: null, reason: "Nenhum consultor ativo elegível encontrado." };
-  }
-
-  const cursor = Number(form.round_robin_cursor) || 0;
-  const candidate = candidates[cursor % candidates.length];
-
-  await client.query(
-    `
-      update app_meta_forms
-      set round_robin_cursor = $2,
-          updated_at = now()
-      where id = $1
-    `,
-    [form.id, (cursor + 1) % candidates.length],
-  );
-
-  return {
-    userId: candidate.id,
-    reason: `Rodízio sequencial; posição ${cursor % candidates.length} de ${candidates.length}.`,
-  };
-}
-
 async function defaultMarketingOwner(client: PoolClient, unitId: string | null) {
   if (!unitId) {
     return null;
@@ -2335,8 +2271,8 @@ async function processEventById(eventId: string) {
       return { status: "pending_configuration", leadId: null };
     }
 
-    const assignment = await chooseAttendanceConsultant(client, attendance);
-    if (!assignment.userId) {
+    const attendanceConsultants = await getAttendanceConsultants(client, attendance);
+    if (!attendanceConsultants.length) {
       await client.query(
         `
           update app_meta_lead_events
@@ -2344,7 +2280,13 @@ async function processEventById(eventId: string) {
               error_message = $4, routing_source = $5, routing_error = $4, updated_at = now()
           where id = $1
         `,
-        [event.id, form.id, attendance.id, assignment.reason, routingSource],
+        [
+          event.id,
+          form.id,
+          attendance.id,
+          "Turma sem consultores ativos selecionados.",
+          routingSource,
+        ],
       );
       return { status: "pending_configuration", leadId: null };
     }
@@ -2374,9 +2316,10 @@ async function processEventById(eventId: string) {
           acquisition_channel_name_snapshot,
           observations,
           stage,
+          shared_queue,
           created_by
         )
-        values ($1, $2, $3, $4, nullif($5, ''), nullif($6, ''), nullif($7, ''), $8, $9, $10, $11, $12, nullif($13, ''), $14, $15)
+        values ($1, $2, $3, $4, nullif($5, ''), nullif($6, ''), nullif($7, ''), $8, $9, $10, $11, $12, nullif($13, ''), $14, true, null)
         returning id
       `,
       [
@@ -2401,8 +2344,7 @@ async function processEventById(eventId: string) {
             .filter(Boolean)
             .join("\n"),
         ),
-        form.initial_stage,
-        assignment.userId,
+        "Novo lead",
       ],
     );
     const leadId = leadResult.rows[0].id;
@@ -2431,7 +2373,7 @@ async function processEventById(eventId: string) {
         leadId,
         event.page_id,
         form.id,
-        assignment.reason,
+        `Fila compartilhada da turma; disponível para ${attendanceConsultants.length} consultor(es).`,
         JSON.stringify({
           ...mapped,
           fullName: leadFullName,
@@ -2440,7 +2382,7 @@ async function processEventById(eventId: string) {
           city: leadCity,
         }),
         attendance.id,
-        assignment.userId,
+        null,
         routingSource,
         null,
       ],

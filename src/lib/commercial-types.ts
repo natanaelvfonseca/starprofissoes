@@ -61,6 +61,7 @@ export type LeadRecord = {
   acquisitionChannelName: string | null;
   createdById: string | null;
   createdByName: string | null;
+  sharedQueue: boolean;
   observations: string | null;
   campaignName: string | null;
   formId: string | null;
@@ -69,3 +70,9 @@ export type LeadRecord = {
   studentPipelineColumnId: string | null;
   createdAt: string;
 };
+
+export function isSharedLeadQueueEntry(
+  lead: Pick<LeadRecord, "sharedQueue" | "stage" | "attendanceId">,
+) {
+  return lead.sharedQueue && lead.stage === "Novo lead" && Boolean(lead.attendanceId);
+}

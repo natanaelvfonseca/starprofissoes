@@ -19,6 +19,7 @@ import {
   Trash2,
   UserCheck,
   UserPlus,
+  UsersRound,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -29,6 +30,7 @@ import type {
   LeadStage,
   PipelineColumn,
 } from "@/lib/commercial-types";
+import { isSharedLeadQueueEntry } from "@/lib/commercial-types";
 import type { CrmLeadTask } from "@/lib/crm-task-types";
 import { useAuth } from "@/lib/auth";
 import { canAccessLeadTransferCenter, canOperateCrm, canTransferLeads } from "@/lib/auth-types";
@@ -218,7 +220,7 @@ const fallbackLeadPipelineColumns: Array<PipelineColumn> = stages.map((stage, in
   semanticStage: stage,
 }));
 
-const pollingIntervalMs = 20000;
+const pollingIntervalMs = 5000;
 
 const currencyFormatter = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -983,7 +985,13 @@ function CRMPipeline() {
     );
 
     try {
-      await readJson<{ ok: true; stage: LeadStage; pipelineColumnId: string }>(
+      await readJson<{
+        ok: true;
+        stage: LeadStage;
+        pipelineColumnId: string;
+        claimed?: boolean;
+        sharedQueue?: boolean;
+      }>(
         await fetch(`/api/crm/leads/${lead.id}`, {
           method: "PATCH",
           credentials: "same-origin",
@@ -1012,6 +1020,7 @@ function CRMPipeline() {
             : item,
         ),
       );
+      void loadLeads({ silent: true });
       toast.error(error instanceof Error ? error.message : "Falha ao mover lead.");
     } finally {
       setSyncingLeadId(null);
@@ -1400,7 +1409,8 @@ function CRMPipeline() {
             </h2>
           </div>
           <p className="max-w-md text-xs leading-relaxed text-muted-foreground sm:text-right">
-            Arraste uma ficha entre as etapas para atualizar o andamento da negociação.
+            Na primeira etapa, os leads ficam disponíveis para toda a turma. Ao mover, o consultor
+            assume o atendimento.
           </p>
         </div>
 
@@ -1420,6 +1430,9 @@ function CRMPipeline() {
               const isDropTarget = dropTargetStage === column.id;
               const stageVisual =
                 pipelineColorVisual[column.color] ?? pipelineStageVisual["Novo lead"];
+              const firstClaimColumn = displayPipelineColumns.find(
+                (candidate) => candidate.semanticStage && candidate.semanticStage !== "Novo lead",
+              );
 
               return (
                 <div
@@ -1492,7 +1505,21 @@ function CRMPipeline() {
                             canViewLeadAge={canViewLeadAge}
                             canViewOwner={canTransferUnitLeads}
                             canRemove={canRemoveLeads}
-                            canEdit={canOperatePipeline}
+                            canOpen={
+                              canOperatePipeline &&
+                              !(session?.user.role === "CONSULTOR" && isSharedLeadQueueEntry(lead))
+                            }
+                            canDrag={
+                              canOperatePipeline &&
+                              (!isSharedLeadQueueEntry(lead) || session?.user.role === "CONSULTOR")
+                            }
+                            onClaim={
+                              session?.user.role === "CONSULTOR" &&
+                              isSharedLeadQueueEntry(lead) &&
+                              firstClaimColumn
+                                ? () => void updateLeadStage(lead, firstClaimColumn)
+                                : undefined
+                            }
                             onRemove={() => void handleRemoveLead(lead)}
                             onEdit={() => openEditLeadDialog(lead)}
                             onDragStart={(event) => handleDragStart(event, lead)}
@@ -1637,7 +1664,9 @@ function LeadPipelineCard({
   canViewLeadAge,
   canViewOwner,
   canRemove,
-  canEdit,
+  canOpen,
+  canDrag,
+  onClaim,
   onRemove,
   onEdit,
   onDragStart,
@@ -1653,7 +1682,9 @@ function LeadPipelineCard({
   canViewLeadAge: boolean;
   canViewOwner: boolean;
   canRemove: boolean;
-  canEdit: boolean;
+  canOpen: boolean;
+  canDrag: boolean;
+  onClaim?: () => void;
   onRemove: () => void;
   onEdit: () => void;
   onDragStart: (event: React.DragEvent<HTMLDivElement>) => void;
@@ -1672,11 +1703,11 @@ function LeadPipelineCard({
 
   return (
     <Card
-      draggable={canEdit}
-      onDragStart={canEdit ? onDragStart : undefined}
-      onDragEnd={canEdit ? onDragEnd : undefined}
+      draggable={canDrag}
+      onDragStart={canDrag ? onDragStart : undefined}
+      onDragEnd={canDrag ? onDragEnd : undefined}
       className={`group relative overflow-hidden border-[#16006C]/10 bg-white p-0 shadow-[0_14px_32px_-27px_rgba(7,21,76,0.7)] transition-all duration-200 ease-out ${
-        canEdit ? "cursor-grab active:cursor-grabbing" : ""
+        canDrag ? "cursor-grab active:cursor-grabbing" : ""
       } ${
         dragging
           ? "scale-[0.98] opacity-60 shadow-lg"
@@ -1694,9 +1725,10 @@ function LeadPipelineCard({
           <div className="min-w-0 flex-1 pt-0.5">
             <button
               type="button"
-              onClick={canEdit ? onEdit : undefined}
+              onClick={canOpen ? onEdit : undefined}
+              disabled={!canOpen}
               className={`line-clamp-2 max-w-full text-left text-sm font-black leading-snug text-[#07154C] [overflow-wrap:anywhere] ${
-                canEdit ? "transition hover:text-[#224C99]" : "cursor-default"
+                canOpen ? "transition hover:text-[#224C99]" : "cursor-default"
               }`}
             >
               {lead.fullName}
@@ -1763,6 +1795,31 @@ function LeadPipelineCard({
             </Badge>
           ) : null}
         </div>
+
+        {isSharedLeadQueueEntry(lead) ? (
+          <div className="mt-3 rounded-xl border border-[#377DFE]/20 bg-[#EAF1FF]/75 p-2.5">
+            <div className="flex items-center gap-2 text-[11px] font-bold text-[#224C99]">
+              <UsersRound className="h-4 w-4 shrink-0" />
+              Disponível para os consultores da turma
+            </div>
+            {onClaim ? (
+              <Button
+                type="button"
+                size="sm"
+                className="mt-2 h-8 w-full bg-[#224C99] text-xs font-bold text-white hover:bg-[#16006C]"
+                onClick={onClaim}
+                disabled={syncing}
+              >
+                {syncing ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <UserPlus className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                Atender este lead
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {displayValue !== null || canViewLeadAge ? (

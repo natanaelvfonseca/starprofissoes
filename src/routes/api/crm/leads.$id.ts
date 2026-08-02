@@ -26,6 +26,7 @@ type LeadEditableRow = QueryResultRow & {
   acquisition_channel_name_snapshot: string | null;
   observations: string | null;
   stage: LeadStage;
+  shared_queue: boolean;
 };
 
 type CourseSnapshotRow = QueryResultRow & {
@@ -224,6 +225,29 @@ async function recordPaidStudentPayment(leadId: string, userId: string) {
   );
 }
 
+async function hasActiveAttendanceConsultant(attendanceId: string | null, userId?: string) {
+  if (!attendanceId) {
+    return false;
+  }
+
+  const result = await queryDb<{ allowed: boolean }>(
+    `
+      select exists (
+        select 1
+        from app_course_attendance_consultants attendance_consultant
+        inner join app_users consultant on consultant.id = attendance_consultant.user_id
+        where attendance_consultant.attendance_id = $1
+          and consultant.role = 'CONSULTOR'
+          and consultant.status = 'active'
+          and ($2::uuid is null or consultant.id = $2)
+      ) as allowed
+    `,
+    [attendanceId, userId ?? null],
+  );
+
+  return result.rows[0]?.allowed === true;
+}
+
 export const Route = createFileRoute("/api/crm/leads/$id")({
   server: {
     handlers: {
@@ -271,7 +295,8 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
               acquisition_channel_id,
               acquisition_channel_name_snapshot,
               observations,
-              stage
+              stage,
+              shared_queue
             from app_leads
             where id = $1
             limit 1
@@ -290,9 +315,28 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
         }
 
         const canManageUnitLeads = canTransferLeads(session.user.role);
+        const isSharedNewLead =
+          lead.shared_queue && lead.stage === "Novo lead" && Boolean(lead.attendance_id);
+        const consultantCanAccessSharedLead =
+          session.user.role === "CONSULTOR" &&
+          isSharedNewLead &&
+          (await hasActiveAttendanceConsultant(lead.attendance_id, session.user.id));
 
-        if (!canManageUnitLeads && lead.created_by !== session.user.id) {
-          return Response.json({ ok: false, error: "Acesso negado." }, { status: 403 });
+        if (
+          !canManageUnitLeads &&
+          lead.created_by !== session.user.id &&
+          !consultantCanAccessSharedLead
+        ) {
+          return Response.json(
+            {
+              ok: false,
+              error:
+                session.user.role === "CONSULTOR"
+                  ? "Este lead já foi assumido por outro consultor."
+                  : "Acesso negado.",
+            },
+            { status: session.user.role === "CONSULTOR" ? 409 : 403 },
+          );
         }
 
         const requestedLeadColumnId =
@@ -345,11 +389,78 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
               { status: 400 },
             );
           }
+
+          if (isSharedNewLead) {
+            if (session.user.role !== "CONSULTOR" || !consultantCanAccessSharedLead) {
+              return Response.json(
+                { ok: false, error: "Um consultor da turma deve assumir este lead." },
+                { status: 403 },
+              );
+            }
+
+            if (column.semantic_stage === "Novo lead") {
+              return Response.json(
+                { ok: false, error: "Mova o lead para outra etapa para iniciar o atendimento." },
+                { status: 400 },
+              );
+            }
+
+            const claimed = await queryDb<{ id: string }>(
+              `
+                update app_leads lead
+                set pipeline_column_id = $2,
+                    stage = $3,
+                    created_by = $4,
+                    shared_queue = false,
+                    first_contact_at = coalesce(first_contact_at, now()),
+                    last_follow_up_at = now(),
+                    follow_up_count = follow_up_count + 1,
+                    updated_at = now()
+                where lead.id = $1
+                  and lead.shared_queue = true
+                  and lead.stage = 'Novo lead'
+                  and exists (
+                    select 1
+                    from app_course_attendance_consultants attendance_consultant
+                    inner join app_users consultant on consultant.id = attendance_consultant.user_id
+                    where attendance_consultant.attendance_id = lead.attendance_id
+                      and consultant.id = $4
+                      and consultant.role = 'CONSULTOR'
+                      and consultant.status = 'active'
+                  )
+                returning lead.id
+              `,
+              [params.id, column.id, column.semantic_stage, session.user.id],
+            );
+
+            if (!claimed.rowCount) {
+              return Response.json(
+                { ok: false, error: "Este lead já foi assumido por outro consultor." },
+                { status: 409 },
+              );
+            }
+
+            return Response.json({
+              ok: true,
+              claimed: true,
+              stage: column.semantic_stage,
+              pipelineColumnId: column.id,
+              createdById: session.user.id,
+              createdByName: session.user.name,
+              sharedQueue: false,
+            });
+          }
+
+          const releaseToSharedQueue =
+            column.semantic_stage === "Novo lead" &&
+            (await hasActiveAttendanceConsultant(lead.attendance_id));
           await queryDb(
             `
               update app_leads
               set pipeline_column_id = $2,
                   stage = $3,
+                  shared_queue = $4,
+                  created_by = case when $4 then null else created_by end,
                   first_contact_at = case
                     when $3 <> 'Novo lead' then coalesce(first_contact_at, now())
                     else first_contact_at
@@ -365,13 +476,21 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
                   updated_at = now()
               where id = $1
             `,
-            [params.id, column.id, column.semantic_stage],
+            [params.id, column.id, column.semantic_stage, releaseToSharedQueue],
           );
           return Response.json({
             ok: true,
             stage: column.semantic_stage,
             pipelineColumnId: column.id,
+            sharedQueue: releaseToSharedQueue,
           });
+        }
+
+        if (isSharedNewLead && session.user.role === "CONSULTOR") {
+          return Response.json(
+            { ok: false, error: "Mova o lead para outra etapa para iniciar o atendimento." },
+            { status: 409 },
+          );
         }
 
         if (!payload.fullName || !payload.phone) {
@@ -402,6 +521,13 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
           nextStage && allowedStages.includes(nextStage as LeadStage)
             ? (nextStage as LeadStage)
             : lead.stage;
+
+        if (isSharedNewLead && resolvedStage !== "Novo lead") {
+          return Response.json(
+            { ok: false, error: "Um consultor da turma deve assumir o lead pelo pipeline." },
+            { status: 409 },
+          );
+        }
 
         if (payload.fullName && payload.phone) {
           if (!isUuid(payload.attendanceId)) {
@@ -443,6 +569,8 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
           }
 
           const resolvedCity = `${attendance.city} - ${attendance.state}`;
+          const releaseToSharedQueue =
+            resolvedStage === "Novo lead" && (await hasActiveAttendanceConsultant(attendance.id));
 
           await queryDb(
             `
@@ -462,6 +590,8 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
                 observations = nullif($13, ''),
                 pipeline_column_id = case when $14 <> stage then null else pipeline_column_id end,
                 stage = $14,
+                shared_queue = $16,
+                created_by = case when $16 then null else created_by end,
                 first_contact_at = case
                   when $14 <> 'Novo lead' then coalesce(first_contact_at, now())
                   else first_contact_at
@@ -513,6 +643,7 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
               payload.observations,
               resolvedStage,
               session.user.id,
+              releaseToSharedQueue,
             ],
           );
 
@@ -520,12 +651,19 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
             await recordPaidStudentPayment(params.id, session.user.id);
           }
 
-          return Response.json({ ok: true, stage: resolvedStage });
+          return Response.json({
+            ok: true,
+            stage: resolvedStage,
+            sharedQueue: releaseToSharedQueue,
+          });
         }
 
         if (!nextStage || !allowedStages.includes(nextStage as LeadStage)) {
           return Response.json({ ok: false, error: "Estágio inválido." }, { status: 400 });
         }
+
+        const releaseToSharedQueue =
+          nextStage === "Novo lead" && (await hasActiveAttendanceConsultant(lead.attendance_id));
 
         await queryDb(
           `
@@ -533,6 +671,8 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
             set
               pipeline_column_id = case when $2 <> stage then null else pipeline_column_id end,
               stage = $2,
+              shared_queue = $4,
+              created_by = case when $4 then null else created_by end,
               first_contact_at = case
                 when $2 <> 'Novo lead' then coalesce(first_contact_at, now())
                 else first_contact_at
@@ -564,14 +704,14 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
               updated_at = now()
             where id = $1
           `,
-          [params.id, nextStage, session.user.id],
+          [params.id, nextStage, session.user.id, releaseToSharedQueue],
         );
 
         if (nextStage === "Matriculado") {
           await recordPaidStudentPayment(params.id, session.user.id);
         }
 
-        return Response.json({ ok: true, stage: nextStage });
+        return Response.json({ ok: true, stage: nextStage, sharedQueue: releaseToSharedQueue });
       },
       DELETE: async ({ request, params }) => {
         const session = await getSessionFromRequest(request);

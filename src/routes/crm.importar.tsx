@@ -1,6 +1,6 @@
 import * as React from "react";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
-import { CheckCircle2, FileSpreadsheet, Loader2, Shuffle, Upload } from "lucide-react";
+import { CheckCircle2, FileSpreadsheet, Loader2, Upload, UsersRound } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { isDevRole } from "@/lib/auth-types";
@@ -35,7 +35,6 @@ type TargetField =
   | "campaignName"
   | "formId"
   | "observations";
-type Consultant = { id: string; name: string; email: string };
 type Course = { id: string; name: string; value: string; cities: Array<string> };
 type Attendance = {
   id: string;
@@ -44,6 +43,8 @@ type Attendance = {
   state: string;
   classDate: string;
   displayName: string;
+  consultantIds: Array<string>;
+  consultantNames: Array<string>;
 };
 type ParsedCsv = { headers: Array<string>; rows: Array<Array<string>> };
 
@@ -121,12 +122,10 @@ function LeadImporter() {
   const [parsed, setParsed] = React.useState<ParsedCsv | null>(null);
   const [fileName, setFileName] = React.useState("");
   const [mapping, setMapping] = React.useState<Array<TargetField>>([]);
-  const [consultants, setConsultants] = React.useState<Array<Consultant>>([]);
   const [courses, setCourses] = React.useState<Array<Course>>([]);
   const [attendances, setAttendances] = React.useState<Array<Attendance>>([]);
   const [courseId, setCourseId] = React.useState("");
   const [attendanceId, setAttendanceId] = React.useState("");
-  const [selected, setSelected] = React.useState<Set<string>>(() => new Set());
   const [skipDuplicates, setSkipDuplicates] = React.useState(true);
   const [loading, setLoading] = React.useState(true);
   const [importing, setImporting] = React.useState(false);
@@ -145,13 +144,11 @@ function LeadImporter() {
     fetch(`/api/crm/import?unitId=${encodeURIComponent(unitId)}`)
       .then((response) =>
         readJson<{
-          consultants: Array<Consultant>;
           courses: Array<Course>;
           attendances: Array<Attendance>;
         }>(response),
       )
       .then((data) => {
-        setConsultants(data.consultants);
         setCourses(data.courses);
         setAttendances(data.attendances);
       })
@@ -193,16 +190,17 @@ function LeadImporter() {
       toast.error("Mapeie ao menos Nome e Telefone principal.");
       return;
     }
-    if (!selected.size) {
-      toast.error("Selecione ao menos um consultor.");
-      return;
-    }
     if (!courseId) {
       toast.error("Selecione o curso dos leads.");
       return;
     }
     if (!attendanceId) {
       toast.error("Selecione a turma dos leads.");
+      return;
+    }
+    const selectedAttendance = attendances.find((attendance) => attendance.id === attendanceId);
+    if (!selectedAttendance?.consultantIds.length) {
+      toast.error("Cadastre ao menos um consultor ativo nesta turma.");
       return;
     }
     setImporting(true);
@@ -214,7 +212,6 @@ function LeadImporter() {
           body: JSON.stringify({
             unitId,
             rows: mappedRows(),
-            consultantIds: Array.from(selected),
             courseId,
             attendanceId,
             skipDuplicates,
@@ -371,35 +368,37 @@ function LeadImporter() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Shuffle className="h-4 w-4" />
-                Com vários consultores, cada lead recebe um deles aleatoriamente.
+                <UsersRound className="h-4 w-4" />
+                Os leads entrarão na fila compartilhada dos consultores cadastrados na turma.
               </div>
               {loading ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
+              ) : attendanceId ? (
+                attendances.find((attendance) => attendance.id === attendanceId)?.consultantNames
+                  .length ? (
+                  <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                    {attendances
+                      .find((attendance) => attendance.id === attendanceId)
+                      ?.consultantNames.map((consultantName) => (
+                        <div
+                          key={consultantName}
+                          className="flex items-center gap-3 rounded-lg border border-[#224C99]/15 bg-[#EAF1FF]/60 p-3"
+                        >
+                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#224C99] text-xs font-bold text-white">
+                            {consultantName.charAt(0).toUpperCase()}
+                          </div>
+                          <span className="font-medium text-[#07154C]">{consultantName}</span>
+                        </div>
+                      ))}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                    Esta turma ainda não possui consultores ativos selecionados.
+                  </div>
+                )
               ) : (
-                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                  {consultants.map((consultant) => (
-                    <Label
-                      key={consultant.id}
-                      className="flex cursor-pointer items-center gap-3 rounded-lg border p-3"
-                    >
-                      <Checkbox
-                        checked={selected.has(consultant.id)}
-                        onCheckedChange={(checked) =>
-                          setSelected((current) => {
-                            const next = new Set(current);
-                            if (checked) next.add(consultant.id);
-                            else next.delete(consultant.id);
-                            return next;
-                          })
-                        }
-                      />
-                      <span>
-                        <span className="block font-medium">{consultant.name}</span>
-                        <span className="text-xs text-muted-foreground">{consultant.email}</span>
-                      </span>
-                    </Label>
-                  ))}
+                <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                  Selecione a turma para visualizar quem terá acesso aos novos leads.
                 </div>
               )}
               <Label className="flex items-center gap-3">
@@ -454,7 +453,13 @@ function LeadImporter() {
               ) : null}
               <Button
                 onClick={() => void importLeads()}
-                disabled={importing || !selected.size || !courseId || !attendanceId}
+                disabled={
+                  importing ||
+                  !courseId ||
+                  !attendanceId ||
+                  !attendances.find((attendance) => attendance.id === attendanceId)?.consultantIds
+                    .length
+                }
               >
                 {importing ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

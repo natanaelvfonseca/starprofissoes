@@ -155,6 +155,7 @@ export async function ensureCommercialSchema() {
       payment_confirmed_at timestamptz,
       pipeline_column_id uuid references app_pipeline_columns(id) on delete set null,
       student_pipeline_column_id uuid references app_pipeline_columns(id) on delete set null,
+      shared_queue boolean not null default false,
       created_by uuid references app_users(id) on delete set null,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
@@ -173,6 +174,7 @@ export async function ensureCommercialSchema() {
     alter table app_leads add column if not exists payment_confirmed_at timestamptz;
     alter table app_leads add column if not exists pipeline_column_id uuid references app_pipeline_columns(id) on delete set null;
     alter table app_leads add column if not exists student_pipeline_column_id uuid references app_pipeline_columns(id) on delete set null;
+    alter table app_leads add column if not exists shared_queue boolean not null default false;
 
     create index if not exists app_leads_unit_stage_idx on app_leads (unit_id, stage);
     create index if not exists app_leads_unit_user_stage_idx on app_leads (unit_id, created_by, stage);
@@ -199,7 +201,7 @@ export async function ensureCommercialSchema() {
     create or replace function app_assign_default_marketing_owner()
     returns trigger as $$
     begin
-      if new.created_by is null then
+      if new.created_by is null and not new.shared_queue then
         select u.id
         into new.created_by
         from app_users u

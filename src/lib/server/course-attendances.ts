@@ -116,7 +116,27 @@ export async function ensureCourseAttendanceSchema() {
 
     alter table app_leads add column if not exists attendance_id uuid
       references app_course_attendances(id) on delete set null;
+    alter table app_leads add column if not exists shared_queue boolean not null default false;
     create index if not exists app_leads_attendance_idx on app_leads (attendance_id);
+    create index if not exists app_leads_shared_queue_idx
+      on app_leads (attendance_id, created_at desc)
+      where shared_queue = true and stage = 'Novo lead';
+
+    update app_leads lead
+    set shared_queue = true,
+        created_by = null,
+        updated_at = now()
+    where lead.stage = 'Novo lead'
+      and lead.attendance_id is not null
+      and not lead.shared_queue
+      and exists (
+        select 1
+        from app_course_attendance_consultants attendance_consultant
+        inner join app_users consultant on consultant.id = attendance_consultant.user_id
+        where attendance_consultant.attendance_id = lead.attendance_id
+          and consultant.role = 'CONSULTOR'
+          and consultant.status = 'active'
+      );
   `)
     .then(() => undefined)
     .catch((error) => {
@@ -524,12 +544,11 @@ export async function findCampaignAttendance(client: PoolClient, campaignName: s
   return { attendance: matches[0], error: null } as const;
 }
 
-export async function chooseAttendanceConsultant(
+export async function getAttendanceConsultants(
   client: PoolClient,
   attendance: {
     id: string;
     unit_id: string;
-    round_robin_cursor: number;
   },
 ) {
   const candidates = await client.query<CandidateRow>(
@@ -538,7 +557,7 @@ export async function chooseAttendanceConsultant(
       from app_course_attendance_consultants ac
       inner join app_users u on u.id = ac.user_id
       where ac.attendance_id = $1
-        and u.role in ('CONSULTOR', 'GERENTE', 'DIRETOR')
+        and u.role = 'CONSULTOR'
         and u.status = 'active'
         and (
           u.primary_unit_id = $2
@@ -553,24 +572,5 @@ export async function chooseAttendanceConsultant(
     [attendance.id, attendance.unit_id],
   );
 
-  if (!candidates.rows.length) {
-    return { userId: null, reason: "Turma sem responsáveis ativos." };
-  }
-
-  const cursor = Number(attendance.round_robin_cursor) || 0;
-  const selected = candidates.rows[cursor % candidates.rows.length];
-
-  await client.query(
-    `
-      update app_course_attendances
-      set round_robin_cursor = $2, updated_at = now()
-      where id = $1
-    `,
-    [attendance.id, (cursor + 1) % candidates.rows.length],
-  );
-
-  return {
-    userId: selected.id,
-    reason: `Rodízio da turma; posição ${cursor % candidates.rows.length} de ${candidates.rows.length}.`,
-  };
+  return candidates.rows;
 }
