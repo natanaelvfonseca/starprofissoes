@@ -146,7 +146,7 @@ export function canViewSalesAi(role: UserRole) {
 }
 
 export function canManageWhatsappLabelAutomation(role: UserRole) {
-  return canViewManagement(role);
+  return canViewAttendances(role);
 }
 
 export function canManageBrandPlen(role: UserRole) {

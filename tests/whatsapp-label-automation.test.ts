@@ -117,4 +117,5 @@ test("consultor não administra regras, enquanto perfis de gestão administram",
   assert.equal(canManageWhatsappLabelAutomation("DEV"), true);
   assert.equal(canManageWhatsappLabelAutomation("CEO"), true);
   assert.equal(canManageWhatsappLabelAutomation("GERENTE"), true);
+  assert.equal(canManageWhatsappLabelAutomation("MARKETING"), false);
 });
