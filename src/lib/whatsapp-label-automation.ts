@@ -2,6 +2,7 @@ export type WhatsappLabelAssociation = {
   action: "add" | "remove";
   chatId: string;
   labelId: string;
+  phoneJid?: string;
 };
 
 export type WhatsappLabelEdit = {
@@ -29,6 +30,10 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function firstPresent(...values: Array<unknown>) {
+  return values.find((value) => value !== undefined && value !== null && value !== "");
+}
+
 export function digitsOnly(value: unknown) {
   return String(value ?? "").replace(/\D/g, "");
 }
@@ -43,6 +48,52 @@ export function phoneFromWhatsappJid(value: unknown) {
   }
 
   return digitsOnly(jid.split("@")[0]);
+}
+
+function recordsFromEvolutionPayload(payload: unknown) {
+  if (Array.isArray(payload)) return payload;
+
+  const payloadRecord = asRecord(payload);
+  const messages = asRecord(payloadRecord.messages);
+  const data = asRecord(payloadRecord.data);
+  const candidates = [messages.records, payloadRecord.records, data.records, payloadRecord.data];
+
+  return candidates.find(Array.isArray) ?? [];
+}
+
+export function phoneFromEvolutionNumberLookup(payload: unknown) {
+  for (const item of recordsFromEvolutionPayload(payload)) {
+    const record = asRecord(item);
+    const candidates = [record.jid, record.remoteJid, record.phoneJid, record.number];
+
+    for (const candidate of candidates) {
+      const phone = phoneFromWhatsappJid(candidate);
+      if (brazilianPhoneKeys(phone).size > 0) return phone;
+    }
+  }
+
+  return "";
+}
+
+export function phoneFromEvolutionMessages(payload: unknown) {
+  for (const item of recordsFromEvolutionPayload(payload)) {
+    const record = asRecord(item);
+    const key = asRecord(record.key);
+    const candidates = [
+      key.remoteJidAlt,
+      key.participantPn,
+      record.remoteJidAlt,
+      record.senderPn,
+      key.remoteJid,
+    ];
+
+    for (const candidate of candidates) {
+      const phone = phoneFromWhatsappJid(candidate);
+      if (brazilianPhoneKeys(phone).size > 0) return phone;
+    }
+  }
+
+  return "";
 }
 
 export function brazilianPhoneKeys(value: unknown) {
@@ -113,10 +164,33 @@ export function parseWhatsappLabelAssociation(payload: unknown): WhatsappLabelAs
   const action = rawAction === "add" || rawAction === "remove" ? rawAction : null;
   const chatId = String(data.chatId ?? association.chatId ?? "").trim();
   const labelId = String(data.labelId ?? association.labelId ?? "").trim();
+  const phoneJid = String(
+    firstPresent(
+      data.chatIdAlt,
+      data.remoteJidAlt,
+      data.senderPn,
+      association.chatIdAlt,
+      association.remoteJidAlt,
+      association.senderPn,
+    ) ?? "",
+  ).trim();
 
   if (!action || !chatId || !labelId) return null;
 
-  return { action, chatId, labelId };
+  return phoneJid ? { action, chatId, labelId, phoneJid } : { action, chatId, labelId };
+}
+
+export function evolutionEventSourceId(payload: unknown) {
+  const payloadRecord = asRecord(payload);
+  const data = asRecord(payloadRecord.data);
+  const raw = firstPresent(payloadRecord.id, payloadRecord.eventId, data.eventId);
+
+  if (typeof raw !== "string" && typeof raw !== "number") return null;
+
+  const value = String(raw).trim();
+  return value && value.toLowerCase() !== "undefined" && value.toLowerCase() !== "null"
+    ? value
+    : null;
 }
 
 export function parseWhatsappLabelEdit(payload: unknown): WhatsappLabelEdit | null {

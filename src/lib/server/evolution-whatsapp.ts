@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { QueryResultRow } from "pg";
+import { phoneFromWhatsappJid } from "@/lib/whatsapp-label-automation";
 import { queryDb } from "@/lib/server/db";
 import {
   configureEvolutionWebhook,
@@ -103,6 +104,18 @@ export async function ensureEvolutionSchema() {
       where message.instance_id = instance.id and message.user_id is null;
       create index if not exists app_whatsapp_messages_user_sent_idx
         on app_whatsapp_messages (user_id, sent_at desc);
+
+      create table if not exists app_whatsapp_jid_mappings (
+        id uuid primary key default gen_random_uuid(),
+        instance_id uuid not null references app_whatsapp_instances(id) on delete cascade,
+        lid_jid text not null,
+        phone text not null,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        unique (instance_id, lid_jid)
+      );
+      create index if not exists app_whatsapp_jid_mappings_phone_idx
+        on app_whatsapp_jid_mappings (instance_id, phone);
     `)
       .then(() => undefined)
       .catch((error) => {
@@ -444,6 +457,10 @@ function extractMessage(payload: unknown) {
   return {
     id: String(key?.id ?? data?.id ?? ""),
     remoteJid: String(key?.remoteJid ?? data?.remoteJid ?? ""),
+    alternateJid: String(
+      firstValue(key?.remoteJidAlt, key?.participantPn, data?.remoteJidAlt, data?.senderPn, "") ??
+        "",
+    ),
     fromMe: Boolean(key?.fromMe),
     contactName: String(data?.pushName ?? data?.notify ?? "").trim() || null,
     content: String(content || (type === "unknown" ? "[Mensagem]" : `[${type}]`)),
@@ -514,7 +531,11 @@ export async function receiveEvolutionWebhook(payload: unknown, token: string | 
   if (event === "messages.upsert" || event === "message") {
     const parsed = extractMessage(payload);
     if (parsed.id && parsed.remoteJid && !parsed.remoteJid.endsWith("@g.us")) {
-      const phone = parsed.remoteJid.split("@")[0].replace(/\D/g, "");
+      const phone =
+        phoneFromWhatsappJid(parsed.remoteJid) || phoneFromWhatsappJid(parsed.alternateJid);
+      const lidJid = [parsed.remoteJid, parsed.alternateJid].find((jid) =>
+        jid.toLowerCase().endsWith("@lid"),
+      );
       const sentAt = new Date(
         parsed.timestamp > 10_000_000_000 ? parsed.timestamp : parsed.timestamp * 1000,
       );
@@ -551,6 +572,17 @@ export async function receiveEvolutionWebhook(payload: unknown, token: string | 
           Number.isNaN(sentAt.getTime()) ? new Date() : sentAt,
         ],
       );
+      if (lidJid && phone) {
+        await queryDb(
+          `
+            insert into app_whatsapp_jid_mappings (instance_id, lid_jid, phone)
+            values ($1, $2, $3)
+            on conflict (instance_id, lid_jid) do update
+            set phone = excluded.phone, updated_at = now()
+          `,
+          [instance.id, lidJid, phone],
+        );
+      }
       await queryDb(
         `update app_whatsapp_instances set last_event_at = now(), updated_at = now() where id = $1`,
         [instance.id],

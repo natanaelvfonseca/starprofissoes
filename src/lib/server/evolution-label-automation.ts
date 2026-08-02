@@ -3,7 +3,10 @@ import type { QueryResultRow } from "pg";
 import {
   chooseLeadCandidate,
   choosePipelineColumnByLabelName,
+  evolutionEventSourceId,
   phoneFromWhatsappJid,
+  phoneFromEvolutionMessages,
+  phoneFromEvolutionNumberLookup,
   phonesMatch,
   parseWhatsappLabelAssociation,
   parseWhatsappLabelEdit,
@@ -270,12 +273,11 @@ async function saveEvolutionLabelEdit(
 
 function eventMetadata(payload: unknown) {
   const record = asRecord(payload);
-  const data = asRecord(record.data);
-  const sourceEventId = String(firstValue(record.id, record.eventId, data.eventId, ""));
-  const dateTime = String(firstValue(record.date_time, record.dateTime, ""));
+  const sourceEventId = evolutionEventSourceId(payload);
+  const dateTime = String(firstValue(record.date_time, record.dateTime) ?? "");
   const received = dateTime && !Number.isNaN(new Date(dateTime).getTime()) ? dateTime : null;
 
-  return { sourceEventId: sourceEventId || null, received };
+  return { sourceEventId, received };
 }
 
 function eventKey(params: {
@@ -384,9 +386,34 @@ async function finishAuditEvent(
   );
 }
 
-async function resolvePhone(instanceId: string, chatId: string) {
-  const directPhone = phoneFromWhatsappJid(chatId);
+async function saveLidMapping(instanceId: string, lidJid: string, phone: string) {
+  await queryDb(
+    `
+      insert into app_whatsapp_jid_mappings (instance_id, lid_jid, phone)
+      values ($1, $2, $3)
+      on conflict (instance_id, lid_jid) do update
+      set phone = excluded.phone, updated_at = now()
+    `,
+    [instanceId, lidJid, phone],
+  );
+}
+
+async function resolvePhone(instance: EvolutionInstance, chatId: string, phoneJid?: string) {
+  const directPhone = phoneFromWhatsappJid(phoneJid) || phoneFromWhatsappJid(chatId);
   if (directPhone) return directPhone;
+
+  if (chatId.toLowerCase().endsWith("@lid")) {
+    const mappingResult = await queryDb<{ phone: string }>(
+      `
+        select phone
+        from app_whatsapp_jid_mappings
+        where instance_id = $1 and lid_jid = $2
+        limit 1
+      `,
+      [instance.id, chatId],
+    );
+    if (mappingResult.rows[0]?.phone) return mappingResult.rows[0].phone;
+  }
 
   const result = await queryDb<{ phone: string }>(
     `
@@ -396,10 +423,45 @@ async function resolvePhone(instanceId: string, chatId: string) {
       order by sent_at desc
       limit 1
     `,
-    [instanceId, chatId],
+    [instance.id, chatId],
   );
 
-  return result.rows[0]?.phone ?? "";
+  if (result.rows[0]?.phone) return result.rows[0].phone;
+
+  if (!chatId.toLowerCase().endsWith("@lid")) return "";
+
+  let phone = "";
+  try {
+    const lookup = await requestEvolution(
+      `/chat/whatsappNumbers/${encodeURIComponent(instance.instance_name)}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ numbers: [chatId] }),
+      },
+    );
+    phone = phoneFromEvolutionNumberLookup(lookup);
+  } catch {
+    // Algumas versões antigas da Evolution ainda não resolvem LID neste endpoint.
+  }
+
+  if (!phone) {
+    try {
+      const messages = await requestEvolution(
+        `/chat/findMessages/${encodeURIComponent(instance.instance_name)}`,
+        {
+          method: "POST",
+          body: JSON.stringify({ where: { key: { remoteJid: chatId } }, limit: 20 }),
+        },
+      );
+      phone = phoneFromEvolutionMessages(messages);
+    } catch {
+      // Sem histórico não há uma segunda fonte segura para converter o LID.
+    }
+  }
+
+  if (phone) await saveLidMapping(instance.id, chatId, phone);
+
+  return phone;
 }
 
 async function resolveLead(unitId: string, consultantId: string, phone: string) {
@@ -455,7 +517,7 @@ async function processLabelAssociation(params: {
   const association = parseWhatsappLabelAssociation(params.payload);
   if (!association) return;
 
-  const phone = await resolvePhone(params.instance.id, association.chatId);
+  const phone = await resolvePhone(params.instance, association.chatId, association.phoneJid);
   const labelResolution =
     association.action === "add"
       ? await resolveEvolutionLabel(params.instance, association.labelId)

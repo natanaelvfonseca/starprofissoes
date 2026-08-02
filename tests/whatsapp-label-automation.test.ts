@@ -3,7 +3,10 @@ import test from "node:test";
 import {
   chooseLeadCandidate,
   choosePipelineColumnByLabelName,
+  evolutionEventSourceId,
   normalizeWhatsappLabelName,
+  phoneFromEvolutionMessages,
+  phoneFromEvolutionNumberLookup,
   phoneFromWhatsappJid,
   phonesMatch,
   parseWhatsappLabelAssociation,
@@ -31,6 +34,61 @@ test("aceita o payload aninhado da biblioteca Baileys para compatibilidade", () 
       data: { type: "add", association: { chatId: "5531999999999@s.whatsapp.net", labelId: "7" } },
     }),
     { action: "add", chatId: "5531999999999@s.whatsapp.net", labelId: "7" },
+  );
+});
+
+test("captura o JID alternativo quando a etiqueta chega vinculada a um LID", () => {
+  assert.deepEqual(
+    parseWhatsappLabelAssociation({
+      data: {
+        type: "add",
+        chatId: "269806154551489@lid",
+        remoteJidAlt: "5547999989259@s.whatsapp.net",
+        labelId: "8",
+      },
+    }),
+    {
+      action: "add",
+      chatId: "269806154551489@lid",
+      labelId: "8",
+      phoneJid: "5547999989259@s.whatsapp.net",
+    },
+  );
+});
+
+test("não transforma eventId ausente na string undefined", () => {
+  assert.equal(evolutionEventSourceId({ event: "labels.association", data: {} }), null);
+  assert.equal(evolutionEventSourceId({ id: "evt-123", data: {} }), "evt-123");
+});
+
+test("resolve LID pelo retorno de whatsappNumbers da Evolution", () => {
+  assert.equal(
+    phoneFromEvolutionNumberLookup([
+      {
+        jid: "5547999989259@s.whatsapp.net",
+        number: "269806154551489@lid",
+        exists: true,
+      },
+    ]),
+    "5547999989259",
+  );
+});
+
+test("resolve LID pelo remoteJidAlt do histórico de mensagens", () => {
+  assert.equal(
+    phoneFromEvolutionMessages({
+      messages: {
+        records: [
+          {
+            key: {
+              remoteJid: "269806154551489@lid",
+              remoteJidAlt: "5547999989259@s.whatsapp.net",
+            },
+          },
+        ],
+      },
+    }),
+    "5547999989259",
   );
 });
 
