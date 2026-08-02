@@ -2,6 +2,7 @@ import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   BookOpenCheck,
+  Columns3,
   Edit3,
   GraduationCap,
   Lock,
@@ -16,6 +17,8 @@ import type {
   AcquisitionChannelRecord,
   CommercialStatus,
   CourseRecord,
+  PipelineColumn,
+  PipelineType,
 } from "@/lib/commercial-types";
 import { useAuth } from "@/lib/auth";
 import { canViewManagement } from "@/lib/auth-types";
@@ -95,6 +98,17 @@ type AttendancesResponse = {
   consultants: Array<{ id: string; name: string }>;
 };
 
+type PipelineColumnsResponse = {
+  columns: Array<PipelineColumn>;
+};
+
+type PipelineColumnFormState = {
+  name: string;
+  pipelineType: PipelineType;
+  color: string;
+  position: string;
+};
+
 type AttendanceFormState = {
   courseId: string;
   city: string;
@@ -133,6 +147,13 @@ const initialAttendanceForm: AttendanceFormState = {
   status: "active",
 };
 
+const initialPipelineColumnForm: PipelineColumnFormState = {
+  name: "",
+  pipelineType: "leads",
+  color: "blue",
+  position: "70",
+};
+
 async function readJson<T>(response: Response): Promise<T> {
   const data = (await response.json().catch(() => ({}))) as T & { error?: string };
 
@@ -159,21 +180,27 @@ function CadastroPage() {
   const [channels, setChannels] = React.useState<Array<AcquisitionChannelRecord>>([]);
   const [attendances, setAttendances] = React.useState<Array<AttendanceRecord>>([]);
   const [consultants, setConsultants] = React.useState<AttendancesResponse["consultants"]>([]);
+  const [pipelineColumns, setPipelineColumns] = React.useState<Array<PipelineColumn>>([]);
   const [loading, setLoading] = React.useState(true);
   const [savingCourse, setSavingCourse] = React.useState(false);
   const [savingChannel, setSavingChannel] = React.useState(false);
   const [savingAttendance, setSavingAttendance] = React.useState(false);
+  const [savingPipelineColumn, setSavingPipelineColumn] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   const [courseDialogOpen, setCourseDialogOpen] = React.useState(false);
   const [channelDialogOpen, setChannelDialogOpen] = React.useState(false);
   const [attendanceDialogOpen, setAttendanceDialogOpen] = React.useState(false);
+  const [pipelineColumnDialogOpen, setPipelineColumnDialogOpen] = React.useState(false);
   const [editingCourseId, setEditingCourseId] = React.useState<string | null>(null);
   const [editingChannelId, setEditingChannelId] = React.useState<string | null>(null);
   const [editingAttendanceId, setEditingAttendanceId] = React.useState<string | null>(null);
+  const [editingPipelineColumnId, setEditingPipelineColumnId] = React.useState<string | null>(null);
   const [courseForm, setCourseForm] = React.useState<CourseFormState>(initialCourseForm);
   const [channelForm, setChannelForm] = React.useState<ChannelFormState>(initialChannelForm);
   const [attendanceForm, setAttendanceForm] =
     React.useState<AttendanceFormState>(initialAttendanceForm);
+  const [pipelineColumnForm, setPipelineColumnForm] =
+    React.useState<PipelineColumnFormState>(initialPipelineColumnForm);
   const [deleteTarget, setDeleteTarget] = React.useState<DeleteTarget | null>(null);
 
   const activeCourses = courses.filter((course) => course.status === "active").length;
@@ -193,7 +220,7 @@ function CadastroPage() {
     setLoading(true);
 
     try {
-      const [coursesData, channelsData, attendancesData] = await Promise.all([
+      const [coursesData, channelsData, attendancesData, pipelineData] = await Promise.all([
         readJson<CoursesResponse>(
           await fetch(`/api/gestao/courses${unitQuery(activeUnitId)}`, {
             credentials: "same-origin",
@@ -212,12 +239,19 @@ function CadastroPage() {
             headers: { Accept: "application/json" },
           }),
         ),
+        readJson<PipelineColumnsResponse>(
+          await fetch(`/api/gestao/pipeline-columns${unitQuery(activeUnitId)}`, {
+            credentials: "same-origin",
+            headers: { Accept: "application/json" },
+          }),
+        ),
       ]);
 
       setCourses(coursesData.courses);
       setChannels(channelsData.channels);
       setAttendances(attendancesData.attendances);
       setConsultants(attendancesData.consultants);
+      setPipelineColumns(pipelineData.columns);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao carregar cadastros.");
     } finally {
@@ -296,6 +330,61 @@ function CadastroPage() {
       status: attendance.status,
     });
     setAttendanceDialogOpen(true);
+  }
+
+  function openNewPipelineColumnDialog(pipelineType: PipelineType) {
+    const currentColumns = pipelineColumns.filter((column) => column.pipelineType === pipelineType);
+    const nextPosition = Math.max(0, ...currentColumns.map((column) => column.position)) + 10;
+    setEditingPipelineColumnId(null);
+    setPipelineColumnForm({
+      ...initialPipelineColumnForm,
+      pipelineType,
+      position: String(nextPosition),
+    });
+    setPipelineColumnDialogOpen(true);
+  }
+
+  function openEditPipelineColumnDialog(column: PipelineColumn) {
+    setEditingPipelineColumnId(column.id);
+    setPipelineColumnForm({
+      name: column.name,
+      pipelineType: column.pipelineType,
+      color: column.color,
+      position: String(column.position),
+    });
+    setPipelineColumnDialogOpen(true);
+  }
+
+  async function handlePipelineColumnSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeUnitId || !pipelineColumnForm.name.trim()) {
+      toast.error("Informe o nome da coluna.");
+      return;
+    }
+
+    setSavingPipelineColumn(true);
+    try {
+      await readJson<{ column: PipelineColumn }>(
+        await fetch("/api/gestao/pipeline-columns", {
+          method: editingPipelineColumnId ? "PATCH" : "POST",
+          credentials: "same-origin",
+          headers: { Accept: "application/json", "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...pipelineColumnForm,
+            id: editingPipelineColumnId,
+            unitId: activeUnitId,
+            position: Number(pipelineColumnForm.position),
+          }),
+        }),
+      );
+      toast.success(editingPipelineColumnId ? "Coluna atualizada." : "Coluna criada.");
+      setPipelineColumnDialogOpen(false);
+      await loadData();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao salvar coluna.");
+    } finally {
+      setSavingPipelineColumn(false);
+    }
   }
 
   async function handleCourseSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -479,7 +568,7 @@ function CadastroPage() {
       <PageHeader
         eyebrow="Gestão"
         title="Cadastro"
-        description="Central operacional para manter cursos e canais de aquisição prontos para as integrações comerciais."
+        description="Central administrativa para manter pipelines, cursos, turmas e canais de aquisição da unidade."
         actions={
           <>
             <Badge variant="secondary" className="bg-primary/10 text-primary">
@@ -512,6 +601,23 @@ function CadastroPage() {
           detail="Dados gravados no banco por unidade."
         />
       </div>
+
+      <section id="pipelines" className="grid scroll-mt-24 gap-5 xl:grid-cols-2">
+        <PipelineColumnsCard
+          title="Pipeline de Leads"
+          description="Defina as etapas exibidas no fluxo comercial da unidade."
+          columns={pipelineColumns.filter((column) => column.pipelineType === "leads")}
+          onCreate={() => openNewPipelineColumnDialog("leads")}
+          onEdit={openEditPipelineColumnDialog}
+        />
+        <PipelineColumnsCard
+          title="Pipeline de Alunos"
+          description="Organize a jornada depois da matrícula sem alterar a conversão comercial."
+          columns={pipelineColumns.filter((column) => column.pipelineType === "students")}
+          onCreate={() => openNewPipelineColumnDialog("students")}
+          onEdit={openEditPipelineColumnDialog}
+        />
+      </section>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Card className="animate-panel-rise overflow-hidden border-primary/10 shadow-card">
@@ -832,6 +938,15 @@ function CadastroPage() {
         onFormChange={setAttendanceForm}
         onSubmit={handleAttendanceSubmit}
       />
+      <PipelineColumnDialog
+        open={pipelineColumnDialogOpen}
+        editing={Boolean(editingPipelineColumnId)}
+        form={pipelineColumnForm}
+        saving={savingPipelineColumn}
+        onOpenChange={setPipelineColumnDialogOpen}
+        onFormChange={setPipelineColumnForm}
+        onSubmit={handlePipelineColumnSubmit}
+      />
       <DeleteDialog
         target={deleteTarget}
         deleting={deleting}
@@ -839,6 +954,168 @@ function CadastroPage() {
         onConfirm={() => void confirmDelete()}
       />
     </div>
+  );
+}
+
+const pipelineColorClasses: Record<string, string> = {
+  blue: "bg-[#377DFE]",
+  indigo: "bg-[#16006C]",
+  gold: "bg-[#F4B728]",
+  orange: "bg-[#FF8A1F]",
+  green: "bg-emerald-500",
+  rose: "bg-rose-500",
+};
+
+function PipelineColumnsCard({
+  title,
+  description,
+  columns,
+  onCreate,
+  onEdit,
+}: {
+  title: string;
+  description: string;
+  columns: Array<PipelineColumn>;
+  onCreate: () => void;
+  onEdit: (column: PipelineColumn) => void;
+}) {
+  return (
+    <Card className="overflow-hidden border-[#16006C]/10 shadow-card">
+      <CardHeader className="border-b border-[#16006C]/10 bg-[#16006C] text-white">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-[#F4B728]">
+              <Columns3 className="h-5 w-5" />
+            </div>
+            <div>
+              <CardTitle className="text-base text-white">{title}</CardTitle>
+              <p className="mt-1 text-xs text-white/60">{description}</p>
+            </div>
+          </div>
+          <Button
+            type="button"
+            onClick={onCreate}
+            className="bg-[#F4B728] font-bold text-[#07154C] hover:bg-[#F4B728]/90"
+          >
+            <Plus className="h-4 w-4" /> Nova coluna
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2 p-4">
+        {columns.map((column, index) => (
+          <button
+            key={column.id}
+            type="button"
+            onClick={() => onEdit(column)}
+            className="flex w-full items-center gap-3 rounded-xl border border-[#16006C]/10 bg-[#F7F8FC] p-3 text-left transition hover:border-[#16006C]/25 hover:bg-white hover:shadow-sm"
+          >
+            <div
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-black text-white ${
+                pipelineColorClasses[column.color] ?? pipelineColorClasses.blue
+              }`}
+            >
+              {String(index + 1).padStart(2, "0")}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-bold text-[#07154C]">{column.name}</div>
+              <div className="mt-0.5 text-[11px] text-muted-foreground">
+                Ordem {column.position}
+                {column.systemKey ? " · Coluna padrão" : " · Coluna personalizada"}
+              </div>
+            </div>
+            <Edit3 className="h-4 w-4 text-muted-foreground" />
+          </button>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PipelineColumnDialog({
+  open,
+  editing,
+  form,
+  saving,
+  onOpenChange,
+  onFormChange,
+  onSubmit,
+}: {
+  open: boolean;
+  editing: boolean;
+  form: PipelineColumnFormState;
+  saving: boolean;
+  onOpenChange: (open: boolean) => void;
+  onFormChange: React.Dispatch<React.SetStateAction<PipelineColumnFormState>>;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <form onSubmit={onSubmit}>
+          <DialogHeader>
+            <DialogTitle>{editing ? "Editar coluna" : "Nova coluna"}</DialogTitle>
+            <DialogDescription>
+              Personalize o nome, a cor e a posição da etapa no pipeline.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-5 sm:grid-cols-2">
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="pipeline-column-name">Nome da coluna</Label>
+              <Input
+                id="pipeline-column-name"
+                value={form.name}
+                onChange={(event) =>
+                  onFormChange((current) => ({ ...current, name: event.target.value }))
+                }
+                placeholder="Ex.: Documentação enviada"
+                maxLength={60}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Cor</Label>
+              <Select
+                value={form.color}
+                onValueChange={(color) => onFormChange((current) => ({ ...current, color }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="blue">Azul</SelectItem>
+                  <SelectItem value="indigo">Roxo Star</SelectItem>
+                  <SelectItem value="gold">Dourado</SelectItem>
+                  <SelectItem value="orange">Laranja</SelectItem>
+                  <SelectItem value="green">Verde</SelectItem>
+                  <SelectItem value="rose">Vermelho</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="pipeline-column-position">Ordem</Label>
+              <Input
+                id="pipeline-column-position"
+                type="number"
+                min="0"
+                value={form.position}
+                onChange={(event) =>
+                  onFormChange((current) => ({ ...current, position: event.target.value }))
+                }
+                required
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" className="bg-gradient-primary" disabled={saving}>
+              {saving ? "Salvando..." : editing ? "Salvar alterações" : "Criar coluna"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

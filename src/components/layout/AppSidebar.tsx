@@ -84,7 +84,12 @@ const groups: Array<NavigationGroup> = [
   {
     label: "Gestão",
     items: [
-      { title: "Cadastro", url: "/gestao/cadastro", icon: ClipboardPenLine, managementOnly: true },
+      {
+        title: "Cadastros e pipelines",
+        url: "/gestao/cadastro",
+        icon: ClipboardPenLine,
+        managementOnly: true,
+      },
       { title: "Importar leads", url: "/crm/importar", icon: FileUp, devOnly: true },
       { title: "Feedback", url: "/feedback", icon: MessagesSquare, systemFeedbackOnly: true },
     ],

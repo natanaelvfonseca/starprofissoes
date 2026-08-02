@@ -27,6 +27,7 @@ import type {
   CourseRecord,
   LeadRecord,
   LeadStage,
+  PipelineColumn,
 } from "@/lib/commercial-types";
 import type { CrmLeadTask } from "@/lib/crm-task-types";
 import { useAuth } from "@/lib/auth";
@@ -79,6 +80,7 @@ type LeadDialogMode = "create" | "edit";
 
 type LeadsResponse = {
   leads: Array<LeadRecord>;
+  pipelineColumns: Array<PipelineColumn>;
 };
 
 type CoursesResponse = {
@@ -193,16 +195,28 @@ const pipelineStageVisual: Record<
   },
 };
 
-const stageLabels: Record<LeadStage, string> = {
-  "Novo lead": "Novo lead",
-  "Em contato": "Em contato",
-  Qualificado: "Qualificado",
-  Proposta: "Proposta",
-  "Pagamento pendente": "Pagamento pendente",
-  Confirmado: "Confirmado",
-  Recuperação: "Recuperação",
-  Matriculado: "Matriculado",
+const pipelineColorVisual: Record<
+  string,
+  { accent: string; badge: string; dot: string; surface: string }
+> = {
+  blue: pipelineStageVisual["Novo lead"],
+  indigo: pipelineStageVisual["Em contato"],
+  gold: pipelineStageVisual.Qualificado,
+  orange: pipelineStageVisual.Proposta,
+  green: pipelineStageVisual["Pagamento pendente"],
+  rose: pipelineStageVisual.Recuperação,
 };
+
+const fallbackLeadPipelineColumns: Array<PipelineColumn> = stages.map((stage, index) => ({
+  id: `fallback-${index}`,
+  unitId: "",
+  pipelineType: "leads",
+  name: stage,
+  color: ["blue", "indigo", "gold", "orange", "green", "rose"][index],
+  position: (index + 1) * 10,
+  systemKey: null,
+  semanticStage: stage,
+}));
 
 const pollingIntervalMs = 20000;
 
@@ -317,6 +331,16 @@ function pipelineStage(stage: LeadStage): LeadStage {
   return stage === "Confirmado" ? "Pagamento pendente" : stage;
 }
 
+function resolveLeadPipelineColumn(lead: LeadRecord, columns: Array<PipelineColumn>) {
+  if (lead.pipelineColumnId) {
+    const assigned = columns.find((column) => column.id === lead.pipelineColumnId);
+    if (assigned) return assigned;
+  }
+
+  const semanticStage = pipelineStage(lead.stage);
+  return columns.find((column) => column.semanticStage === semanticStage) ?? columns[0] ?? null;
+}
+
 function localDateTimeToIso(value: string) {
   if (!value) {
     return "";
@@ -402,6 +426,7 @@ function CRMPipeline() {
   const { session } = useAuth();
   const activeUnitId = session?.activeUnit?.id ?? "";
   const [leads, setLeads] = React.useState<Array<LeadRecord>>([]);
+  const [pipelineColumns, setPipelineColumns] = React.useState<Array<PipelineColumn>>([]);
   const [courses, setCourses] = React.useState<Array<CourseRecord>>([]);
   const [attendances, setAttendances] = React.useState<Array<AttendanceOption>>([]);
   const [channels, setChannels] = React.useState<Array<AcquisitionChannelRecord>>([]);
@@ -412,9 +437,7 @@ function CRMPipeline() {
   const [search, setSearch] = React.useState("");
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [filters, setFilters] = React.useState<PipelineFilters>(() => emptyPipelineFilters());
-  const [stageVisibleCounts, setStageVisibleCounts] = React.useState<
-    Partial<Record<LeadStage, number>>
-  >({});
+  const [stageVisibleCounts, setStageVisibleCounts] = React.useState<Record<string, number>>({});
   const [loadingLeads, setLoadingLeads] = React.useState(true);
   const [loadingOptions, setLoadingOptions] = React.useState(false);
   const [leadTasks, setLeadTasks] = React.useState<Array<CrmLeadTask>>([]);
@@ -428,7 +451,7 @@ function CRMPipeline() {
   const [convertingLeadId, setConvertingLeadId] = React.useState<string | null>(null);
   const [confettiRunId, setConfettiRunId] = React.useState(0);
   const [draggingLeadId, setDraggingLeadId] = React.useState<string | null>(null);
-  const [dropTargetStage, setDropTargetStage] = React.useState<LeadStage | null>(null);
+  const [dropTargetStage, setDropTargetStage] = React.useState<string | null>(null);
   const [syncingLeadId, setSyncingLeadId] = React.useState<string | null>(null);
   const [transferDialogOpen, setTransferDialogOpen] = React.useState(false);
   const [transferLeads, setTransferLeads] = React.useState<Array<TransferLead>>([]);
@@ -491,6 +514,9 @@ function CRMPipeline() {
       ),
     [filters, leads, search],
   );
+  const displayPipelineColumns = pipelineColumns.length
+    ? pipelineColumns
+    : fallbackLeadPipelineColumns;
 
   React.useEffect(() => {
     setStageVisibleCounts({});
@@ -516,6 +542,7 @@ function CRMPipeline() {
         );
 
         setLeads(data.leads);
+        setPipelineColumns(data.pipelineColumns ?? []);
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Falha ao carregar leads.");
       } finally {
@@ -939,18 +966,24 @@ function CRMPipeline() {
     }
   }
 
-  async function updateLeadStage(lead: LeadRecord, nextStage: LeadStage) {
-    if (lead.stage === nextStage) {
+  async function updateLeadStage(lead: LeadRecord, column: PipelineColumn) {
+    if (lead.pipelineColumnId === column.id) {
       return;
     }
 
+    const previousColumnId = lead.pipelineColumnId;
+    const previousStage = lead.stage;
+    const nextStage = column.semanticStage ?? "Em contato";
+
     setSyncingLeadId(lead.id);
     setLeads((current) =>
-      current.map((item) => (item.id === lead.id ? { ...item, stage: nextStage } : item)),
+      current.map((item) =>
+        item.id === lead.id ? { ...item, pipelineColumnId: column.id, stage: nextStage } : item,
+      ),
     );
 
     try {
-      await readJson<{ ok: true; stage: LeadStage }>(
+      await readJson<{ ok: true; stage: LeadStage; pipelineColumnId: string }>(
         await fetch(`/api/crm/leads/${lead.id}`, {
           method: "PATCH",
           credentials: "same-origin",
@@ -958,7 +991,7 @@ function CRMPipeline() {
             Accept: "application/json",
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ stage: nextStage }),
+          body: JSON.stringify({ pipelineColumnId: column.id }),
         }),
       );
 
@@ -970,10 +1003,14 @@ function CRMPipeline() {
 
       void loadLeads({ silent: true });
 
-      toast.success(`Lead movido para ${stageLabels[nextStage]}.`);
+      toast.success(`Lead movido para ${column.name}.`);
     } catch (error) {
       setLeads((current) =>
-        current.map((item) => (item.id === lead.id ? { ...item, stage: lead.stage } : item)),
+        current.map((item) =>
+          item.id === lead.id
+            ? { ...item, pipelineColumnId: previousColumnId, stage: previousStage }
+            : item,
+        ),
       );
       toast.error(error instanceof Error ? error.message : "Falha ao mover lead.");
     } finally {
@@ -1034,7 +1071,7 @@ function CRMPipeline() {
     setDropTargetStage(null);
   }
 
-  function handleStageDrop(event: React.DragEvent<HTMLDivElement>, stage: LeadStage) {
+  function handleStageDrop(event: React.DragEvent<HTMLDivElement>, column: PipelineColumn) {
     event.preventDefault();
     const leadId = event.dataTransfer.getData("text/plain");
     const lead = leads.find((item) => item.id === leadId);
@@ -1046,7 +1083,7 @@ function CRMPipeline() {
       return;
     }
 
-    void updateLeadStage(lead, stage);
+    void updateLeadStage(lead, column);
   }
 
   function openTransferDialog() {
@@ -1142,7 +1179,7 @@ function CRMPipeline() {
     setFilters(emptyPipelineFilters());
   }
 
-  function loadMoreStageLeads(stage: LeadStage, totalLeads: number) {
+  function loadMoreStageLeads(stage: string, totalLeads: number) {
     setStageVisibleCounts((current) => ({
       ...current,
       [stage]: Math.min(
@@ -1185,7 +1222,9 @@ function CRMPipeline() {
                 <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/50">
                   Etapas
                 </div>
-                <div className="mt-1 text-xl font-black text-[#F4B728]">{stages.length}</div>
+                <div className="mt-1 text-xl font-black text-[#F4B728]">
+                  {displayPipelineColumns.length}
+                </div>
                 <div className="text-[10px] text-white/45">no funil</div>
               </div>
               <div className="rounded-2xl border border-[#F4B728]/25 bg-[#F4B728]/10 px-3 py-3 backdrop-blur-sm">
@@ -1367,23 +1406,24 @@ function CRMPipeline() {
 
         <div className="overflow-x-auto pb-2">
           <div className="flex min-w-max gap-3">
-            {stages.map((stage, stageIndex) => {
+            {displayPipelineColumns.map((column, stageIndex) => {
               const stageLeads = filteredLeads.filter(
-                (lead) => pipelineStage(lead.stage) === stage,
+                (lead) => resolveLeadPipelineColumn(lead, displayPipelineColumns)?.id === column.id,
               );
-              const visibleCount = stageVisibleCounts[stage] ?? PIPELINE_STAGE_PAGE_SIZE;
+              const visibleCount = stageVisibleCounts[column.id] ?? PIPELINE_STAGE_PAGE_SIZE;
               const visibleStageLeads = stageLeads.slice(0, visibleCount);
               const hiddenCount = Math.max(stageLeads.length - visibleStageLeads.length, 0);
               const stageValue = stageLeads.reduce(
                 (sum, lead) => sum + (pipelineDisplayValue(lead, session?.user.role) ?? 0),
                 0,
               );
-              const isDropTarget = dropTargetStage === stage;
-              const stageVisual = pipelineStageVisual[stage];
+              const isDropTarget = dropTargetStage === column.id;
+              const stageVisual =
+                pipelineColorVisual[column.color] ?? pipelineStageVisual["Novo lead"];
 
               return (
                 <div
-                  key={stage}
+                  key={column.id}
                   className={`w-[310px] flex-shrink-0 overflow-hidden rounded-[22px] border bg-gradient-to-b ${stageVisual.surface} to-white/70 transition-all duration-200 ${
                     isDropTarget
                       ? "border-[#F4B728] shadow-[0_18px_42px_-28px_rgba(244,183,40,0.95)] ring-2 ring-[#F4B728]/20"
@@ -1399,7 +1439,9 @@ function CRMPipeline() {
                           {String(stageIndex + 1).padStart(2, "0")}
                         </div>
                         <div className="min-w-0">
-                          <h3 className="truncate text-sm font-black text-[#07154C]">{stage}</h3>
+                          <h3 className="truncate text-sm font-black text-[#07154C]">
+                            {column.name}
+                          </h3>
                           <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                             <span className={`h-1.5 w-1.5 rounded-full ${stageVisual.dot}`} />
                             {loadingLeads ? "Carregando" : `${stageLeads.length} oportunidades`}
@@ -1418,16 +1460,16 @@ function CRMPipeline() {
                     className="min-h-[360px] space-y-3 p-3"
                     onDragOver={(event) => {
                       event.preventDefault();
-                      setDropTargetStage(stage);
+                      setDropTargetStage(column.id);
                     }}
                     onDragEnter={(event) => {
                       event.preventDefault();
-                      setDropTargetStage(stage);
+                      setDropTargetStage(column.id);
                     }}
                     onDragLeave={() =>
-                      setDropTargetStage((current) => (current === stage ? null : current))
+                      setDropTargetStage((current) => (current === column.id ? null : current))
                     }
-                    onDrop={(event) => handleStageDrop(event, stage)}
+                    onDrop={(event) => handleStageDrop(event, column)}
                   >
                     {loadingLeads ? (
                       <EmptyState
@@ -1441,6 +1483,7 @@ function CRMPipeline() {
                           <LeadPipelineCard
                             key={lead.id}
                             lead={lead}
+                            columnColor={column.color}
                             removing={removingLeadId === lead.id}
                             dragging={draggingLeadId === lead.id}
                             syncing={syncingLeadId === lead.id}
@@ -1463,7 +1506,7 @@ function CRMPipeline() {
                               type="button"
                               variant="outline"
                               className="w-full border-[#16006C]/15 bg-white/90 text-[#16006C] shadow-sm hover:bg-[#16006C] hover:text-white"
-                              onClick={() => loadMoreStageLeads(stage, stageLeads.length)}
+                              onClick={() => loadMoreStageLeads(column.id, stageLeads.length)}
                             >
                               + carregar mais leads
                               <span className="ml-1 text-xs opacity-75">({hiddenCount})</span>
@@ -1585,6 +1628,7 @@ function ConversionConfetti({ runId }: { runId: number }) {
 
 function LeadPipelineCard({
   lead,
+  columnColor,
   removing,
   dragging,
   syncing,
@@ -1600,6 +1644,7 @@ function LeadPipelineCard({
   onDragEnd,
 }: {
   lead: LeadRecord;
+  columnColor: string;
   removing: boolean;
   dragging: boolean;
   syncing: boolean;
@@ -1614,7 +1659,10 @@ function LeadPipelineCard({
   onDragStart: (event: React.DragEvent<HTMLDivElement>) => void;
   onDragEnd: () => void;
 }) {
-  const visual = pipelineStageVisual[pipelineStage(lead.stage)] ?? pipelineStageVisual["Novo lead"];
+  const visual =
+    pipelineColorVisual[columnColor] ??
+    pipelineStageVisual[pipelineStage(lead.stage)] ??
+    pipelineStageVisual["Novo lead"];
   const initials = lead.fullName
     .split(/\s+/)
     .filter(Boolean)

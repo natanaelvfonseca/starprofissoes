@@ -53,6 +53,12 @@ type AttendanceSnapshotRow = QueryResultRow & {
   status: "active" | "inactive";
 };
 
+type PipelineMoveRow = QueryResultRow & {
+  id: string;
+  pipeline_type: "leads" | "students";
+  semantic_stage: LeadStage | null;
+};
+
 const allowedStages: Array<LeadStage> = [
   "Novo lead",
   "Em contato",
@@ -242,6 +248,10 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
         const body = await request.json().catch(() => null);
         const payload = parseLeadUpdate(body);
         const nextStage = payload.stage || parseStage(body);
+        const pipelineMove = body as {
+          pipelineColumnId?: unknown;
+          studentPipelineColumnId?: unknown;
+        } | null;
 
         await ensureCommercialSchema();
         await ensureCourseAttendanceSchema();
@@ -283,6 +293,85 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
 
         if (!canManageUnitLeads && lead.created_by !== session.user.id) {
           return Response.json({ ok: false, error: "Acesso negado." }, { status: 403 });
+        }
+
+        const requestedLeadColumnId =
+          typeof pipelineMove?.pipelineColumnId === "string"
+            ? pipelineMove.pipelineColumnId.trim()
+            : "";
+        const requestedStudentColumnId =
+          typeof pipelineMove?.studentPipelineColumnId === "string"
+            ? pipelineMove.studentPipelineColumnId.trim()
+            : "";
+
+        if (requestedLeadColumnId || requestedStudentColumnId) {
+          const columnId = requestedLeadColumnId || requestedStudentColumnId;
+          if (!isUuid(columnId)) {
+            return Response.json({ ok: false, error: "Coluna inválida." }, { status: 400 });
+          }
+
+          const expectedPipeline = requestedLeadColumnId ? "leads" : "students";
+          const columnResult = await queryDb<PipelineMoveRow>(
+            `
+              select id, pipeline_type, semantic_stage
+              from app_pipeline_columns
+              where id = $1 and unit_id = $2 and pipeline_type = $3
+              limit 1
+            `,
+            [columnId, lead.unit_id, expectedPipeline],
+          );
+          const column = columnResult.rows[0];
+          if (!column) {
+            return Response.json({ ok: false, error: "Coluna não encontrada." }, { status: 404 });
+          }
+
+          if (expectedPipeline === "students") {
+            if (lead.stage !== "Matriculado") {
+              return Response.json(
+                { ok: false, error: "Este registro ainda não é um aluno." },
+                { status: 400 },
+              );
+            }
+            await queryDb(
+              `update app_leads set student_pipeline_column_id = $2, updated_at = now() where id = $1`,
+              [params.id, column.id],
+            );
+            return Response.json({ ok: true, studentPipelineColumnId: column.id });
+          }
+
+          if (!column.semantic_stage || !allowedStages.includes(column.semantic_stage)) {
+            return Response.json(
+              { ok: false, error: "Coluna comercial inválida." },
+              { status: 400 },
+            );
+          }
+          await queryDb(
+            `
+              update app_leads
+              set pipeline_column_id = $2,
+                  stage = $3,
+                  first_contact_at = case
+                    when $3 <> 'Novo lead' then coalesce(first_contact_at, now())
+                    else first_contact_at
+                  end,
+                  last_follow_up_at = case
+                    when $3 <> stage and $3 <> 'Novo lead' then now()
+                    else last_follow_up_at
+                  end,
+                  follow_up_count = case
+                    when $3 <> stage and $3 <> 'Novo lead' then follow_up_count + 1
+                    else follow_up_count
+                  end,
+                  updated_at = now()
+              where id = $1
+            `,
+            [params.id, column.id, column.semantic_stage],
+          );
+          return Response.json({
+            ok: true,
+            stage: column.semantic_stage,
+            pipelineColumnId: column.id,
+          });
         }
 
         if (!payload.fullName || !payload.phone) {
@@ -371,6 +460,7 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
                 acquisition_channel_id = $11,
                 acquisition_channel_name_snapshot = $12,
                 observations = nullif($13, ''),
+                pipeline_column_id = case when $14 <> stage then null else pipeline_column_id end,
                 stage = $14,
                 first_contact_at = case
                   when $14 <> 'Novo lead' then coalesce(first_contact_at, now())
@@ -441,6 +531,7 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
           `
             update app_leads
             set
+              pipeline_column_id = case when $2 <> stage then null else pipeline_column_id end,
               stage = $2,
               first_contact_at = case
                 when $2 <> 'Novo lead' then coalesce(first_contact_at, now())

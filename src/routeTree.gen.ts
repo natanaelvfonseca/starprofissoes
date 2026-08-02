@@ -46,6 +46,7 @@ import { Route as ApiCrmTransferRouteImport } from './routes/api/crm/transfer'
 import { Route as ApiGestaoAttendancesRouteImport } from './routes/api/gestao/attendances'
 import { Route as ApiGestaoChannelsRouteImport } from './routes/api/gestao/channels'
 import { Route as ApiGestaoCoursesRouteImport } from './routes/api/gestao/courses'
+import { Route as ApiGestaoPipelineColumnsRouteImport } from './routes/api/gestao/pipeline-columns'
 import { Route as ApiHealthDbRouteImport } from './routes/api/health/db'
 import { Route as ApiIaComercialAnalisesRouteImport } from './routes/api/ia-comercial.analises'
 import { Route as ApiIaComercialScriptsRouteImport } from './routes/api/ia-comercial.scripts'
@@ -245,6 +246,12 @@ const ApiGestaoCoursesRoute = ApiGestaoCoursesRouteImport.update({
   path: '/api/gestao/courses',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiGestaoPipelineColumnsRoute =
+  ApiGestaoPipelineColumnsRouteImport.update({
+    id: '/api/gestao/pipeline-columns',
+    path: '/api/gestao/pipeline-columns',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiHealthDbRoute = ApiHealthDbRouteImport.update({
   id: '/api/health/db',
   path: '/api/health/db',
@@ -351,6 +358,7 @@ export interface FileRoutesByFullPath {
   '/api/gestao/attendances': typeof ApiGestaoAttendancesRoute
   '/api/gestao/channels': typeof ApiGestaoChannelsRouteWithChildren
   '/api/gestao/courses': typeof ApiGestaoCoursesRouteWithChildren
+  '/api/gestao/pipeline-columns': typeof ApiGestaoPipelineColumnsRoute
   '/api/health/db': typeof ApiHealthDbRoute
   '/api/ia-comercial/analises': typeof ApiIaComercialAnalisesRoute
   '/api/ia-comercial/scripts': typeof ApiIaComercialScriptsRoute
@@ -403,6 +411,7 @@ export interface FileRoutesByTo {
   '/api/gestao/attendances': typeof ApiGestaoAttendancesRoute
   '/api/gestao/channels': typeof ApiGestaoChannelsRouteWithChildren
   '/api/gestao/courses': typeof ApiGestaoCoursesRouteWithChildren
+  '/api/gestao/pipeline-columns': typeof ApiGestaoPipelineColumnsRoute
   '/api/health/db': typeof ApiHealthDbRoute
   '/api/ia-comercial/analises': typeof ApiIaComercialAnalisesRoute
   '/api/ia-comercial/scripts': typeof ApiIaComercialScriptsRoute
@@ -456,6 +465,7 @@ export interface FileRoutesById {
   '/api/gestao/attendances': typeof ApiGestaoAttendancesRoute
   '/api/gestao/channels': typeof ApiGestaoChannelsRouteWithChildren
   '/api/gestao/courses': typeof ApiGestaoCoursesRouteWithChildren
+  '/api/gestao/pipeline-columns': typeof ApiGestaoPipelineColumnsRoute
   '/api/health/db': typeof ApiHealthDbRoute
   '/api/ia-comercial/analises': typeof ApiIaComercialAnalisesRoute
   '/api/ia-comercial/scripts': typeof ApiIaComercialScriptsRoute
@@ -510,6 +520,7 @@ export interface FileRouteTypes {
     | '/api/gestao/attendances'
     | '/api/gestao/channels'
     | '/api/gestao/courses'
+    | '/api/gestao/pipeline-columns'
     | '/api/health/db'
     | '/api/ia-comercial/analises'
     | '/api/ia-comercial/scripts'
@@ -562,6 +573,7 @@ export interface FileRouteTypes {
     | '/api/gestao/attendances'
     | '/api/gestao/channels'
     | '/api/gestao/courses'
+    | '/api/gestao/pipeline-columns'
     | '/api/health/db'
     | '/api/ia-comercial/analises'
     | '/api/ia-comercial/scripts'
@@ -614,6 +626,7 @@ export interface FileRouteTypes {
     | '/api/gestao/attendances'
     | '/api/gestao/channels'
     | '/api/gestao/courses'
+    | '/api/gestao/pipeline-columns'
     | '/api/health/db'
     | '/api/ia-comercial/analises'
     | '/api/ia-comercial/scripts'
@@ -665,6 +678,7 @@ export interface RootRouteChildren {
   ApiGestaoAttendancesRoute: typeof ApiGestaoAttendancesRoute
   ApiGestaoChannelsRoute: typeof ApiGestaoChannelsRouteWithChildren
   ApiGestaoCoursesRoute: typeof ApiGestaoCoursesRouteWithChildren
+  ApiGestaoPipelineColumnsRoute: typeof ApiGestaoPipelineColumnsRoute
   ApiHealthDbRoute: typeof ApiHealthDbRoute
   ApiIntegrationsEvolutionRoute: typeof ApiIntegrationsEvolutionRoute
   ApiMetaConnectUrlRoute: typeof ApiMetaConnectUrlRoute
@@ -934,6 +948,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiGestaoCoursesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/gestao/pipeline-columns': {
+      id: '/api/gestao/pipeline-columns'
+      path: '/api/gestao/pipeline-columns'
+      fullPath: '/api/gestao/pipeline-columns'
+      preLoaderRoute: typeof ApiGestaoPipelineColumnsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/health/db': {
       id: '/api/health/db'
       path: '/api/health/db'
@@ -1148,6 +1169,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiGestaoAttendancesRoute: ApiGestaoAttendancesRoute,
   ApiGestaoChannelsRoute: ApiGestaoChannelsRouteWithChildren,
   ApiGestaoCoursesRoute: ApiGestaoCoursesRouteWithChildren,
+  ApiGestaoPipelineColumnsRoute: ApiGestaoPipelineColumnsRoute,
   ApiHealthDbRoute: ApiHealthDbRoute,
   ApiIntegrationsEvolutionRoute: ApiIntegrationsEvolutionRoute,
   ApiMetaConnectUrlRoute: ApiMetaConnectUrlRoute,

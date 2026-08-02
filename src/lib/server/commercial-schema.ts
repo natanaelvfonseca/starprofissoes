@@ -70,6 +70,54 @@ export async function ensureCommercialSchema() {
     create unique index if not exists app_acquisition_channels_unit_name_lower_idx on app_acquisition_channels (unit_id, lower(name));
     create index if not exists app_acquisition_channels_unit_status_idx on app_acquisition_channels (unit_id, status);
 
+    create table if not exists app_pipeline_columns (
+      id uuid primary key default gen_random_uuid(),
+      unit_id uuid not null references app_units(id) on delete cascade,
+      pipeline_type text not null check (pipeline_type in ('leads', 'students')),
+      name text not null,
+      color text not null default 'blue',
+      position integer not null default 0 check (position >= 0),
+      system_key text,
+      semantic_stage text,
+      created_by uuid references app_users(id) on delete set null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+
+    create unique index if not exists app_pipeline_columns_unit_name_idx
+      on app_pipeline_columns (unit_id, pipeline_type, lower(name));
+    create unique index if not exists app_pipeline_columns_system_idx
+      on app_pipeline_columns (unit_id, pipeline_type, system_key)
+      where system_key is not null;
+    create index if not exists app_pipeline_columns_order_idx
+      on app_pipeline_columns (unit_id, pipeline_type, position, created_at);
+
+    insert into app_pipeline_columns (
+      unit_id, pipeline_type, name, color, position, system_key, semantic_stage
+    )
+    select
+      unit_data.id,
+      defaults.pipeline_type,
+      defaults.name,
+      defaults.color,
+      defaults.position,
+      defaults.system_key,
+      defaults.semantic_stage
+    from app_units unit_data
+    cross join (
+      values
+        ('leads', 'Novo lead', 'blue', 10, 'new', 'Novo lead'),
+        ('leads', 'Em contato', 'indigo', 20, 'contact', 'Em contato'),
+        ('leads', 'Qualificado', 'gold', 30, 'qualified', 'Qualificado'),
+        ('leads', 'Proposta', 'orange', 40, 'proposal', 'Proposta'),
+        ('leads', 'Pagamento pendente', 'green', 50, 'pending_payment', 'Pagamento pendente'),
+        ('leads', 'Recuperação', 'rose', 60, 'recovery', 'Recuperação'),
+        ('students', 'Matrícula confirmada', 'blue', 10, 'enrolled', null),
+        ('students', 'Em acompanhamento', 'gold', 20, 'follow_up', null),
+        ('students', 'Concluído', 'green', 30, 'completed', null)
+    ) as defaults(pipeline_type, name, color, position, system_key, semantic_stage)
+    on conflict do nothing;
+
     create table if not exists app_leads (
       id uuid primary key default gen_random_uuid(),
       unit_id uuid not null references app_units(id) on delete cascade,
@@ -105,6 +153,8 @@ export async function ensureCommercialSchema() {
         payment_status in ('pending', 'paid', 'overdue', 'waived', 'refunded')
       ),
       payment_confirmed_at timestamptz,
+      pipeline_column_id uuid references app_pipeline_columns(id) on delete set null,
+      student_pipeline_column_id uuid references app_pipeline_columns(id) on delete set null,
       created_by uuid references app_users(id) on delete set null,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
@@ -121,6 +171,8 @@ export async function ensureCommercialSchema() {
       payment_status in ('pending', 'paid', 'overdue', 'waived', 'refunded')
     );
     alter table app_leads add column if not exists payment_confirmed_at timestamptz;
+    alter table app_leads add column if not exists pipeline_column_id uuid references app_pipeline_columns(id) on delete set null;
+    alter table app_leads add column if not exists student_pipeline_column_id uuid references app_pipeline_columns(id) on delete set null;
 
     create index if not exists app_leads_unit_stage_idx on app_leads (unit_id, stage);
     create index if not exists app_leads_unit_user_stage_idx on app_leads (unit_id, created_by, stage);
@@ -129,6 +181,8 @@ export async function ensureCommercialSchema() {
     create index if not exists app_leads_acquisition_channel_idx on app_leads (acquisition_channel_id);
     create index if not exists app_leads_unit_user_city_idx on app_leads (unit_id, created_by, city);
     create index if not exists app_leads_converted_at_idx on app_leads (converted_at desc);
+    create index if not exists app_leads_pipeline_column_idx on app_leads (pipeline_column_id);
+    create index if not exists app_leads_student_pipeline_column_idx on app_leads (student_pipeline_column_id);
 
     create table if not exists app_lead_import_rows (
       id uuid primary key default gen_random_uuid(),
@@ -311,6 +365,33 @@ export async function ensureCommercialSchema() {
   `).then(() => undefined);
 
   return commercialSchemaPromise;
+}
+
+export async function ensureDefaultPipelineColumns(unitId: string) {
+  await ensureCommercialSchema();
+  await queryDb(
+    `
+      insert into app_pipeline_columns (
+        unit_id, pipeline_type, name, color, position, system_key, semantic_stage
+      )
+      select $1::uuid, defaults.pipeline_type, defaults.name, defaults.color,
+        defaults.position, defaults.system_key, defaults.semantic_stage
+      from (
+        values
+          ('leads', 'Novo lead', 'blue', 10, 'new', 'Novo lead'),
+          ('leads', 'Em contato', 'indigo', 20, 'contact', 'Em contato'),
+          ('leads', 'Qualificado', 'gold', 30, 'qualified', 'Qualificado'),
+          ('leads', 'Proposta', 'orange', 40, 'proposal', 'Proposta'),
+          ('leads', 'Pagamento pendente', 'green', 50, 'pending_payment', 'Pagamento pendente'),
+          ('leads', 'Recuperação', 'rose', 60, 'recovery', 'Recuperação'),
+          ('students', 'Matrícula confirmada', 'blue', 10, 'enrolled', null),
+          ('students', 'Em acompanhamento', 'gold', 20, 'follow_up', null),
+          ('students', 'Concluído', 'green', 30, 'completed', null)
+      ) as defaults(pipeline_type, name, color, position, system_key, semantic_stage)
+      on conflict do nothing
+    `,
+    [unitId],
+  );
 }
 
 type DefaultMarketingOwnerRow = QueryResultRow & {

@@ -1,7 +1,6 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
-  CalendarDays,
   CheckCircle2,
   Clock3,
   CreditCard,
@@ -9,17 +8,10 @@ import {
   ReceiptText,
   RefreshCw,
   ShieldCheck,
-  WalletCards,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -44,65 +36,90 @@ function StudentArea() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <section className="overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#16006C_0%,#07154C_100%)] p-6 text-white shadow-card md:p-8">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-gold">Área do aluno</p>
-            <h1 className="mt-2 text-3xl font-bold text-white">Olá, João</h1>
-            <p className="mt-2 text-sm text-white/70">
-              Máquinas Agrícolas · Turma de 15 de agosto
-            </p>
-          </div>
-          <Badge className="w-fit border-emerald-300/40 bg-emerald-400/15 px-3 py-1.5 text-emerald-100 hover:bg-emerald-400/15">
-            <ShieldCheck className="mr-1.5 h-4 w-4" />
-            Em dia
-          </Badge>
-        </div>
-      </section>
-
-      <Card className="overflow-hidden">
-        <CardHeader className="border-b bg-muted/20">
-          <CardTitle>Seu plano de pagamento</CardTitle>
-          <CardDescription>
-            Acompanhe o que já foi pago e organize os próximos compromissos.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            <StudentMetric icon={CreditCard} label="Valor do curso" value={money.format(total)} />
-            <StudentMetric icon={CheckCircle2} label="Valor já pago" value={money.format(paid)} tone="success" />
-            <StudentMetric icon={ReceiptText} label="Saldo restante" value={money.format(balance)} />
-            <StudentMetric icon={WalletCards} label="Próximo pagamento" value="R$ 50,00" />
-            <StudentMetric icon={CalendarDays} label="Vencimento" value="02/08/2026" />
-          </div>
-
-          <div className="mt-7 rounded-xl border bg-muted/20 p-5">
-            <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-              <strong className="text-sm">37% do plano concluído</strong>
-              <span className="text-xs text-muted-foreground">9 de 24 pagamentos realizados</span>
+      <section className="grid overflow-hidden rounded-[30px] border border-[#16006C]/10 bg-white shadow-[0_30px_80px_-52px_rgba(22,0,108,0.8)] lg:grid-cols-[320px_minmax(0,1fr)]">
+        <aside className="relative overflow-hidden bg-[#16006C] p-6 text-white md:p-8">
+          <div className="pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full border border-white/10" />
+          <div className="relative">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#F4B728] text-2xl font-black text-[#07154C]">
+              JS
             </div>
-            <Progress value={progress} className="h-3" />
+            <p className="mt-6 text-[11px] font-bold uppercase tracking-[0.2em] text-[#F4B728]">
+              Portal do aluno
+            </p>
+            <h1 className="mt-2 text-3xl font-black text-white">João Silva</h1>
+            <p className="mt-3 text-sm leading-6 text-white/60">
+              Máquinas Agrícolas
+              <br />
+              Turma de 15 de agosto
+            </p>
+            <Badge className="mt-6 border-emerald-300/30 bg-emerald-400/15 px-3 py-1.5 text-emerald-100 hover:bg-emerald-400/15">
+              <ShieldCheck className="mr-1.5 h-4 w-4" /> Em dia
+            </Badge>
+
+            <div className="mt-10 border-t border-white/10 pt-6">
+              <div className="flex items-end justify-between">
+                <div>
+                  <div className="text-xs text-white/45">Plano concluído</div>
+                  <div className="mt-1 text-4xl font-black text-[#F4B728]">{progress}%</div>
+                </div>
+                <span className="text-xs text-white/45">9 de 24</span>
+              </div>
+              <Progress value={progress} className="mt-4 h-2 bg-white/10 [&>div]:bg-[#F4B728]" />
+            </div>
+          </div>
+        </aside>
+
+        <div className="p-5 md:p-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#224C99]">
+                Próximo compromisso
+              </p>
+              <h2 className="mt-2 text-2xl font-black text-[#07154C]">
+                Seu plano está no caminho certo
+              </h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Acompanhe o saldo e escolha a melhor forma de continuar.
+              </p>
+            </div>
+            <div className="rounded-2xl bg-[#F4B728]/15 px-5 py-4 text-right">
+              <div className="text-xs text-[#8A6100]">Vence em 02/08/2026</div>
+              <strong className="mt-1 block text-2xl text-[#07154C]">R$ 50,00</strong>
+            </div>
           </div>
 
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-            <Button className="h-11 bg-gradient-primary sm:min-w-40">
-              <CreditCard />
-              Pagar agora
+          <div className="mt-7 grid gap-3 sm:grid-cols-3">
+            <StudentMetric icon={CreditCard} label="Valor do curso" value={money.format(total)} />
+            <StudentMetric
+              icon={CheckCircle2}
+              label="Total pago"
+              value={money.format(paid)}
+              tone="success"
+            />
+            <StudentMetric
+              icon={ReceiptText}
+              label="Saldo em aberto"
+              value={money.format(balance)}
+            />
+          </div>
+
+          <div className="mt-7 flex flex-col gap-3 border-t border-[#16006C]/10 pt-6 sm:flex-row">
+            <Button className="h-12 bg-[#F4B728] px-6 font-bold text-[#07154C] hover:bg-[#F4B728]/90">
+              <CreditCard /> Pagar agora
             </Button>
             <Button
               variant="outline"
-              className="h-11 sm:min-w-52"
+              className="h-12 border-[#16006C]/20 px-6 text-[#16006C]"
               onClick={() => {
                 setReorganizing((current) => !current);
                 setConfirmed(false);
               }}
             >
-              <RefreshCw />
-              Reorganizar pagamento
+              <RefreshCw /> Reorganizar pagamento
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       {reorganizing ? (
         <Card className="border-primary/25 shadow-card">
@@ -159,7 +176,10 @@ function StudentArea() {
               </p>
               <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <ProposalItem label="Entrada agora" value={money.format(Number(amount) || 50)} />
-                <ProposalItem label="Próximos pagamentos" value={`${frequency === "semanal" ? "Semanais" : frequency === "quinzenal" ? "Quinzenais" : "Mensais"} de R$ 50`} />
+                <ProposalItem
+                  label="Próximos pagamentos"
+                  value={`${frequency === "semanal" ? "Semanais" : frequency === "quinzenal" ? "Quinzenais" : "Mensais"} de R$ 50`}
+                />
                 <ProposalItem label="Melhor dia" value={capitalize(day)} />
                 <ProposalItem label="Último pagamento" value="08/11/2026" />
               </div>
@@ -211,8 +231,9 @@ function StudentArea() {
       <div className="flex items-start gap-3 rounded-xl border bg-card p-4 text-sm text-muted-foreground shadow-sm">
         <HelpCircle className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
         <p>
-          Não consegue pagar na data combinada? Use <strong className="text-foreground">Reorganizar pagamento</strong> para
-          montar uma proposta simples antes do vencimento.
+          Não consegue pagar na data combinada? Use{" "}
+          <strong className="text-foreground">Reorganizar pagamento</strong> para montar uma
+          proposta simples antes do vencimento.
         </p>
       </div>
     </div>
@@ -274,7 +295,10 @@ function PaymentList({
       </CardHeader>
       <CardContent className="divide-y">
         {items.map(([date, value, status]) => (
-          <div key={`${date}-${status}`} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
+          <div
+            key={`${date}-${status}`}
+            className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
+          >
             <div>
               <strong className="text-sm">{date}</strong>
               <span className="ml-3 text-sm text-muted-foreground">{value}</span>

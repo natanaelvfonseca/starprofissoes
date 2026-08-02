@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { QueryResultRow } from "pg";
-import type { LeadRecord, LeadStage } from "@/lib/commercial-types";
+import type { LeadRecord, LeadStage, PipelineColumn, PipelineType } from "@/lib/commercial-types";
 import {
   ensureCommercialSchema,
+  ensureDefaultPipelineColumns,
   getUnitFromBody,
   getUnitFromRequest,
   isUuid,
@@ -38,7 +39,20 @@ type LeadRow = QueryResultRow & {
   campaign_name: string | null;
   form_id: string | null;
   stage: LeadStage;
+  pipeline_column_id: string | null;
+  student_pipeline_column_id: string | null;
   created_at: string;
+};
+
+type PipelineColumnRow = QueryResultRow & {
+  id: string;
+  unit_id: string;
+  pipeline_type: PipelineType;
+  name: string;
+  color: string;
+  position: number;
+  system_key: string | null;
+  semantic_stage: LeadStage | null;
 };
 
 type CourseSnapshotRow = QueryResultRow & {
@@ -102,7 +116,22 @@ function mapLead(row: LeadRow, exposeAcquisitionChannel: boolean): LeadRecord {
     campaignName: row.campaign_name,
     formId: row.form_id,
     stage: row.stage,
+    pipelineColumnId: row.pipeline_column_id ?? null,
+    studentPipelineColumnId: row.student_pipeline_column_id ?? null,
     createdAt: row.created_at,
+  };
+}
+
+function mapPipelineColumn(row: PipelineColumnRow): PipelineColumn {
+  return {
+    id: row.id,
+    unitId: row.unit_id,
+    pipelineType: row.pipeline_type,
+    name: row.name,
+    color: row.color,
+    position: Number(row.position),
+    systemKey: row.system_key,
+    semanticStage: row.semantic_stage,
   };
 }
 
@@ -348,7 +377,7 @@ export const Route = createFileRoute("/api/crm/leads")({
           return Response.json({ ok: false, error: "Unidade indisponível." }, { status: 403 });
         }
 
-        await ensureCommercialSchema();
+        await ensureDefaultPipelineColumns(unit.id);
         await ensureCourseAttendanceSchema();
 
         const listView = getLeadListView(request);
@@ -358,8 +387,9 @@ export const Route = createFileRoute("/api/crm/leads")({
 
         const canManageUnitLeads = canViewAllUnitLeads(session.user.role);
         const exposeAcquisitionChannel = session.user.role !== "CONSULTOR";
-        const result = await queryDb<LeadRow>(
-          `
+        const [result, columnsResult] = await Promise.all([
+          queryDb<LeadRow>(
+            `
             select
               l.id,
               l.unit_id,
@@ -385,6 +415,8 @@ export const Route = createFileRoute("/api/crm/leads")({
               coalesce(import_info.campaign_name, meta_info.campaign_name) as campaign_name,
               coalesce(import_info.form_id, meta_info.form_id) as form_id,
               l.stage,
+              l.pipeline_column_id,
+              l.student_pipeline_column_id,
               l.created_at::text
             from app_leads l
             inner join app_units un on un.id = l.unit_id
@@ -407,11 +439,24 @@ export const Route = createFileRoute("/api/crm/leads")({
               )
             order by l.created_at desc
           `,
-          [unit.id, session.user.id, listView, canManageUnitLeads],
-        );
+            [unit.id, session.user.id, listView, canManageUnitLeads],
+          ),
+          queryDb<PipelineColumnRow>(
+            `
+              select id, unit_id, pipeline_type, name, color, position, system_key, semantic_stage
+              from app_pipeline_columns
+              where unit_id = $1 and pipeline_type = $2
+              order by position, created_at, name
+            `,
+            [unit.id, listView === "students" ? "students" : "leads"],
+          ),
+        ]);
 
         return Response.json(
-          { leads: result.rows.map((row) => mapLead(row, exposeAcquisitionChannel)) },
+          {
+            leads: result.rows.map((row) => mapLead(row, exposeAcquisitionChannel)),
+            pipelineColumns: columnsResult.rows.map(mapPipelineColumn),
+          },
           { headers: { "Cache-Control": "no-store" } },
         );
       },

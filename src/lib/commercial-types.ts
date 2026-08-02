@@ -29,6 +29,19 @@ export type LeadStage =
   | "Recuperação"
   | "Matriculado";
 
+export type PipelineType = "leads" | "students";
+
+export type PipelineColumn = {
+  id: string;
+  unitId: string;
+  pipelineType: PipelineType;
+  name: string;
+  color: string;
+  position: number;
+  systemKey: string | null;
+  semanticStage: LeadStage | null;
+};
+
 export type LeadRecord = {
   id: string;
   unitId: string;
@@ -52,5 +65,7 @@ export type LeadRecord = {
   campaignName: string | null;
   formId: string | null;
   stage: LeadStage;
+  pipelineColumnId: string | null;
+  studentPipelineColumnId: string | null;
   createdAt: string;
 };

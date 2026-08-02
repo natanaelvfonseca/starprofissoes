@@ -1,10 +1,22 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Filter, Lock, Search, Trash2, Users, X } from "lucide-react";
+import {
+  BookOpenCheck,
+  Filter,
+  Lock,
+  Mail,
+  MapPin,
+  Phone,
+  Search,
+  Trash2,
+  UserCheck,
+  Users,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
-import type { LeadRecord } from "@/lib/commercial-types";
+import type { LeadRecord, PipelineColumn } from "@/lib/commercial-types";
 import { useAuth } from "@/lib/auth";
-import { canTransferLeads, canViewStudents } from "@/lib/auth-types";
+import { canOperateCrm, canTransferLeads, canViewStudents } from "@/lib/auth-types";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Badge } from "@/components/ui/badge";
@@ -19,17 +31,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
 type LeadsResponse = {
   leads: Array<LeadRecord>;
+  pipelineColumns: Array<PipelineColumn>;
 };
 
 type StudentFilters = {
@@ -40,6 +45,72 @@ type StudentFilters = {
 };
 
 const FILTER_ALL = "__all__";
+
+const fallbackStudentColumns: Array<PipelineColumn> = [
+  {
+    id: "enrolled",
+    unitId: "",
+    pipelineType: "students",
+    name: "Matrícula confirmada",
+    color: "blue",
+    position: 10,
+    systemKey: "enrolled",
+    semanticStage: null,
+  },
+  {
+    id: "follow-up",
+    unitId: "",
+    pipelineType: "students",
+    name: "Em acompanhamento",
+    color: "gold",
+    position: 20,
+    systemKey: "follow_up",
+    semanticStage: null,
+  },
+  {
+    id: "completed",
+    unitId: "",
+    pipelineType: "students",
+    name: "Concluído",
+    color: "green",
+    position: 30,
+    systemKey: "completed",
+    semanticStage: null,
+  },
+];
+
+const studentColumnStyles: Record<string, { accent: string; surface: string; badge: string }> = {
+  blue: {
+    accent: "bg-[#377DFE]",
+    surface: "from-[#377DFE]/10",
+    badge: "bg-[#377DFE]/10 text-[#224C99]",
+  },
+  indigo: {
+    accent: "bg-[#16006C]",
+    surface: "from-[#16006C]/10",
+    badge: "bg-[#16006C]/10 text-[#16006C]",
+  },
+  gold: {
+    accent: "bg-[#F4B728]",
+    surface: "from-[#F4B728]/15",
+    badge: "bg-[#F4B728]/15 text-[#8A6100]",
+  },
+  orange: {
+    accent: "bg-[#FF8A1F]",
+    surface: "from-[#FF8A1F]/10",
+    badge: "bg-[#FF8A1F]/10 text-[#B55400]",
+  },
+  green: {
+    accent: "bg-emerald-500",
+    surface: "from-emerald-500/10",
+    badge: "bg-emerald-500/10 text-emerald-700",
+  },
+  rose: {
+    accent: "bg-rose-500",
+    surface: "from-rose-500/10",
+    badge: "bg-rose-500/10 text-rose-700",
+  },
+};
 
 function emptyStudentFilters(): StudentFilters {
   return {
@@ -74,13 +145,18 @@ function LeadsList() {
   const activeUnitId = session?.activeUnit?.id ?? "";
   const canViewStudentList = session ? canViewStudents(session.user.role) : false;
   const canRemoveStudents = session ? canTransferLeads(session.user.role) : false;
+  const canMoveStudents = session ? canOperateCrm(session.user.role) : false;
   const isConsultant = session?.user.role === "CONSULTOR";
   const [leads, setLeads] = React.useState<Array<LeadRecord>>([]);
+  const [pipelineColumns, setPipelineColumns] = React.useState<Array<PipelineColumn>>([]);
   const [search, setSearch] = React.useState("");
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [filters, setFilters] = React.useState<StudentFilters>(() => emptyStudentFilters());
   const [loading, setLoading] = React.useState(true);
   const [removingLeadId, setRemovingLeadId] = React.useState<string | null>(null);
+  const [syncingLeadId, setSyncingLeadId] = React.useState<string | null>(null);
+  const [draggingLeadId, setDraggingLeadId] = React.useState<string | null>(null);
+  const [dropTargetColumnId, setDropTargetColumnId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     async function loadLeads() {
@@ -106,6 +182,7 @@ function LeadsList() {
         );
 
         setLeads(data.leads);
+        setPipelineColumns(data.pipelineColumns ?? []);
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Falha ao carregar alunos.");
       } finally {
@@ -177,6 +254,15 @@ function LeadsList() {
       (filters.unitId === FILTER_ALL || lead.unitId === filters.unitId)
     );
   });
+  const displayColumns = pipelineColumns.length ? pipelineColumns : fallbackStudentColumns;
+
+  function resolveStudentColumn(lead: LeadRecord) {
+    if (lead.studentPipelineColumnId) {
+      const assigned = displayColumns.find((column) => column.id === lead.studentPipelineColumnId);
+      if (assigned) return assigned;
+    }
+    return displayColumns.find((column) => column.systemKey === "enrolled") ?? displayColumns[0];
+  }
 
   function clearStudentFilters() {
     setSearch("");
@@ -205,6 +291,41 @@ function LeadsList() {
       toast.error(error instanceof Error ? error.message : "Falha ao remover cliente.");
     } finally {
       setRemovingLeadId(null);
+    }
+  }
+
+  async function moveStudent(lead: LeadRecord, column: PipelineColumn) {
+    if (!canMoveStudents || lead.studentPipelineColumnId === column.id) return;
+
+    const previousColumnId = lead.studentPipelineColumnId;
+    setSyncingLeadId(lead.id);
+    setLeads((current) =>
+      current.map((item) =>
+        item.id === lead.id ? { ...item, studentPipelineColumnId: column.id } : item,
+      ),
+    );
+
+    try {
+      await readJson<{ ok: true; studentPipelineColumnId: string }>(
+        await fetch(`/api/crm/leads/${lead.id}`, {
+          method: "PATCH",
+          credentials: "same-origin",
+          headers: { Accept: "application/json", "Content-Type": "application/json" },
+          body: JSON.stringify({ studentPipelineColumnId: column.id }),
+        }),
+      );
+      toast.success(`${lead.fullName} movido para ${column.name}.`);
+    } catch (error) {
+      setLeads((current) =>
+        current.map((item) =>
+          item.id === lead.id ? { ...item, studentPipelineColumnId: previousColumnId } : item,
+        ),
+      );
+      toast.error(error instanceof Error ? error.message : "Falha ao mover aluno.");
+    } finally {
+      setSyncingLeadId(null);
+      setDraggingLeadId(null);
+      setDropTargetColumnId(null);
     }
   }
 
@@ -343,89 +464,178 @@ function LeadsList() {
             </div>
           ) : null}
         </div>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Aluno</TableHead>
-              <TableHead>Curso</TableHead>
-              <TableHead>Cidade</TableHead>
-              <TableHead>Unidade</TableHead>
-              <TableHead>Origem</TableHead>
-              <TableHead>Situação</TableHead>
-              <TableHead className="text-right">Valor</TableHead>
-              {canRemoveStudents ? (
-                <TableHead className="w-[72px] text-right">Ações</TableHead>
-              ) : null}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell
-                  colSpan={canRemoveStudents ? 8 : 7}
-                  className="h-24 text-center text-muted-foreground"
-                >
-                  Carregando alunos...
-                </TableCell>
-              </TableRow>
-            ) : filteredLeads.length ? (
-              filteredLeads.map((lead) => (
-                <TableRow key={lead.id}>
-                  <TableCell>
-                    <div className="font-medium">{lead.fullName}</div>
-                    <div className="text-xs text-muted-foreground">{lead.phone}</div>
-                    {lead.phone2 ? (
-                      <div className="text-xs text-muted-foreground">Telefone 2: {lead.phone2}</div>
-                    ) : null}
-                  </TableCell>
-                  <TableCell>{lead.courseName ?? "--"}</TableCell>
-                  <TableCell>{lead.city ?? "--"}</TableCell>
-                  <TableCell>{lead.unitName}</TableCell>
-                  <TableCell>{lead.acquisitionChannelName ?? "--"}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary" className="bg-primary/10 text-primary">
-                      Aluno
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right font-semibold text-primary">
-                    {lead.courseValue !== null
-                      ? lead.courseValue.toLocaleString("pt-BR", {
-                          style: "currency",
-                          currency: "BRL",
-                        })
-                      : "--"}
-                  </TableCell>
-                  {canRemoveStudents ? (
-                    <TableCell className="text-right">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => void handleRemoveStudent(lead)}
-                        disabled={removingLeadId === lead.id}
-                        aria-label={`Remover ${lead.fullName}`}
-                        title="Remover cliente"
-                        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  ) : null}
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={canRemoveStudents ? 8 : 7} className="p-4">
-                  <EmptyState
-                    icon={Users}
-                    title="Nenhum aluno convertido"
-                    description="A lista será preenchida quando a taxa for confirmada no modal do lead."
-                  />
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+        <div className="bg-[#F7F8FC] p-3 sm:p-5">
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-[0.18em] text-[#224C99]">
+                Jornada do aluno
+              </div>
+              <h2 className="mt-1 text-lg font-black text-[#07154C]">Pipeline de matrículas</h2>
+            </div>
+            <Badge variant="secondary" className="bg-[#16006C]/10 text-[#16006C]">
+              {filteredLeads.length} alunos
+            </Badge>
+          </div>
+
+          <div className="overflow-x-auto pb-2">
+            <div className="flex min-w-max gap-3">
+              {displayColumns.map((column, columnIndex) => {
+                const columnStudents = filteredLeads.filter(
+                  (lead) => resolveStudentColumn(lead)?.id === column.id,
+                );
+                const style = studentColumnStyles[column.color] ?? studentColumnStyles.blue;
+                const isDropTarget = dropTargetColumnId === column.id;
+
+                return (
+                  <section
+                    key={column.id}
+                    className={`w-[320px] flex-shrink-0 overflow-hidden rounded-[22px] border bg-gradient-to-b ${style.surface} to-white/80 transition ${
+                      isDropTarget
+                        ? "border-[#F4B728] ring-2 ring-[#F4B728]/25"
+                        : "border-[#16006C]/10"
+                    }`}
+                    onDragOver={(event) => {
+                      if (!canMoveStudents) return;
+                      event.preventDefault();
+                      setDropTargetColumnId(column.id);
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const lead = leads.find(
+                        (item) => item.id === event.dataTransfer.getData("text/plain"),
+                      );
+                      if (lead) void moveStudent(lead, column);
+                    }}
+                    onDragLeave={() =>
+                      setDropTargetColumnId((current) => (current === column.id ? null : current))
+                    }
+                  >
+                    <header className="flex items-center justify-between border-b border-[#16006C]/10 bg-white/80 p-4">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div
+                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-black text-white ${style.accent}`}
+                        >
+                          {String(columnIndex + 1).padStart(2, "0")}
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="truncate text-sm font-black text-[#07154C]">
+                            {column.name}
+                          </h3>
+                          <p className="text-[11px] text-muted-foreground">
+                            {columnStudents.length} registros
+                          </p>
+                        </div>
+                      </div>
+                    </header>
+
+                    <div className="min-h-[340px] space-y-3 p-3">
+                      {loading ? (
+                        <EmptyState
+                          icon={Users}
+                          title="Carregando"
+                          description="Buscando alunos."
+                        />
+                      ) : columnStudents.length ? (
+                        columnStudents.map((lead) => (
+                          <Card
+                            key={lead.id}
+                            draggable={canMoveStudents}
+                            onDragStart={(event) => {
+                              event.dataTransfer.setData("text/plain", lead.id);
+                              setDraggingLeadId(lead.id);
+                            }}
+                            onDragEnd={() => {
+                              setDraggingLeadId(null);
+                              setDropTargetColumnId(null);
+                            }}
+                            className={`overflow-hidden border-[#16006C]/10 bg-white p-0 shadow-card ${
+                              canMoveStudents ? "cursor-grab active:cursor-grabbing" : ""
+                            } ${draggingLeadId === lead.id ? "opacity-60" : ""} ${
+                              syncingLeadId === lead.id ? "ring-2 ring-primary/25" : ""
+                            }`}
+                          >
+                            <div className={`h-1 ${style.accent}`} />
+                            <div className="p-4">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="truncate text-sm font-black text-[#07154C]">
+                                    {lead.fullName}
+                                  </div>
+                                  <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                                    <Phone className="h-3.5 w-3.5 text-[#224C99]" />
+                                    {lead.phone}
+                                  </div>
+                                </div>
+                                {canRemoveStudents ? (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => void handleRemoveStudent(lead)}
+                                    disabled={removingLeadId === lead.id}
+                                    className="h-8 w-8 text-destructive"
+                                    aria-label={`Remover ${lead.fullName}`}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                ) : null}
+                              </div>
+                              <div className="mt-3 space-y-1.5 rounded-xl bg-[#F7F8FC] p-3 text-[11px] text-muted-foreground">
+                                {lead.courseName ? (
+                                  <div className="flex items-center gap-2">
+                                    <BookOpenCheck className="h-3.5 w-3.5 text-[#224C99]" />
+                                    <span className="truncate">{lead.courseName}</span>
+                                  </div>
+                                ) : null}
+                                {lead.city ? (
+                                  <div className="flex items-center gap-2">
+                                    <MapPin className="h-3.5 w-3.5 text-[#224C99]" />
+                                    <span className="truncate">{lead.city}</span>
+                                  </div>
+                                ) : null}
+                                {lead.email ? (
+                                  <div className="flex items-center gap-2">
+                                    <Mail className="h-3.5 w-3.5 text-[#224C99]" />
+                                    <span className="truncate">{lead.email}</span>
+                                  </div>
+                                ) : null}
+                                {lead.createdByName ? (
+                                  <div className="flex items-center gap-2">
+                                    <UserCheck className="h-3.5 w-3.5 text-[#224C99]" />
+                                    <span className="truncate">{lead.createdByName}</span>
+                                  </div>
+                                ) : null}
+                              </div>
+                              <div className="mt-3 flex items-center justify-between">
+                                <Badge className={style.badge}>Aluno</Badge>
+                                <strong className="text-xs text-[#16006C]">
+                                  {lead.courseValue !== null
+                                    ? lead.courseValue.toLocaleString("pt-BR", {
+                                        style: "currency",
+                                        currency: "BRL",
+                                      })
+                                    : "--"}
+                                </strong>
+                              </div>
+                            </div>
+                          </Card>
+                        ))
+                      ) : (
+                        <div className="flex min-h-[260px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#16006C]/15 bg-white/45 p-5 text-center">
+                          <div className={`mb-3 h-2 w-2 rounded-full ${style.accent}`} />
+                          <div className="text-sm font-bold text-[#07154C]">Etapa livre</div>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Arraste alunos para esta coluna.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       </Card>
     </div>
   );
