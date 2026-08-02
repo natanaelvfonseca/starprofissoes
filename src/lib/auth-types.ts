@@ -85,6 +85,14 @@ export function canManageUnits(role: UserRole) {
   return isMasterRole(role) || isExecutiveRole(role) || role === "MARKETING";
 }
 
+export function canViewCrmFinancialSwitcher(role: UserRole) {
+  return role === "DEV" || role === "CEO";
+}
+
+export function canViewStudentSwitcher(role: UserRole) {
+  return role === "DEV";
+}
+
 export function canViewGrowth(role: UserRole) {
   return role !== "CONSULTOR";
 }
