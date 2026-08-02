@@ -137,6 +137,10 @@ export function canViewAttendances(role: UserRole) {
   return isMasterRole(role) || isExecutiveRole(role) || role === "DIRETOR" || role === "GERENTE";
 }
 
+export function canViewSalesAi(role: UserRole) {
+  return canViewAttendances(role) || role === "CONSULTOR";
+}
+
 export function canManageBrandPlen(role: UserRole) {
   return isMasterRole(role) || role === "MARKETING";
 }

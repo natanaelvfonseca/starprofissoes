@@ -1,6 +1,6 @@
 import type { QueryResultRow } from "pg";
 import type { AuthSession } from "@/lib/auth-types";
-import { canViewAttendances } from "@/lib/auth-types";
+import { canViewAttendances, canViewSalesAi } from "@/lib/auth-types";
 import type {
   SalesAiConsultantSummary,
   SalesAiCourseOption,
@@ -117,6 +117,10 @@ type ParsedAnalysis = {
 let salesAiSchemaPromise: Promise<void> | null = null;
 
 export function canAccessSalesAi(session: AuthSession | null) {
+  return Boolean(session && canViewSalesAi(session.user.role) && session.units.length);
+}
+
+export function canManageSalesAi(session: AuthSession | null) {
   return Boolean(session && canViewAttendances(session.user.role) && session.units.length);
 }
 
@@ -398,10 +402,12 @@ async function listLatestAnalyses(unitIds: Array<string>) {
     [unitIds],
   );
 
-  return new Map(result.rows.map((row) => [`${row.unit_id}:${row.consultant_id}`, mapAnalysis(row)]));
+  return new Map(
+    result.rows.map((row) => [`${row.unit_id}:${row.consultant_id}`, mapAnalysis(row)]),
+  );
 }
 
-async function listConsultants(unitIds: Array<string>) {
+async function listConsultants(unitIds: Array<string>, consultantId?: string | null) {
   const result = await queryDb<ConsultantRow>(
     `
       select
@@ -432,6 +438,7 @@ async function listConsultants(unitIds: Array<string>) {
         and message.unit_id = instance.unit_id
         and message.user_id = u.id
       where instance.unit_id = any($1::uuid[])
+        and ($2::uuid is null or u.id = $2)
         and u.role = 'CONSULTOR'
         and u.status = 'active'
       group by
@@ -448,7 +455,7 @@ async function listConsultants(unitIds: Array<string>) {
         max(message.sent_at) desc nulls last,
         u.name asc
     `,
-    [unitIds],
+    [unitIds, consultantId ?? null],
   );
 
   const latestAnalyses = await listLatestAnalyses(unitIds);
@@ -467,10 +474,11 @@ export async function listSalesAiDashboard(session: AuthSession, requestedUnitId
 
   await Promise.all([ensureCommercialSchema(), ensureEvolutionSchema(), ensureSalesAiSchema()]);
 
+  const isConsultant = session.user.role === "CONSULTOR";
   const [courses, scripts, consultants] = await Promise.all([
-    listCourses(scope.unitIds),
-    listScripts(scope.unitIds),
-    listConsultants(scope.unitIds),
+    isConsultant ? Promise.resolve([]) : listCourses(scope.unitIds),
+    isConsultant ? Promise.resolve([]) : listScripts(scope.unitIds),
+    listConsultants(scope.unitIds, isConsultant ? session.user.id : null),
   ]);
 
   return {
@@ -741,7 +749,10 @@ async function buildConversationTranscript(
     return { transcript: "", messagesAnalyzed: 0, conversationsAnalyzed: 0 };
   }
 
-  const selectedConversations = conversationsData.conversations.slice(0, MAX_CONVERSATIONS_FOR_ANALYSIS);
+  const selectedConversations = conversationsData.conversations.slice(
+    0,
+    MAX_CONVERSATIONS_FOR_ANALYSIS,
+  );
   const messageResults = await Promise.all(
     selectedConversations.map(async (conversation, index) => {
       const data = await listAttendanceMessages(session, {
@@ -813,11 +824,17 @@ export async function runSalesConversationAnalysis(
   ]);
 
   if (!consultant) {
-    return { error: "Consultor não encontrado ou sem WhatsApp conectado nesta unidade.", status: 404 } as const;
+    return {
+      error: "Consultor não encontrado ou sem WhatsApp conectado nesta unidade.",
+      status: 404,
+    } as const;
   }
 
   if (!script) {
-    return { error: "Cadastre e ative o script deste curso antes de analisar.", status: 400 } as const;
+    return {
+      error: "Cadastre e ative o script deste curso antes de analisar.",
+      status: 400,
+    } as const;
   }
 
   const transcript = await buildConversationTranscript(session, { consultantId, unitId });

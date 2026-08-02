@@ -4,6 +4,7 @@ import {
   canTransferLeads,
   canViewAllUnitLeads,
   canViewGrowth,
+  canViewSalesAi,
   canViewStudents,
 } from "../src/lib/auth-types.ts";
 
@@ -15,6 +16,11 @@ test("consultor acessa alunos, mas não acessa relatórios", () => {
 test("consultor permanece limitado aos próprios leads e alunos", () => {
   assert.equal(canViewAllUnitLeads("CONSULTOR"), false);
   assert.equal(canTransferLeads("CONSULTOR"), false);
+});
+
+test("consultor acessa a conexão da IA Comercial", () => {
+  assert.equal(canViewSalesAi("CONSULTOR"), true);
+  assert.equal(canViewSalesAi("MARKETING"), false);
 });
 
 test("liderança mantém acesso aos alunos e relatórios", () => {

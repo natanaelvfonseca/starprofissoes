@@ -171,12 +171,6 @@ function instancePart(value: string, fallback = "star_profissoes") {
   return normalized || fallback;
 }
 
-function userInstancePart(value: string, fallback: string) {
-  const firstName = value.trim().split(/\s+/)[0] ?? "";
-
-  return instancePart(firstName, fallback);
-}
-
 function connectionState(data: unknown) {
   const dataRecord = asRecord(data);
   const instanceRecord = asRecord(dataRecord.instance);
@@ -307,8 +301,11 @@ export async function connectEvolution(
   await ensureEvolutionSchema();
   let instance = await getInstance(user.id, unit.id);
   const unitName = instancePart(unit.name, "Unidade");
-  const userName = userInstancePart(user.name, createHash("sha256").update(user.id).digest("hex").slice(0, 10));
-  const desiredInstanceName = `star_${unitName}_${userName}`.slice(0, 100);
+  const consultantEmail = instancePart(
+    user.email.toLowerCase(),
+    createHash("sha256").update(user.id).digest("hex").slice(0, 10),
+  );
+  const desiredInstanceName = `star_${unitName}_${consultantEmail}`.slice(0, 100);
 
   if (!instance) {
     const secret = randomBytes(24).toString("base64url");
@@ -468,24 +465,24 @@ function extractMessage(payload: unknown) {
     content: String(content || (type === "unknown" ? "[Mensagem]" : `[${type}]`)),
     type,
     mediaUrl:
-      typeof media?.url === "string"
-        ? media.url
+      typeof mediaRecord.url === "string"
+        ? mediaRecord.url
         : typeof data?.mediaUrl === "string"
           ? data.mediaUrl
           : null,
     mimeType:
-      typeof media?.mimetype === "string"
-        ? media.mimetype
-        : typeof media?.mimeType === "string"
-          ? media.mimeType
+      typeof mediaRecord.mimetype === "string"
+        ? mediaRecord.mimetype
+        : typeof mediaRecord.mimeType === "string"
+          ? mediaRecord.mimeType
           : null,
     fileName:
-      typeof media?.fileName === "string"
-        ? media.fileName
-        : typeof message?.documentMessage?.title === "string"
-          ? message.documentMessage.title
+      typeof mediaRecord.fileName === "string"
+        ? mediaRecord.fileName
+        : typeof documentMessage.title === "string"
+          ? documentMessage.title
           : null,
-    timestamp: Number(data?.messageTimestamp ?? payload?.date_time ?? Date.now() / 1000),
+    timestamp: Number(data.messageTimestamp ?? payloadRecord.date_time ?? Date.now() / 1000),
   };
 }
 

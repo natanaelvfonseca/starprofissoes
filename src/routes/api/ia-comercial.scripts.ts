@@ -1,8 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  canAccessSalesAi,
-  upsertSalesScript,
-} from "@/lib/server/sales-conversation-ai";
+import { canManageSalesAi, upsertSalesScript } from "@/lib/server/sales-conversation-ai";
 import { getSessionFromRequest } from "@/lib/server/auth";
 
 export const Route = createFileRoute("/api/ia-comercial/scripts")({
@@ -16,7 +13,7 @@ export const Route = createFileRoute("/api/ia-comercial/scripts")({
             return Response.json({ ok: false, error: "Não autenticado." }, { status: 401 });
           }
 
-          if (!canAccessSalesAi(session)) {
+          if (!canManageSalesAi(session)) {
             return Response.json({ ok: false, error: "Acesso negado." }, { status: 403 });
           }
 
@@ -43,10 +40,7 @@ export const Route = createFileRoute("/api/ia-comercial/scripts")({
           return Response.json(
             {
               ok: false,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Falha ao salvar o script comercial.",
+              error: error instanceof Error ? error.message : "Falha ao salvar o script comercial.",
             },
             { status: 500 },
           );

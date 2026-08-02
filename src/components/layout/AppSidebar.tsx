@@ -34,10 +34,10 @@ import { useAuth } from "@/lib/auth";
 import {
   canAccessSystemFeedback,
   canManageUnits,
-  canViewAttendances,
   canViewGrowth,
   canViewManagement,
   canViewMetaAds,
+  canViewSalesAi,
   canViewStudents,
   getInitials,
   ROLE_LABELS,
@@ -51,7 +51,7 @@ type NavigationItem = {
   managementOnly?: boolean;
   studentViewOnly?: boolean;
   systemFeedbackOnly?: boolean;
-  attendancesOnly?: boolean;
+  salesAiOnly?: boolean;
   devOnly?: boolean;
 };
 
@@ -70,7 +70,7 @@ const groups: Array<NavigationGroup> = [
     items: [
       { title: "Leads", url: "/crm", icon: ContactRound },
       { title: "Alunos", url: "/leads", icon: UserRoundCheck, studentViewOnly: true },
-      { title: "IA Comercial", url: "/ia-comercial", icon: WandSparkles, attendancesOnly: true },
+      { title: "IA Comercial", url: "/ia-comercial", icon: WandSparkles, salesAiOnly: true },
     ],
   },
   {
@@ -107,7 +107,7 @@ export function AppSidebar() {
   const canViewManagementArea = user ? canViewManagement(user.role) : false;
   const canViewStudentList = user ? canViewStudents(user.role) : false;
   const canViewSystemFeedback = user ? canAccessSystemFeedback(user.role) : false;
-  const canSeeAttendances = user ? canViewAttendances(user.role) : false;
+  const canSeeSalesAi = user ? canViewSalesAi(user.role) : false;
   const closeMobileSidebar = () => {
     if (isMobile) {
       setOpenMobile(false);
@@ -126,7 +126,7 @@ export function AppSidebar() {
           (!item.managementOnly || canViewManagementArea) &&
           (!item.studentViewOnly || canViewStudentList) &&
           (!item.systemFeedbackOnly || canViewSystemFeedback) &&
-          (!item.attendancesOnly || canSeeAttendances) &&
+          (!item.salesAiOnly || canSeeSalesAi) &&
           (!item.devOnly || user?.role === "DEV"),
       ),
     }))

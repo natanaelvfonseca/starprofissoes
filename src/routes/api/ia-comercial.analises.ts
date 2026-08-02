@@ -1,8 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  canAccessSalesAi,
-  runSalesConversationAnalysis,
-} from "@/lib/server/sales-conversation-ai";
+import { canManageSalesAi, runSalesConversationAnalysis } from "@/lib/server/sales-conversation-ai";
 import { getSessionFromRequest } from "@/lib/server/auth";
 
 export const Route = createFileRoute("/api/ia-comercial/analises")({
@@ -16,7 +13,7 @@ export const Route = createFileRoute("/api/ia-comercial/analises")({
             return Response.json({ ok: false, error: "Não autenticado." }, { status: 401 });
           }
 
-          if (!canAccessSalesAi(session)) {
+          if (!canManageSalesAi(session)) {
             return Response.json({ ok: false, error: "Acesso negado." }, { status: 403 });
           }
 
@@ -44,10 +41,7 @@ export const Route = createFileRoute("/api/ia-comercial/analises")({
           return Response.json(
             {
               ok: false,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Falha ao analisar as conversas.",
+              error: error instanceof Error ? error.message : "Falha ao analisar as conversas.",
             },
             { status: 500 },
           );
