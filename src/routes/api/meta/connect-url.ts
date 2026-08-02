@@ -1,6 +1,6 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { createFileRoute } from "@tanstack/react-router";
-import { canManageMetaAds } from "@/lib/auth-types";
+import { canConnectMetaAds } from "@/lib/auth-types";
 import { getSessionFromRequest } from "@/lib/server/auth";
 
 const META_CONNECT_BASE_URL = "https://kogna.online/meta/connect";
@@ -16,7 +16,7 @@ export const Route = createFileRoute("/api/meta/connect-url")({
           return Response.json({ error: "Não autenticado." }, { status: 401 });
         }
 
-        if (!canManageMetaAds(session.user.role)) {
+        if (!canConnectMetaAds(session.user.role)) {
           return Response.json({ error: "Acesso negado." }, { status: 403 });
         }
 

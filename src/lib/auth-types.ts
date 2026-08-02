@@ -131,6 +131,10 @@ export function canManageMetaAds(role: UserRole) {
   return isMasterRole(role);
 }
 
+export function canConnectMetaAds(role: UserRole) {
+  return canManageMetaAds(role) || role === "MARKETING";
+}
+
 export function canViewMetaAds(role: UserRole) {
   return isMasterRole(role) || role === "MARKETING";
 }

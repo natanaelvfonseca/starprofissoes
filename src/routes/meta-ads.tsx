@@ -48,7 +48,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuth } from "@/lib/auth";
-import { canManageMetaAds, canViewMetaAds } from "@/lib/auth-types";
+import { canConnectMetaAds, canManageMetaAds, canViewMetaAds } from "@/lib/auth-types";
 
 type MetaIntegration = {
   app_id: string | null;
@@ -244,6 +244,7 @@ function MetaAdsPage() {
   const [formDialogOpen, setFormDialogOpen] = React.useState(false);
   const [formDraft, setFormDraft] = React.useState<FormDraft>(emptyFormDraft);
   const canManage = session ? canManageMetaAds(session.user.role) : false;
+  const canConnect = session ? canConnectMetaAds(session.user.role) : false;
 
   const loadData = React.useCallback(
     async (query = appliedSearch) => {
@@ -452,6 +453,7 @@ function MetaAdsPage() {
             lastSynchronization={lastSynchronization}
             loading={loading}
             canManage={canManage}
+            canConnect={canConnect}
             syncing={workingKey === "syncConnection"}
             onConnect={connectWithMeta}
             onSync={() => void syncConnectedAssets()}
@@ -732,6 +734,7 @@ function MetaConnectionPanel({
   lastSynchronization,
   loading,
   canManage,
+  canConnect,
   syncing,
   onConnect,
   onSync,
@@ -741,6 +744,7 @@ function MetaConnectionPanel({
   lastSynchronization: string | null;
   loading: boolean;
   canManage: boolean;
+  canConnect: boolean;
   syncing: boolean;
   onConnect: () => void;
   onSync: () => void;
@@ -790,7 +794,7 @@ function MetaConnectionPanel({
               tela.
             </p>
           </div>
-          <Button onClick={onConnect} disabled={!canManage}>
+          <Button onClick={onConnect} disabled={!canConnect}>
             <ExternalLink />
             Tentar novamente
           </Button>
@@ -817,7 +821,7 @@ function MetaConnectionPanel({
               de anúncios, formulários instantâneos e leads.
             </p>
           </div>
-          <Button size="lg" onClick={onConnect} disabled={!canManage}>
+          <Button size="lg" onClick={onConnect} disabled={!canConnect}>
             <ExternalLink />
             Conectar com a Meta
           </Button>
