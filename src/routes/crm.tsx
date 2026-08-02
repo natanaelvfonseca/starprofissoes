@@ -31,7 +31,6 @@ import type {
 import type { CrmLeadTask } from "@/lib/crm-task-types";
 import { useAuth } from "@/lib/auth";
 import { canAccessLeadTransferCenter, canOperateCrm, canTransferLeads } from "@/lib/auth-types";
-import { PageHeader } from "@/components/layout/PageHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -151,6 +150,48 @@ const stages: Array<LeadStage> = [
   "Pagamento pendente",
   "Recuperação",
 ];
+
+const pipelineStageVisual: Record<
+  string,
+  { accent: string; badge: string; dot: string; surface: string }
+> = {
+  "Novo lead": {
+    accent: "bg-[#377DFE]",
+    badge: "border-[#377DFE]/25 bg-[#377DFE]/10 text-[#224C99]",
+    dot: "bg-[#377DFE]",
+    surface: "from-[#377DFE]/10",
+  },
+  "Em contato": {
+    accent: "bg-[#16006C]",
+    badge: "border-[#16006C]/20 bg-[#16006C]/10 text-[#16006C]",
+    dot: "bg-[#16006C]",
+    surface: "from-[#16006C]/10",
+  },
+  Qualificado: {
+    accent: "bg-[#F4B728]",
+    badge: "border-[#D99A10]/25 bg-[#F4B728]/15 text-[#8A6100]",
+    dot: "bg-[#F4B728]",
+    surface: "from-[#F4B728]/15",
+  },
+  Proposta: {
+    accent: "bg-[#FF8A1F]",
+    badge: "border-[#FF8A1F]/25 bg-[#FF8A1F]/10 text-[#B55400]",
+    dot: "bg-[#FF8A1F]",
+    surface: "from-[#FF8A1F]/10",
+  },
+  "Pagamento pendente": {
+    accent: "bg-emerald-500",
+    badge: "border-emerald-500/25 bg-emerald-500/10 text-emerald-700",
+    dot: "bg-emerald-500",
+    surface: "from-emerald-500/10",
+  },
+  Recuperação: {
+    accent: "bg-rose-500",
+    badge: "border-rose-500/25 bg-rose-500/10 text-rose-700",
+    dot: "bg-rose-500",
+    surface: "from-rose-500/10",
+  },
+};
 
 const stageLabels: Record<LeadStage, string> = {
   "Novo lead": "Novo lead",
@@ -1114,97 +1155,118 @@ function CRMPipeline() {
   return (
     <div className="space-y-6">
       <ConversionConfetti runId={confettiRunId} />
-      <PageHeader
-        eyebrow="Comercial"
-        title="Leads"
-        actions={
-          <div className="flex w-full flex-col items-stretch gap-2 sm:items-end md:w-auto">
-            {canAccessTransfers ? (
-              <div className="flex w-full justify-end md:hidden">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={openTransferDialog}
-                  aria-label="Transferência de Lead"
-                  title="Transferência de Lead"
-                >
-                  <Clock3 className="h-4 w-4" />
-                </Button>
+      <section className="relative overflow-hidden rounded-[28px] bg-[#16006C] px-5 py-6 text-white shadow-[0_28px_70px_-42px_rgba(22,0,108,0.9)] sm:px-7 sm:py-7">
+        <div className="pointer-events-none absolute -right-20 -top-28 h-72 w-72 rounded-full border border-white/10" />
+        <div className="pointer-events-none absolute -right-8 -top-10 h-44 w-44 rounded-full bg-[#377DFE]/20 blur-3xl" />
+        <div className="relative">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+            <div className="max-w-xl">
+              <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.24em] text-[#F4B728]">
+                <span className="h-px w-7 bg-[#F4B728]" />
+                Central comercial
               </div>
-            ) : null}
-            {canOperatePipeline ? (
+              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">Gestão de leads</h1>
+              <p className="mt-2 max-w-lg text-sm leading-relaxed text-white/65">
+                Acompanhe cada oportunidade da primeira conversa até o fechamento.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 sm:min-w-[430px]">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.07] px-3 py-3 backdrop-blur-sm">
+                <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/50">
+                  Na visão
+                </div>
+                <div className="mt-1 text-xl font-black text-white">
+                  {loadingLeads ? "—" : filteredLeads.length}
+                </div>
+                <div className="text-[10px] text-white/45">oportunidades</div>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.07] px-3 py-3 backdrop-blur-sm">
+                <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/50">
+                  Etapas
+                </div>
+                <div className="mt-1 text-xl font-black text-[#F4B728]">{stages.length}</div>
+                <div className="text-[10px] text-white/45">no funil</div>
+              </div>
+              <div className="rounded-2xl border border-[#F4B728]/25 bg-[#F4B728]/10 px-3 py-3 backdrop-blur-sm">
+                <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/50">
+                  Filtros
+                </div>
+                <div className="mt-1 text-xl font-black text-[#F4B728]">{activeFilterCount}</div>
+                <div className="text-[10px] text-white/45">ativos</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/[0.07] p-2 backdrop-blur-md md:flex-row md:items-center">
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#16006C]/55" />
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Busque por nome, telefone, e-mail ou cidade"
+                className="h-11 border-0 bg-white pl-10 text-[#07154C] shadow-none placeholder:text-[#07154C]/40"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
               <Button
-                className="bg-gradient-primary text-primary-foreground"
-                onClick={openLeadDialog}
+                type="button"
+                variant="outline"
+                onClick={() => setFiltersOpen((open) => !open)}
+                className={`h-11 flex-1 border-white/20 px-4 md:flex-none ${
+                  filtersOpen
+                    ? "bg-[#F4B728] text-[#07154C] hover:bg-[#F4B728]/90"
+                    : "bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                }`}
               >
-                <Plus className="mr-2 h-4 w-4" />
-                Novo Lead
+                <Filter className="mr-2 h-4 w-4" />
+                Filtrar
+                {activeFilterCount ? (
+                  <span className="ml-2 rounded-full bg-[#16006C] px-2 py-0.5 text-[10px] text-white">
+                    {activeFilterCount}
+                  </span>
+                ) : null}
               </Button>
-            ) : null}
-            <Button
-              type="button"
-              variant={filtersOpen ? "default" : "outline"}
-              onClick={() => setFiltersOpen((open) => !open)}
-              className={`${filtersOpen ? "bg-gradient-primary" : ""} w-full md:hidden`}
-            >
-              <Filter className="mr-2 h-4 w-4" />
-              Filtros
-              {activeFilterCount ? (
-                <Badge className="ml-2 bg-primary text-primary-foreground">
-                  {activeFilterCount}
-                </Badge>
-              ) : null}
-            </Button>
-            <div className="hidden w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end md:flex">
               {canAccessTransfers ? (
                 <Button
                   type="button"
                   variant="outline"
-                  size="icon"
                   onClick={openTransferDialog}
+                  className="h-11 flex-1 border-white/20 bg-white/10 px-4 text-white hover:bg-white/20 hover:text-white md:flex-none"
                   aria-label="Transferência de Lead"
                   title="Transferência de Lead"
                 >
-                  <Clock3 className="h-4 w-4" />
+                  <Clock3 className="mr-2 h-4 w-4" />
+                  Transferir
                 </Button>
               ) : null}
-              <Button
-                type="button"
-                variant={filtersOpen ? "default" : "outline"}
-                onClick={() => setFiltersOpen((open) => !open)}
-                className={filtersOpen ? "bg-gradient-primary sm:w-auto" : "sm:w-auto"}
-              >
-                <Filter className="mr-2 h-4 w-4" />
-                Filtros
-                {activeFilterCount ? (
-                  <Badge className="ml-2 bg-primary text-primary-foreground">
-                    {activeFilterCount}
-                  </Badge>
-                ) : null}
-              </Button>
-              <div className="relative w-full sm:w-[300px] lg:w-[360px]">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Buscar lead..."
-                  className="h-9 pl-9 text-sm"
-                />
-              </div>
               {search || activeFilterCount ? (
-                <Button type="button" variant="ghost" onClick={clearPipelineFilters}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={clearPipelineFilters}
+                  className="h-11 text-white/70 hover:bg-white/10 hover:text-white"
+                >
                   <X className="mr-2 h-4 w-4" />
                   Limpar
                 </Button>
               ) : null}
+              {canOperatePipeline ? (
+                <Button
+                  className="h-11 flex-1 bg-[#F4B728] px-5 font-bold text-[#07154C] hover:bg-[#F4B728]/90 md:flex-none"
+                  onClick={openLeadDialog}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Novo lead
+                </Button>
+              ) : null}
             </div>
           </div>
-        }
-      />
+        </div>
+      </section>
 
       {filtersOpen ? (
-        <div className="grid gap-3 rounded-2xl border border-primary/10 bg-card/80 p-3 shadow-card md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 rounded-[24px] border border-[#16006C]/10 bg-white p-5 shadow-card md:grid-cols-2 xl:grid-cols-4">
           <div className="space-y-2">
             <Label>Curso</Label>
             <Select
@@ -1287,109 +1349,144 @@ function CRMPipeline() {
         </div>
       ) : null}
 
-      <div className="overflow-x-auto pb-4">
-        <div className="flex min-w-max gap-4">
-          {stages.map((stage) => {
-            const stageLeads = filteredLeads.filter((lead) => pipelineStage(lead.stage) === stage);
-            const visibleCount = stageVisibleCounts[stage] ?? PIPELINE_STAGE_PAGE_SIZE;
-            const visibleStageLeads = stageLeads.slice(0, visibleCount);
-            const hiddenCount = Math.max(stageLeads.length - visibleStageLeads.length, 0);
-            const stageValue = stageLeads.reduce(
-              (sum, lead) => sum + (pipelineDisplayValue(lead, session?.user.role) ?? 0),
-              0,
-            );
-            const isDropTarget = dropTargetStage === stage;
-
-            return (
-              <div key={stage} className="w-[280px] flex-shrink-0">
-                <div className="mb-3 flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2 shadow-card">
-                  <div>
-                    <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                      {stage}
-                    </div>
-                    <div className="text-sm font-semibold">
-                      {loadingLeads ? "..." : `${stageLeads.length} leads`}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-[10px] text-muted-foreground">Pipeline</div>
-                    <div className="text-xs font-semibold text-primary">
-                      {currencyFormatter.format(stageValue)}
-                    </div>
-                  </div>
-                </div>
-                <div
-                  className={`space-y-3 rounded-xl border bg-card/60 p-3 shadow-card transition-colors duration-200 ${
-                    isDropTarget ? "border-primary/50 bg-primary/5" : "border-border"
-                  }`}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    setDropTargetStage(stage);
-                  }}
-                  onDragEnter={(event) => {
-                    event.preventDefault();
-                    setDropTargetStage(stage);
-                  }}
-                  onDragLeave={() =>
-                    setDropTargetStage((current) => (current === stage ? null : current))
-                  }
-                  onDrop={(event) => handleStageDrop(event, stage)}
-                >
-                  {loadingLeads ? (
-                    <EmptyState
-                      icon={KanbanSquare}
-                      title="Carregando"
-                      description="Sincronizando leads da unidade ativa."
-                    />
-                  ) : stageLeads.length ? (
-                    <>
-                      {visibleStageLeads.map((lead) => (
-                        <LeadPipelineCard
-                          key={lead.id}
-                          lead={lead}
-                          removing={removingLeadId === lead.id}
-                          dragging={draggingLeadId === lead.id}
-                          syncing={syncingLeadId === lead.id}
-                          displayValue={pipelineDisplayValue(lead, session?.user.role)}
-                          canViewAcquisitionChannel={canViewAcquisitionChannel}
-                          canViewLeadAge={canViewLeadAge}
-                          canViewOwner={canTransferUnitLeads}
-                          canRemove={canRemoveLeads}
-                          canEdit={canOperatePipeline}
-                          onRemove={() => void handleRemoveLead(lead)}
-                          onEdit={() => openEditLeadDialog(lead)}
-                          onDragStart={(event) => handleDragStart(event, lead)}
-                          onDragEnd={handleDragEnd}
-                        />
-                      ))}
-
-                      {hiddenCount ? (
-                        <div className="sticky bottom-0 -mx-1 -mb-1 rounded-b-xl bg-gradient-to-t from-card via-card/95 to-card/30 px-1 pb-1 pt-8 backdrop-blur-sm">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="w-full border-primary/20 bg-white/90 text-primary shadow-sm hover:bg-primary hover:text-primary-foreground"
-                            onClick={() => loadMoreStageLeads(stage, stageLeads.length)}
-                          >
-                            + carregar mais leads
-                            <span className="ml-1 text-xs opacity-75">({hiddenCount})</span>
-                          </Button>
-                        </div>
-                      ) : null}
-                    </>
-                  ) : (
-                    <EmptyState
-                      icon={KanbanSquare}
-                      title="Sem leads"
-                      description="Quando houver registros reais, eles aparecerão neste estágio."
-                    />
-                  )}
-                </div>
-              </div>
-            );
-          })}
+      <section className="rounded-[28px] border border-[#16006C]/10 bg-[#F7F8FC] p-3 shadow-[0_22px_60px_-46px_rgba(7,21,76,0.65)] sm:p-5">
+        <div className="mb-5 flex flex-col gap-2 px-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-[#224C99]">
+              <KanbanSquare className="h-4 w-4" />
+              Jornada comercial
+            </div>
+            <h2 className="mt-1 text-xl font-black tracking-tight text-[#07154C]">
+              Fluxo de oportunidades
+            </h2>
+          </div>
+          <p className="max-w-md text-xs leading-relaxed text-muted-foreground sm:text-right">
+            Arraste uma ficha entre as etapas para atualizar o andamento da negociação.
+          </p>
         </div>
-      </div>
+
+        <div className="overflow-x-auto pb-2">
+          <div className="flex min-w-max gap-3">
+            {stages.map((stage, stageIndex) => {
+              const stageLeads = filteredLeads.filter(
+                (lead) => pipelineStage(lead.stage) === stage,
+              );
+              const visibleCount = stageVisibleCounts[stage] ?? PIPELINE_STAGE_PAGE_SIZE;
+              const visibleStageLeads = stageLeads.slice(0, visibleCount);
+              const hiddenCount = Math.max(stageLeads.length - visibleStageLeads.length, 0);
+              const stageValue = stageLeads.reduce(
+                (sum, lead) => sum + (pipelineDisplayValue(lead, session?.user.role) ?? 0),
+                0,
+              );
+              const isDropTarget = dropTargetStage === stage;
+              const stageVisual = pipelineStageVisual[stage];
+
+              return (
+                <div
+                  key={stage}
+                  className={`w-[310px] flex-shrink-0 overflow-hidden rounded-[22px] border bg-gradient-to-b ${stageVisual.surface} to-white/70 transition-all duration-200 ${
+                    isDropTarget
+                      ? "border-[#F4B728] shadow-[0_18px_42px_-28px_rgba(244,183,40,0.95)] ring-2 ring-[#F4B728]/20"
+                      : "border-[#16006C]/10"
+                  }`}
+                >
+                  <div className="border-b border-[#16006C]/10 bg-white/75 p-4 backdrop-blur-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div
+                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-black text-white shadow-sm ${stageVisual.accent}`}
+                        >
+                          {String(stageIndex + 1).padStart(2, "0")}
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="truncate text-sm font-black text-[#07154C]">{stage}</h3>
+                          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                            <span className={`h-1.5 w-1.5 rounded-full ${stageVisual.dot}`} />
+                            {loadingLeads ? "Carregando" : `${stageLeads.length} oportunidades`}
+                          </div>
+                        </div>
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className={`shrink-0 border px-2 py-1 text-[10px] font-bold ${stageVisual.badge}`}
+                      >
+                        {currencyFormatter.format(stageValue)}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div
+                    className="min-h-[360px] space-y-3 p-3"
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      setDropTargetStage(stage);
+                    }}
+                    onDragEnter={(event) => {
+                      event.preventDefault();
+                      setDropTargetStage(stage);
+                    }}
+                    onDragLeave={() =>
+                      setDropTargetStage((current) => (current === stage ? null : current))
+                    }
+                    onDrop={(event) => handleStageDrop(event, stage)}
+                  >
+                    {loadingLeads ? (
+                      <EmptyState
+                        icon={KanbanSquare}
+                        title="Carregando"
+                        description="Sincronizando leads da unidade ativa."
+                      />
+                    ) : stageLeads.length ? (
+                      <>
+                        {visibleStageLeads.map((lead) => (
+                          <LeadPipelineCard
+                            key={lead.id}
+                            lead={lead}
+                            removing={removingLeadId === lead.id}
+                            dragging={draggingLeadId === lead.id}
+                            syncing={syncingLeadId === lead.id}
+                            displayValue={pipelineDisplayValue(lead, session?.user.role)}
+                            canViewAcquisitionChannel={canViewAcquisitionChannel}
+                            canViewLeadAge={canViewLeadAge}
+                            canViewOwner={canTransferUnitLeads}
+                            canRemove={canRemoveLeads}
+                            canEdit={canOperatePipeline}
+                            onRemove={() => void handleRemoveLead(lead)}
+                            onEdit={() => openEditLeadDialog(lead)}
+                            onDragStart={(event) => handleDragStart(event, lead)}
+                            onDragEnd={handleDragEnd}
+                          />
+                        ))}
+
+                        {hiddenCount ? (
+                          <div className="sticky bottom-0 -mx-1 -mb-1 rounded-b-xl bg-gradient-to-t from-[#F7F8FC] via-[#F7F8FC]/95 to-transparent px-1 pb-1 pt-8 backdrop-blur-sm">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="w-full border-[#16006C]/15 bg-white/90 text-[#16006C] shadow-sm hover:bg-[#16006C] hover:text-white"
+                              onClick={() => loadMoreStageLeads(stage, stageLeads.length)}
+                            >
+                              + carregar mais leads
+                              <span className="ml-1 text-xs opacity-75">({hiddenCount})</span>
+                            </Button>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#16006C]/15 bg-white/40 px-5 text-center">
+                        <div className={`mb-3 h-2 w-2 rounded-full ${stageVisual.dot}`} />
+                        <div className="text-sm font-bold text-[#07154C]">Etapa livre</div>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          Novas oportunidades aparecerão aqui.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
 
       <CreateLeadDialog
         open={leadDialogOpen}
@@ -1517,91 +1614,124 @@ function LeadPipelineCard({
   onDragStart: (event: React.DragEvent<HTMLDivElement>) => void;
   onDragEnd: () => void;
 }) {
+  const visual = pipelineStageVisual[pipelineStage(lead.stage)] ?? pipelineStageVisual["Novo lead"];
+  const initials = lead.fullName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+
   return (
     <Card
       draggable={canEdit}
       onDragStart={canEdit ? onDragStart : undefined}
       onDragEnd={canEdit ? onDragEnd : undefined}
-      className={`group border-primary/10 bg-white/90 p-3 shadow-card transition-all duration-200 ease-out ${
+      className={`group relative overflow-hidden border-[#16006C]/10 bg-white p-0 shadow-[0_14px_32px_-27px_rgba(7,21,76,0.7)] transition-all duration-200 ease-out ${
         canEdit ? "cursor-grab active:cursor-grabbing" : ""
       } ${
         dragging
           ? "scale-[0.98] opacity-60 shadow-lg"
-          : "hover:-translate-y-0.5 hover:shadow-elegant"
+          : "hover:-translate-y-0.5 hover:border-[#16006C]/20 hover:shadow-[0_20px_38px_-26px_rgba(7,21,76,0.55)]"
       } ${syncing ? "ring-2 ring-primary/25" : ""}`}
     >
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <button
-            type="button"
-            onClick={canEdit ? onEdit : undefined}
-            className={`line-clamp-2 max-w-full text-left text-sm font-semibold [overflow-wrap:anywhere] ${
-              canEdit ? "transition hover:text-primary" : "cursor-default"
-            }`}
+      <div className={`h-1 w-full ${visual.accent}`} />
+      <div className="p-3.5">
+        <div className="flex items-start gap-3">
+          <div
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-black text-white shadow-sm ${visual.accent}`}
           >
-            {lead.fullName}
-          </button>
-          <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Phone className="h-3.5 w-3.5" />
-            <span className="truncate">{lead.phone}</span>
+            {initials || "LD"}
           </div>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <button
+              type="button"
+              onClick={canEdit ? onEdit : undefined}
+              className={`line-clamp-2 max-w-full text-left text-sm font-black leading-snug text-[#07154C] [overflow-wrap:anywhere] ${
+                canEdit ? "transition hover:text-[#224C99]" : "cursor-default"
+              }`}
+            >
+              {lead.fullName}
+            </button>
+            <div className="mt-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <Phone className="h-3.5 w-3.5 text-[#224C99]" />
+              <span className="truncate">{lead.phone}</span>
+            </div>
+          </div>
+          {canRemove ? (
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 shrink-0 text-destructive opacity-50 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+              onClick={onRemove}
+              disabled={removing}
+              aria-label={`Remover ${lead.fullName}`}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          ) : null}
+        </div>
+
+        <div className="mt-3 grid gap-1.5 rounded-xl bg-[#F7F8FC] px-3 py-2.5">
           {lead.phone2 ? (
-            <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Smartphone className="h-3.5 w-3.5 shrink-0" />
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <Smartphone className="h-3.5 w-3.5 shrink-0 text-[#224C99]" />
               <span className="truncate">{lead.phone2}</span>
             </div>
           ) : null}
           {lead.email ? (
-            <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Mail className="h-3.5 w-3.5" />
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <Mail className="h-3.5 w-3.5 shrink-0 text-[#224C99]" />
               <span className="truncate">{lead.email}</span>
             </div>
           ) : null}
-          {canViewLeadAge ? (
-            <div className="mt-1 flex items-center gap-1.5 text-xs text-primary">
-              <Clock3 className="h-3.5 w-3.5" />
-              <span className="truncate">{formatLeadCreatedTime(lead.createdAt)}</span>
+          {lead.city ? (
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <MapPin className="h-3.5 w-3.5 shrink-0 text-[#224C99]" />
+              <span className="truncate">{lead.city}</span>
             </div>
           ) : null}
           {canViewOwner && lead.createdByName ? (
-            <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <UserCheck className="h-3.5 w-3.5" />
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <UserCheck className="h-3.5 w-3.5 shrink-0 text-[#224C99]" />
               <span className="truncate">{lead.createdByName}</span>
             </div>
           ) : null}
         </div>
-        {canRemove ? (
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="h-8 w-8 shrink-0 text-destructive opacity-70 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-            onClick={onRemove}
-            disabled={removing}
-            aria-label={`Remover ${lead.fullName}`}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        ) : null}
+
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {lead.attendanceName || lead.courseName ? (
+            <Badge
+              variant="secondary"
+              className="h-auto max-w-full whitespace-normal border border-[#F4B728]/20 bg-[#F4B728]/15 text-left text-[#8A6100] [overflow-wrap:anywhere]"
+            >
+              {lead.attendanceName ?? lead.courseName}
+            </Badge>
+          ) : null}
+          {canViewAcquisitionChannel && lead.acquisitionChannelName ? (
+            <Badge variant="secondary" className="bg-[#16006C]/7 text-[#16006C]">
+              {lead.acquisitionChannelName}
+            </Badge>
+          ) : null}
+        </div>
       </div>
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {lead.attendanceName || lead.courseName ? (
-          <Badge
-            variant="secondary"
-            className="h-auto max-w-full whitespace-normal bg-gold/15 text-left text-gold-foreground [overflow-wrap:anywhere]"
-          >
-            {lead.attendanceName ?? lead.courseName}
-          </Badge>
-        ) : null}
-        {canViewAcquisitionChannel && lead.acquisitionChannelName ? (
-          <Badge variant="secondary" className="bg-gold/15 text-gold-foreground">
-            {lead.acquisitionChannelName}
-          </Badge>
-        ) : null}
-      </div>
-      {displayValue !== null ? (
-        <div className="mt-3 text-xs font-semibold text-primary">
-          {currencyFormatter.format(displayValue)}
+
+      {displayValue !== null || canViewLeadAge ? (
+        <div className="flex items-center justify-between gap-3 border-t border-[#16006C]/8 bg-[#FBFBFD] px-3.5 py-2.5">
+          {canViewLeadAge ? (
+            <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold text-[#224C99]">
+              <Clock3 className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{formatLeadCreatedTime(lead.createdAt)}</span>
+            </div>
+          ) : (
+            <span />
+          )}
+          {displayValue !== null ? (
+            <div className="shrink-0 text-xs font-black text-[#16006C]">
+              {currencyFormatter.format(displayValue)}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </Card>
