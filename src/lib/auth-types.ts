@@ -93,6 +93,10 @@ export function canViewStudentSwitcher(role: UserRole) {
   return role === "DEV";
 }
 
+export function canSwitchActiveUnit(role: UserRole) {
+  return role === "DEV" || role === "CEO" || role === "CVO";
+}
+
 export function canViewGrowth(role: UserRole) {
   return role !== "CONSULTOR";
 }

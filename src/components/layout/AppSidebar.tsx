@@ -1,5 +1,7 @@
+import * as React from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
+  Building2,
   ChartNoAxesCombined,
   ClipboardPenLine,
   ContactRound,
@@ -15,6 +17,7 @@ import {
   WandSparkles,
   type LucideIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   Sidebar,
   SidebarContent,
@@ -29,11 +32,19 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import starLogo from "@/assets/star-profissoes-logo.png";
 import { useAuth } from "@/lib/auth";
 import {
   canAccessSystemFeedback,
   canManageUnits,
+  canSwitchActiveUnit,
   canViewGrowth,
   canViewManagement,
   canViewMetaAds,
@@ -98,7 +109,8 @@ const groups: Array<NavigationGroup> = [
 
 export function AppSidebar() {
   const { state, isMobile, setOpenMobile } = useSidebar();
-  const { logout, session } = useAuth();
+  const { logout, session, setActiveUnit } = useAuth();
+  const [switchingUnit, setSwitchingUnit] = React.useState(false);
   const collapsed = state === "collapsed";
   const path = useRouterState({ select: (r) => r.location.pathname });
   const user = session?.user;
@@ -108,6 +120,24 @@ export function AppSidebar() {
   const canViewStudentList = user ? canViewStudents(user.role) : false;
   const canViewSystemFeedback = user ? canAccessSystemFeedback(user.role) : false;
   const canSeeSalesAi = user ? canViewSalesAi(user.role) : false;
+  const canSwitchUnit = user ? canSwitchActiveUnit(user.role) : false;
+  const handleUnitChange = async (unitId: string) => {
+    if (!activeUnit || unitId === activeUnit.id || switchingUnit) {
+      return;
+    }
+
+    const nextUnit = session?.units.find((unit) => unit.id === unitId);
+
+    try {
+      setSwitchingUnit(true);
+      await setActiveUnit(unitId);
+      toast.success(nextUnit ? `Unidade alterada para ${nextUnit.name}.` : "Unidade alterada.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível trocar a unidade.");
+    } finally {
+      setSwitchingUnit(false);
+    }
+  };
   const closeMobileSidebar = () => {
     if (isMobile) {
       setOpenMobile(false);
@@ -206,38 +236,70 @@ export function AppSidebar() {
       <SidebarFooter className="border-t border-sidebar-border/80">
         {!collapsed ? (
           <div className="m-2 space-y-2">
-            <Link
-              to="/perfil"
-              title="Editar perfil"
-              onClick={closeMobileSidebar}
-              className="block rounded-xl border border-sidebar-border/80 bg-white/72 p-3 shadow-sm transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-            >
-              <div className="flex items-center gap-3">
-                <Avatar className="h-9 w-9 border border-sidebar-border">
+            <div className="relative overflow-hidden rounded-2xl border border-white/15 bg-gradient-to-br from-white/[0.14] via-white/[0.08] to-[#377DFE]/20 p-3 shadow-[0_18px_42px_-28px_rgba(0,0,0,0.75)]">
+              <div className="pointer-events-none absolute -right-8 -top-10 h-24 w-24 rounded-full bg-[#377DFE]/20 blur-2xl" />
+              <Link
+                to="/perfil"
+                title="Editar perfil"
+                onClick={closeMobileSidebar}
+                className="relative flex items-center gap-3 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+              >
+                <Avatar className="h-10 w-10 border-2 border-[#F4B728]/80 shadow-[0_8px_22px_-12px_rgba(244,183,40,0.95)]">
                   <AvatarImage
                     src={user?.avatarUrl ?? undefined}
                     alt={user?.name ?? "Perfil"}
                     className="object-cover"
                   />
-                  <AvatarFallback className="bg-gradient-primary text-xs font-semibold text-primary-foreground">
+                  <AvatarFallback className="bg-gradient-primary text-xs font-bold text-primary-foreground">
                     {user ? getInitials(user.name) : "PG"}
                   </AvatarFallback>
                 </Avatar>
                 <div className="min-w-0 leading-tight">
-                  <div className="truncate text-sm font-semibold text-sidebar-foreground">
+                  <div className="truncate text-sm font-semibold text-white">
                     {user?.name ?? "Star Profissões"}
                   </div>
-                  <div className="truncate text-xs text-sidebar-foreground/70">
+                  <div className="mt-0.5 truncate text-xs font-medium text-white/65">
                     {user ? ROLE_LABELS[user.role] : "Star Profissões"}
                   </div>
                 </div>
-              </div>
+              </Link>
+
               {activeUnit ? (
-                <div className="mt-2 truncate rounded-md border border-sidebar-border/70 bg-sidebar-accent/45 px-2 py-1 text-xs text-sidebar-foreground/75">
-                  {activeUnit.name}
-                </div>
+                canSwitchUnit ? (
+                  <Select
+                    value={activeUnit.id}
+                    onValueChange={(unitId) => void handleUnitChange(unitId)}
+                    disabled={switchingUnit}
+                  >
+                    <SelectTrigger
+                      aria-label="Selecionar unidade ativa"
+                      className="relative mt-3 h-9 border-white/15 bg-[#0B1A55]/65 px-2.5 text-xs font-medium text-white shadow-none transition hover:border-[#F4B728]/50 hover:bg-[#0B1A55]/85 focus:ring-[#F4B728] disabled:opacity-70 [&>svg]:text-[#F4B728]"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Building2 className="h-3.5 w-3.5 shrink-0 text-[#F4B728]" />
+                        <SelectValue placeholder="Selecione a unidade" />
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent className="border-[#224C99]/20 bg-white text-[#07154C]">
+                      {session?.units.map((unit) => (
+                        <SelectItem
+                          key={unit.id}
+                          value={unit.id}
+                          className="focus:bg-[#EAF1FF] focus:text-[#16006C]"
+                        >
+                          {unit.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="relative mt-3 flex items-center gap-2 truncate rounded-lg border border-white/12 bg-[#0B1A55]/55 px-2.5 py-2 text-xs font-medium text-white/80">
+                    <Building2 className="h-3.5 w-3.5 shrink-0 text-[#F4B728]" />
+                    <span className="truncate">{activeUnit.name}</span>
+                  </div>
+                )
               ) : null}
-            </Link>
+            </div>
             <LogoutMenuItem onLogout={logout} />
           </div>
         ) : (

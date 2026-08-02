@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { canSwitchActiveUnit } from "@/lib/auth-types";
 import {
   SESSION_COOKIE_NAME,
   getCookie,
@@ -26,6 +27,13 @@ export const Route = createFileRoute("/api/auth/session")({
 
         if (!session) {
           return Response.json({ ok: false, error: "Não autenticado." }, { status: 401 });
+        }
+
+        if (!canSwitchActiveUnit(session.user.role)) {
+          return Response.json(
+            { ok: false, error: "Seu perfil não pode trocar a unidade ativa." },
+            { status: 403 },
+          );
         }
 
         const body = await request.json().catch(() => null);
