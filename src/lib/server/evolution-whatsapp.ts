@@ -293,6 +293,20 @@ export async function getEvolutionState(userId: string, unitId: string) {
   };
 }
 
+export async function getEvolutionQrCode(userId: string, unitId: string) {
+  const instance = await getInstance(userId, unitId);
+
+  if (!instance || instance.status === "connected") {
+    return null;
+  }
+
+  const qrData = await evolutionFetch(
+    `/instance/connect/${encodeURIComponent(instance.instance_name)}`,
+  );
+
+  return qrCodeFrom(qrData);
+}
+
 export async function connectEvolution(
   unit: { id: string; name: string },
   user: { id: string; email: string; name: string },

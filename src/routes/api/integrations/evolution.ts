@@ -4,6 +4,7 @@ import { getSessionFromRequest } from "@/lib/server/auth";
 import {
   connectEvolution,
   disconnectEvolution,
+  getEvolutionQrCode,
   getEvolutionState,
 } from "@/lib/server/evolution-whatsapp";
 
@@ -26,7 +27,16 @@ export const Route = createFileRoute("/api/integrations/evolution")({
         if ("response" in auth) return auth.response;
 
         const state = await getEvolutionState(auth.session.user.id, auth.activeUnit.id);
-        return Response.json({ ok: true, ...state }, { headers: { "Cache-Control": "no-store" } });
+        const includeQrCode = new URL(request.url).searchParams.get("includeQrCode") === "1";
+        const qrCode =
+          includeQrCode && state.instance?.status !== "connected"
+            ? await getEvolutionQrCode(auth.session.user.id, auth.activeUnit.id)
+            : null;
+
+        return Response.json(
+          { ok: true, ...state, qrCode },
+          { headers: { "Cache-Control": "no-store" } },
+        );
       },
       POST: async ({ request }) => {
         const auth = await requireSession(request);

@@ -288,6 +288,29 @@ function SalesAiPage() {
     [canAccess, isConsultant, session],
   );
 
+  const refreshEvolutionQrCode = React.useCallback(async () => {
+    if (!session || !isConsultant || !qrOpen) return;
+
+    try {
+      const data = await requestJson<{ ok: true; qrCode: string | null } & EvolutionState>(
+        "/api/integrations/evolution?includeQrCode=1",
+      );
+      setEvolutionState({ configured: data.configured, instance: data.instance });
+
+      if (data.instance?.status === "connected") {
+        setQrCode(null);
+        setQrOpen(false);
+        return;
+      }
+
+      if (data.qrCode) {
+        setQrCode(data.qrCode);
+      }
+    } catch {
+      // Mantém o último QR visível; o botão manual continua disponível.
+    }
+  }, [isConsultant, qrOpen, session]);
+
   const loadData = React.useCallback(
     async (silent = false) => {
       if (!session || !canAccess || isConsultant) {
@@ -354,6 +377,14 @@ function SalesAiPage() {
 
     return () => window.clearInterval(interval);
   }, [evolutionState?.instance?.status, isConsultant, loadEvolutionState, qrOpen]);
+
+  React.useEffect(() => {
+    if (!isConsultant || !qrOpen || evolutionState?.instance?.status === "connected") return;
+
+    const interval = window.setInterval(() => void refreshEvolutionQrCode(), 15_000);
+
+    return () => window.clearInterval(interval);
+  }, [evolutionState?.instance?.status, isConsultant, qrOpen, refreshEvolutionQrCode]);
 
   React.useEffect(() => {
     setSelectedConsultantId("");
@@ -967,8 +998,8 @@ function WhatsappQrDialog({
                 )}
               </div>
               <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
-                <CheckCircle2 className="h-4 w-4 text-emerald-500" /> A tela será atualizada
-                automaticamente após a leitura.
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" /> QR Code renovado
+                automaticamente e tela atualizada após a leitura.
               </div>
             </div>
 
