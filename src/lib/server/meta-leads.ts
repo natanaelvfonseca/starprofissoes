@@ -1244,7 +1244,7 @@ export async function listMetaState(searchValue = "") {
   };
 }
 
-export async function upsertMetaIntegration(input: Record<string, unknown>, userId: string) {
+export async function upsertMetaIntegration(input: Record<string, unknown>, userId?: string) {
   await ensureMetaIntegration(userId);
 
   const result = await queryDb<MetaIntegrationRow>(

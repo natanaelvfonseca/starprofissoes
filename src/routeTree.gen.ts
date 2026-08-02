@@ -51,6 +51,7 @@ import { Route as ApiIaComercialAnalisesRouteImport } from './routes/api/ia-come
 import { Route as ApiIaComercialScriptsRouteImport } from './routes/api/ia-comercial.scripts'
 import { Route as ApiIntegrationsEvolutionRouteImport } from './routes/api/integrations/evolution'
 import { Route as ApiMetaConnectUrlRouteImport } from './routes/api/meta/connect-url'
+import { Route as ApiMetaOauthCompleteRouteImport } from './routes/api/meta/oauth-complete'
 import { Route as ApiTrainingVideoRouteImport } from './routes/api/training.video'
 import { Route as ApiWebhooksEvolutionRouteImport } from './routes/api/webhooks/evolution'
 import { Route as ApiWebhooksMetaLeadsRouteImport } from './routes/api/webhooks/meta-leads'
@@ -270,6 +271,11 @@ const ApiMetaConnectUrlRoute = ApiMetaConnectUrlRouteImport.update({
   path: '/api/meta/connect-url',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMetaOauthCompleteRoute = ApiMetaOauthCompleteRouteImport.update({
+  id: '/api/meta/oauth-complete',
+  path: '/api/meta/oauth-complete',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiTrainingVideoRoute = ApiTrainingVideoRouteImport.update({
   id: '/video',
   path: '/video',
@@ -350,6 +356,7 @@ export interface FileRoutesByFullPath {
   '/api/ia-comercial/scripts': typeof ApiIaComercialScriptsRoute
   '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
   '/api/meta/connect-url': typeof ApiMetaConnectUrlRoute
+  '/api/meta/oauth-complete': typeof ApiMetaOauthCompleteRoute
   '/api/training/video': typeof ApiTrainingVideoRoute
   '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
   '/api/webhooks/meta-leads': typeof ApiWebhooksMetaLeadsRoute
@@ -401,6 +408,7 @@ export interface FileRoutesByTo {
   '/api/ia-comercial/scripts': typeof ApiIaComercialScriptsRoute
   '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
   '/api/meta/connect-url': typeof ApiMetaConnectUrlRoute
+  '/api/meta/oauth-complete': typeof ApiMetaOauthCompleteRoute
   '/api/training/video': typeof ApiTrainingVideoRoute
   '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
   '/api/webhooks/meta-leads': typeof ApiWebhooksMetaLeadsRoute
@@ -453,6 +461,7 @@ export interface FileRoutesById {
   '/api/ia-comercial/scripts': typeof ApiIaComercialScriptsRoute
   '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
   '/api/meta/connect-url': typeof ApiMetaConnectUrlRoute
+  '/api/meta/oauth-complete': typeof ApiMetaOauthCompleteRoute
   '/api/training/video': typeof ApiTrainingVideoRoute
   '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
   '/api/webhooks/meta-leads': typeof ApiWebhooksMetaLeadsRoute
@@ -506,6 +515,7 @@ export interface FileRouteTypes {
     | '/api/ia-comercial/scripts'
     | '/api/integrations/evolution'
     | '/api/meta/connect-url'
+    | '/api/meta/oauth-complete'
     | '/api/training/video'
     | '/api/webhooks/evolution'
     | '/api/webhooks/meta-leads'
@@ -557,6 +567,7 @@ export interface FileRouteTypes {
     | '/api/ia-comercial/scripts'
     | '/api/integrations/evolution'
     | '/api/meta/connect-url'
+    | '/api/meta/oauth-complete'
     | '/api/training/video'
     | '/api/webhooks/evolution'
     | '/api/webhooks/meta-leads'
@@ -608,6 +619,7 @@ export interface FileRouteTypes {
     | '/api/ia-comercial/scripts'
     | '/api/integrations/evolution'
     | '/api/meta/connect-url'
+    | '/api/meta/oauth-complete'
     | '/api/training/video'
     | '/api/webhooks/evolution'
     | '/api/webhooks/meta-leads'
@@ -656,6 +668,7 @@ export interface RootRouteChildren {
   ApiHealthDbRoute: typeof ApiHealthDbRoute
   ApiIntegrationsEvolutionRoute: typeof ApiIntegrationsEvolutionRoute
   ApiMetaConnectUrlRoute: typeof ApiMetaConnectUrlRoute
+  ApiMetaOauthCompleteRoute: typeof ApiMetaOauthCompleteRoute
   ApiWebhooksEvolutionRoute: typeof ApiWebhooksEvolutionRoute
   ApiWebhooksMetaLeadsRoute: typeof ApiWebhooksMetaLeadsRoute
 }
@@ -956,6 +969,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMetaConnectUrlRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/meta/oauth-complete': {
+      id: '/api/meta/oauth-complete'
+      path: '/api/meta/oauth-complete'
+      fullPath: '/api/meta/oauth-complete'
+      preLoaderRoute: typeof ApiMetaOauthCompleteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/training/video': {
       id: '/api/training/video'
       path: '/video'
@@ -1131,6 +1151,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiHealthDbRoute: ApiHealthDbRoute,
   ApiIntegrationsEvolutionRoute: ApiIntegrationsEvolutionRoute,
   ApiMetaConnectUrlRoute: ApiMetaConnectUrlRoute,
+  ApiMetaOauthCompleteRoute: ApiMetaOauthCompleteRoute,
   ApiWebhooksEvolutionRoute: ApiWebhooksEvolutionRoute,
   ApiWebhooksMetaLeadsRoute: ApiWebhooksMetaLeadsRoute,
 }
