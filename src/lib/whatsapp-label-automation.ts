@@ -1,0 +1,136 @@
+export type WhatsappLabelAssociation = {
+  action: "add" | "remove";
+  chatId: string;
+  labelId: string;
+};
+
+export type WhatsappLabelEdit = {
+  labelId: string;
+  name: string;
+  color: string | null;
+  deleted: boolean;
+};
+
+export type LeadMatchCandidate = {
+  id: string;
+  createdBy: string | null;
+  stage: string;
+  createdAt: string;
+};
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+export function digitsOnly(value: unknown) {
+  return String(value ?? "").replace(/\D/g, "");
+}
+
+export function phoneFromWhatsappJid(value: unknown) {
+  const jid = String(value ?? "").trim().toLowerCase();
+
+  if (!jid || jid.endsWith("@g.us") || jid.endsWith("@lid")) {
+    return "";
+  }
+
+  return digitsOnly(jid.split("@")[0]);
+}
+
+export function brazilianPhoneKeys(value: unknown) {
+  const raw = digitsOnly(value);
+  const keys = new Set<string>();
+
+  if (!raw) return keys;
+
+  const local = raw.startsWith("55") && raw.length >= 12 ? raw.slice(2) : raw;
+  if (local.length !== 10 && local.length !== 11) return keys;
+
+  keys.add(local);
+  keys.add(`55${local}`);
+
+  if (local.length === 10) {
+    const withNinthDigit = `${local.slice(0, 2)}9${local.slice(2)}`;
+    keys.add(withNinthDigit);
+    keys.add(`55${withNinthDigit}`);
+  } else if (local[2] === "9") {
+    const withoutNinthDigit = `${local.slice(0, 2)}${local.slice(3)}`;
+    keys.add(withoutNinthDigit);
+    keys.add(`55${withoutNinthDigit}`);
+  }
+
+  return keys;
+}
+
+export function phonesMatch(first: unknown, second: unknown) {
+  const firstKeys = brazilianPhoneKeys(first);
+  const secondKeys = brazilianPhoneKeys(second);
+
+  for (const key of firstKeys) {
+    if (secondKeys.has(key)) return true;
+  }
+
+  return false;
+}
+
+export function parseWhatsappLabelAssociation(payload: unknown): WhatsappLabelAssociation | null {
+  const payloadRecord = asRecord(payload);
+  const data = asRecord(payloadRecord.data);
+  const association = asRecord(data.association);
+  const rawAction = String(data.type ?? association.type ?? "").toLowerCase();
+  const action = rawAction === "add" || rawAction === "remove" ? rawAction : null;
+  const chatId = String(data.chatId ?? association.chatId ?? "").trim();
+  const labelId = String(data.labelId ?? association.labelId ?? "").trim();
+
+  if (!action || !chatId || !labelId) return null;
+
+  return { action, chatId, labelId };
+}
+
+export function parseWhatsappLabelEdit(payload: unknown): WhatsappLabelEdit | null {
+  const payloadRecord = asRecord(payload);
+  const data = asRecord(payloadRecord.data);
+  const labelId = String(data.id ?? data.labelId ?? "").trim();
+
+  if (!labelId) return null;
+
+  return {
+    labelId,
+    name: String(data.name ?? "").trim(),
+    color: data.color === undefined || data.color === null ? null : String(data.color),
+    deleted: data.deleted === true,
+  };
+}
+
+export function chooseLeadCandidate<T extends LeadMatchCandidate>(
+  candidates: Array<T>,
+  consultantId: string,
+) {
+  const sorted = [...candidates].sort((first, second) => {
+    const ownerDifference =
+      Number(second.createdBy === consultantId) - Number(first.createdBy === consultantId);
+    if (ownerDifference) return ownerDifference;
+
+    const activeDifference =
+      Number(second.stage !== "Matriculado") - Number(first.stage !== "Matriculado");
+    if (activeDifference) return activeDifference;
+
+    return new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime();
+  });
+
+  const first = sorted[0];
+  const second = sorted[1];
+  if (!first) return { candidate: null, ambiguous: false };
+
+  if (
+    second &&
+    first.createdBy === second.createdBy &&
+    (first.stage !== "Matriculado") === (second.stage !== "Matriculado") &&
+    new Date(first.createdAt).getTime() === new Date(second.createdAt).getTime()
+  ) {
+    return { candidate: null, ambiguous: true };
+  }
+
+  return { candidate: first, ambiguous: false };
+}

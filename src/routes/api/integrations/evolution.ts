@@ -26,7 +26,11 @@ export const Route = createFileRoute("/api/integrations/evolution")({
         const auth = await requireSession(request);
         if ("response" in auth) return auth.response;
 
-        const state = await getEvolutionState(auth.session.user.id, auth.activeUnit.id);
+        const state = await getEvolutionState(
+          auth.session.user.id,
+          auth.activeUnit.id,
+          request.url,
+        );
         const includeQrCode = new URL(request.url).searchParams.get("includeQrCode") === "1";
         const qrCode =
           includeQrCode && state.instance?.status !== "connected"

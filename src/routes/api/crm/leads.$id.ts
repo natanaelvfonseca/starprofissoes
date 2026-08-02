@@ -6,6 +6,7 @@ import { ensureCommercialSchema, isUuid } from "@/lib/server/commercial-schema";
 import { getSessionFromRequest } from "@/lib/server/auth";
 import { ensureCourseAttendanceSchema } from "@/lib/server/course-attendances";
 import { queryDb } from "@/lib/server/db";
+import { LeadPipelineMoveError, moveLeadToPipelineColumn } from "@/lib/server/lead-pipeline";
 
 type LeadUnitRow = QueryResultRow & {
   unit_id: string;
@@ -383,107 +384,38 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
             return Response.json({ ok: true, studentPipelineColumnId: column.id });
           }
 
-          if (!column.semantic_stage || !allowedStages.includes(column.semantic_stage)) {
+          if (
+            isSharedNewLead &&
+            (session.user.role !== "CONSULTOR" || !consultantCanAccessSharedLead)
+          ) {
             return Response.json(
-              { ok: false, error: "Coluna comercial inválida." },
-              { status: 400 },
+              { ok: false, error: "Um consultor da turma deve assumir este lead." },
+              { status: 403 },
             );
           }
 
-          if (isSharedNewLead) {
-            if (session.user.role !== "CONSULTOR" || !consultantCanAccessSharedLead) {
-              return Response.json(
-                { ok: false, error: "Um consultor da turma deve assumir este lead." },
-                { status: 403 },
-              );
-            }
-
-            if (column.semantic_stage === "Novo lead") {
-              return Response.json(
-                { ok: false, error: "Mova o lead para outra etapa para iniciar o atendimento." },
-                { status: 400 },
-              );
-            }
-
-            const claimed = await queryDb<{ id: string }>(
-              `
-                update app_leads lead
-                set pipeline_column_id = $2,
-                    stage = $3,
-                    created_by = $4,
-                    shared_queue = false,
-                    first_contact_at = coalesce(first_contact_at, now()),
-                    last_follow_up_at = now(),
-                    follow_up_count = follow_up_count + 1,
-                    updated_at = now()
-                where lead.id = $1
-                  and lead.shared_queue = true
-                  and lead.stage = 'Novo lead'
-                  and exists (
-                    select 1
-                    from app_course_attendance_consultants attendance_consultant
-                    inner join app_users consultant on consultant.id = attendance_consultant.user_id
-                    where attendance_consultant.attendance_id = lead.attendance_id
-                      and consultant.id = $4
-                      and consultant.role = 'CONSULTOR'
-                      and consultant.status = 'active'
-                  )
-                returning lead.id
-              `,
-              [params.id, column.id, column.semantic_stage, session.user.id],
-            );
-
-            if (!claimed.rowCount) {
-              return Response.json(
-                { ok: false, error: "Este lead já foi assumido por outro consultor." },
-                { status: 409 },
-              );
-            }
+          try {
+            const moved = await moveLeadToPipelineColumn({
+              leadId: params.id,
+              pipelineColumnId: column.id,
+              claimUserId: session.user.role === "CONSULTOR" ? session.user.id : null,
+            });
 
             return Response.json({
               ok: true,
-              claimed: true,
-              stage: column.semantic_stage,
-              pipelineColumnId: column.id,
-              createdById: session.user.id,
-              createdByName: session.user.name,
-              sharedQueue: false,
+              claimed: moved.claimed,
+              stage: moved.stage,
+              pipelineColumnId: moved.pipelineColumnId,
+              createdById: moved.createdById,
+              createdByName: moved.claimed ? session.user.name : undefined,
+              sharedQueue: moved.sharedQueue,
             });
+          } catch (error) {
+            if (error instanceof LeadPipelineMoveError) {
+              return Response.json({ ok: false, error: error.message }, { status: error.status });
+            }
+            throw error;
           }
-
-          const releaseToSharedQueue =
-            column.semantic_stage === "Novo lead" &&
-            (await hasActiveAttendanceConsultant(lead.attendance_id));
-          await queryDb(
-            `
-              update app_leads
-              set pipeline_column_id = $2,
-                  stage = $3,
-                  shared_queue = $4,
-                  created_by = case when $4 then null else created_by end,
-                  first_contact_at = case
-                    when $3 <> 'Novo lead' then coalesce(first_contact_at, now())
-                    else first_contact_at
-                  end,
-                  last_follow_up_at = case
-                    when $3 <> stage and $3 <> 'Novo lead' then now()
-                    else last_follow_up_at
-                  end,
-                  follow_up_count = case
-                    when $3 <> stage and $3 <> 'Novo lead' then follow_up_count + 1
-                    else follow_up_count
-                  end,
-                  updated_at = now()
-              where id = $1
-            `,
-            [params.id, column.id, column.semantic_stage, releaseToSharedQueue],
-          );
-          return Response.json({
-            ok: true,
-            stage: column.semantic_stage,
-            pipelineColumnId: column.id,
-            sharedQueue: releaseToSharedQueue,
-          });
         }
 
         if (isSharedNewLead && session.user.role === "CONSULTOR") {

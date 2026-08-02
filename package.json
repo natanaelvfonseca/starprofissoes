@@ -9,6 +9,8 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
+    "test": "node --test tests/*.test.ts",
+    "test:labels": "node --test tests/whatsapp-label-automation.test.ts",
     "test:meta-disconnect": "node --test tests/meta-disconnect.test.ts",
     "format": "prettier --write ."
   },

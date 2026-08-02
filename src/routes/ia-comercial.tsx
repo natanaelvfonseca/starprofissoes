@@ -20,6 +20,7 @@ import {
   Save,
   ScrollText,
   Sparkles,
+  Tags,
   Target,
   UserCheck,
   Wifi,
@@ -28,6 +29,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { WhatsappLabelAutomation } from "@/components/sales-ai/WhatsappLabelAutomation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -55,7 +57,13 @@ import { Textarea } from "@/components/ui/textarea";
 import starIaWhatsappConnect from "@/assets/star-ia-whatsapp-connect.png";
 import starIaWhatsappConnected from "@/assets/star-ia-whatsapp-connected.png";
 import { useAuth } from "@/lib/auth";
-import { canViewSalesAi, getInitials, isExecutiveRole, isMasterRole } from "@/lib/auth-types";
+import {
+  canManageWhatsappLabelAutomation,
+  canViewSalesAi,
+  getInitials,
+  isExecutiveRole,
+  isMasterRole,
+} from "@/lib/auth-types";
 import type {
   SalesAiConsultantSummary,
   SalesAiCourseOption,
@@ -202,6 +210,9 @@ function SalesAiPage() {
   const canUseUnitFilter = Boolean(
     session && (isMasterRole(session.user.role) || isExecutiveRole(session.user.role)),
   );
+  const canManageLabelAutomation = Boolean(
+    session && canManageWhatsappLabelAutomation(session.user.role),
+  );
   const [unitFilter, setUnitFilter] = React.useState(ATTENDANCE_ALL_UNITS);
   const [loading, setLoading] = React.useState(true);
   const [savingScript, setSavingScript] = React.useState(false);
@@ -253,6 +264,8 @@ function SalesAiPage() {
     (total, consultant) => total + consultant.messageCount30d,
     0,
   );
+  const automationUnitId =
+    unitFilter !== ATTENDANCE_ALL_UNITS ? unitFilter : session?.activeUnit?.id ?? null;
 
   const loadEvolutionState = React.useCallback(
     async (silent = false) => {
@@ -666,6 +679,12 @@ function SalesAiPage() {
             <FileText className="h-4 w-4" />
             Scripts
           </TabsTrigger>
+          {canManageLabelAutomation ? (
+            <TabsTrigger value="etiquetas" className="gap-2">
+              <Tags className="h-4 w-4" />
+              Automação por etiquetas
+            </TabsTrigger>
+          ) : null}
         </TabsList>
 
         <TabsContent value="analises" className="space-y-4">
@@ -706,6 +725,12 @@ function SalesAiPage() {
             />
           </div>
         </TabsContent>
+
+        {canManageLabelAutomation ? (
+          <TabsContent value="etiquetas" className="space-y-4">
+            <WhatsappLabelAutomation unitId={automationUnitId} />
+          </TabsContent>
+        ) : null}
       </Tabs>
     </div>
   );

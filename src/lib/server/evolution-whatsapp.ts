@@ -1,6 +1,17 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { QueryResultRow } from "pg";
 import { queryDb } from "@/lib/server/db";
+import {
+  configureEvolutionWebhook,
+  processEvolutionLabelEvent,
+} from "@/lib/server/evolution-label-automation";
+import {
+  evolutionWebhookUrl,
+  isEvolutionConfigured,
+  requestEvolution,
+} from "@/lib/server/evolution-client";
+
+export { requestEvolution } from "@/lib/server/evolution-client";
 
 type InstanceRow = QueryResultRow & {
   id: string;
@@ -12,6 +23,7 @@ type InstanceRow = QueryResultRow & {
   webhook_secret: string;
   connected_at: string | null;
   last_event_at: string | null;
+  label_webhook_configured_at: string | null;
 };
 
 let schemaPromise: Promise<void> | null = null;
@@ -63,6 +75,8 @@ export async function ensureEvolutionSchema() {
 
       alter table app_whatsapp_instances
         add column if not exists user_id uuid references app_users(id) on delete cascade;
+      alter table app_whatsapp_instances
+        add column if not exists label_webhook_configured_at timestamptz;
       update app_whatsapp_instances
       set user_id = created_by
       where user_id is null and created_by is not null;
@@ -100,17 +114,6 @@ export async function ensureEvolutionSchema() {
   return schemaPromise;
 }
 
-function evolutionConfig() {
-  const url = process.env.EVOLUTION_API_URL?.replace(/\/+$/, "");
-  const apiKey = process.env.EVOLUTION_API_KEY;
-
-  if (!url || !apiKey) {
-    throw new Error("A Evolution API ainda não está configurada no servidor.");
-  }
-
-  return { url, apiKey };
-}
-
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -119,45 +122,6 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function firstValue(...values: Array<unknown>) {
   return values.find((value) => value !== undefined && value !== null && value !== "");
-}
-
-async function evolutionFetch(path: string, init: RequestInit = {}) {
-  const { url, apiKey } = evolutionConfig();
-  const response = await fetch(`${url}${path}`, {
-    ...init,
-    headers: {
-      apikey: apiKey,
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
-      ...init.headers,
-    },
-  });
-  const text = await response.text();
-  let data: unknown = {};
-
-  if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = { message: text };
-    }
-  }
-
-  if (!response.ok) {
-    const dataRecord = asRecord(data);
-    const detail =
-      typeof dataRecord.message === "string"
-        ? dataRecord.message
-        : typeof dataRecord.error === "string"
-          ? dataRecord.error
-          : text;
-    throw new Error(detail || `Evolution API respondeu com status ${response.status}.`);
-  }
-
-  return data;
-}
-
-export async function requestEvolution(path: string, init: RequestInit = {}) {
-  return evolutionFetch(path, init);
 }
 
 function instancePart(value: string, fallback = "star_profissoes") {
@@ -196,12 +160,6 @@ function qrCodeFrom(data: unknown) {
   return null;
 }
 
-function publicWebhookUrl(requestUrl: string, secret: string) {
-  const configured = process.env.PUBLIC_APP_URL?.replace(/\/+$/, "");
-  const origin = configured || new URL(requestUrl).origin;
-  return `${origin}/api/webhooks/evolution?token=${encodeURIComponent(secret)}`;
-}
-
 function remoteInstanceName(item: unknown) {
   const itemRecord = asRecord(item);
   const instanceRecord = asRecord(itemRecord.instance);
@@ -218,7 +176,7 @@ function remoteInstanceName(item: unknown) {
 }
 
 async function remoteInstanceExists(instanceName: string) {
-  const instances = await evolutionFetch("/instance/fetchInstances");
+  const instances = await requestEvolution("/instance/fetchInstances");
   const instancesRecord = asRecord(instances);
   const items = Array.isArray(instances)
     ? instances
@@ -230,7 +188,7 @@ async function remoteInstanceExists(instanceName: string) {
 }
 
 async function createRemoteInstance(instanceName: string) {
-  await evolutionFetch("/instance/create", {
+  await requestEvolution("/instance/create", {
     method: "POST",
     body: JSON.stringify({
       instanceName,
@@ -252,12 +210,12 @@ async function getInstance(userId: string, unitId: string) {
   return result.rows[0] ?? null;
 }
 
-export async function getEvolutionState(userId: string, unitId: string) {
+export async function getEvolutionState(userId: string, unitId: string, requestUrl?: string) {
   let instance = await getInstance(userId, unitId);
 
   if (instance) {
     try {
-      const stateData = await evolutionFetch(
+      const stateData = await requestEvolution(
         `/instance/connectionState/${encodeURIComponent(instance.instance_name)}`,
       );
       const status = connectionState(stateData);
@@ -273,13 +231,32 @@ export async function getEvolutionState(userId: string, unitId: string) {
         [instance.id, status],
       );
       instance = updated.rows[0] ?? instance;
+
+      if (!instance.label_webhook_configured_at && requestUrl) {
+        const attempted = await queryDb<InstanceRow>(
+          `
+            update app_whatsapp_instances
+            set label_webhook_configured_at = now(), updated_at = now()
+            where id = $1 and label_webhook_configured_at is null
+            returning *
+          `,
+          [instance.id],
+        );
+        if (attempted.rows[0]) {
+          instance = attempted.rows[0];
+          await configureEvolutionWebhook(
+            instance.instance_name,
+            evolutionWebhookUrl(requestUrl, instance.webhook_secret),
+          );
+        }
+      }
     } catch {
       // The local state remains useful when Evolution is temporarily unavailable.
     }
   }
 
   return {
-    configured: Boolean(process.env.EVOLUTION_API_URL && process.env.EVOLUTION_API_KEY),
+    configured: isEvolutionConfigured(),
     instance: instance
       ? {
           id: instance.id,
@@ -300,7 +277,7 @@ export async function getEvolutionQrCode(userId: string, unitId: string) {
     return null;
   }
 
-  const qrData = await evolutionFetch(
+  const qrData = await requestEvolution(
     `/instance/connect/${encodeURIComponent(instance.instance_name)}`,
   );
 
@@ -334,10 +311,10 @@ export async function connectEvolution(
     );
     instance = created.rows[0];
   } else if (instance.instance_name !== desiredInstanceName && instance.status !== "connected") {
-    await evolutionFetch(`/instance/logout/${encodeURIComponent(instance.instance_name)}`, {
+    await requestEvolution(`/instance/logout/${encodeURIComponent(instance.instance_name)}`, {
       method: "DELETE",
     }).catch(() => null);
-    await evolutionFetch(`/instance/delete/${encodeURIComponent(instance.instance_name)}`, {
+    await requestEvolution(`/instance/delete/${encodeURIComponent(instance.instance_name)}`, {
       method: "DELETE",
     }).catch(() => null);
 
@@ -362,21 +339,14 @@ export async function connectEvolution(
     }
   }
 
-  const webhookUrl = publicWebhookUrl(requestUrl, instance.webhook_secret);
-  await evolutionFetch(`/webhook/set/${encodeURIComponent(instance.instance_name)}`, {
-    method: "POST",
-    body: JSON.stringify({
-      webhook: {
-        enabled: true,
-        url: webhookUrl,
-        byEvents: false,
-        base64: true,
-        events: ["MESSAGES_UPSERT"],
-      },
-    }),
-  });
+  const webhookUrl = evolutionWebhookUrl(requestUrl, instance.webhook_secret);
+  await configureEvolutionWebhook(instance.instance_name, webhookUrl);
+  await queryDb(
+    `update app_whatsapp_instances set label_webhook_configured_at = now(), updated_at = now() where id = $1`,
+    [instance.id],
+  );
 
-  await evolutionFetch(`/settings/set/${encodeURIComponent(instance.instance_name)}`, {
+  await requestEvolution(`/settings/set/${encodeURIComponent(instance.instance_name)}`, {
     method: "POST",
     body: JSON.stringify({
       groupsIgnore: true,
@@ -387,7 +357,7 @@ export async function connectEvolution(
     }),
   }).catch(() => null);
 
-  const stateData = await evolutionFetch(
+  const stateData = await requestEvolution(
     `/instance/connectionState/${encodeURIComponent(instance.instance_name)}`,
   ).catch(() => null);
 
@@ -403,7 +373,7 @@ export async function connectEvolution(
     return { status: "connected", qrCode: null };
   }
 
-  const qrData = await evolutionFetch(
+  const qrData = await requestEvolution(
     `/instance/connect/${encodeURIComponent(instance.instance_name)}`,
   );
   await queryDb(
@@ -418,7 +388,7 @@ export async function disconnectEvolution(userId: string, unitId: string) {
   const instance = await getInstance(userId, unitId);
   if (!instance) return;
 
-  await evolutionFetch(`/instance/logout/${encodeURIComponent(instance.instance_name)}`, {
+  await requestEvolution(`/instance/logout/${encodeURIComponent(instance.instance_name)}`, {
     method: "DELETE",
   }).catch(() => null);
   await queryDb(
@@ -586,6 +556,10 @@ export async function receiveEvolutionWebhook(payload: unknown, token: string | 
         [instance.id],
       );
     }
+  }
+
+  if (event === "labels.association" || event === "labels.edit") {
+    await processEvolutionLabelEvent({ payload, event, instance });
   }
 
   return { ok: true, status: 200 };
