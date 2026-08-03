@@ -15,6 +15,7 @@ import {
   normalizeRoutingText,
 } from "@/lib/server/course-attendances";
 import { queryDb } from "@/lib/server/db";
+import { reconcileEvolutionLabelsForUser } from "@/lib/server/evolution-label-automation";
 
 type LeadRow = QueryResultRow & {
   id: string;
@@ -386,6 +387,12 @@ export const Route = createFileRoute("/api/crm/leads")({
         const listView = getLeadListView(request);
         if (listView === "students" && !canViewStudents(session.user.role)) {
           return Response.json({ ok: false, error: "Acesso negado." }, { status: 403 });
+        }
+
+        if (listView === "pipeline" && session.user.role === "CONSULTOR") {
+          await reconcileEvolutionLabelsForUser(session.user.id, unit.id, request.url).catch(
+            () => null,
+          );
         }
 
         const canManageUnitLeads = canViewAllUnitLeads(session.user.role);

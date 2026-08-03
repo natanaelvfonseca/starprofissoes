@@ -61,6 +61,41 @@ function recordsFromEvolutionPayload(payload: unknown) {
   return candidates.find(Array.isArray) ?? [];
 }
 
+export function lidJidsFromEvolutionContacts(payload: unknown) {
+  return Array.from(
+    new Set(
+      recordsFromEvolutionPayload(payload)
+        .map((item) => String(asRecord(item).remoteJid ?? "").trim())
+        .filter((jid) => jid.toLowerCase().endsWith("@lid")),
+    ),
+  );
+}
+
+export function phoneMappingsFromEvolutionLookup(payload: unknown) {
+  return recordsFromEvolutionPayload(payload)
+    .map((item) => {
+      const record = asRecord(item);
+      const lidJid = [record.number, record.lidJid, record.remoteJidAlt]
+        .map((value) => String(value ?? "").trim())
+        .find((jid) => jid.toLowerCase().endsWith("@lid"));
+      const phone = phoneFromWhatsappJid(
+        firstPresent(record.jid, record.phoneJid, record.remoteJid),
+      );
+
+      return lidJid && brazilianPhoneKeys(phone).size > 0 ? { lidJid, phone } : null;
+    })
+    .filter((mapping): mapping is { lidJid: string; phone: string } => Boolean(mapping));
+}
+
+export function labelIdsFromEvolutionChat(payload: unknown) {
+  const record = asRecord(payload);
+  return Array.isArray(record.labels)
+    ? Array.from(
+        new Set(record.labels.map((label) => String(label ?? "").trim()).filter((label) => label)),
+      )
+    : [];
+}
+
 export function phoneFromEvolutionNumberLookup(payload: unknown) {
   for (const item of recordsFromEvolutionPayload(payload)) {
     const record = asRecord(item);

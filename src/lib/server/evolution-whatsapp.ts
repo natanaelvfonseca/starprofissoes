@@ -25,6 +25,7 @@ type InstanceRow = QueryResultRow & {
   connected_at: string | null;
   last_event_at: string | null;
   label_webhook_configured_at: string | null;
+  labels_reconciled_at: string | null;
 };
 
 let schemaPromise: Promise<void> | null = null;
@@ -78,6 +79,8 @@ export async function ensureEvolutionSchema() {
         add column if not exists user_id uuid references app_users(id) on delete cascade;
       alter table app_whatsapp_instances
         add column if not exists label_webhook_configured_at timestamptz;
+      alter table app_whatsapp_instances
+        add column if not exists labels_reconciled_at timestamptz;
       update app_whatsapp_instances
       set user_id = created_by
       where user_id is null and created_by is not null;

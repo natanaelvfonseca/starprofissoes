@@ -4,7 +4,10 @@ import {
   chooseLeadCandidate,
   choosePipelineColumnByLabelName,
   evolutionEventSourceId,
+  labelIdsFromEvolutionChat,
+  lidJidsFromEvolutionContacts,
   normalizeWhatsappLabelName,
+  phoneMappingsFromEvolutionLookup,
   phoneFromEvolutionMessages,
   phoneFromEvolutionNumberLookup,
   phoneFromWhatsappJid,
@@ -90,6 +93,35 @@ test("resolve LID pelo remoteJidAlt do histórico de mensagens", () => {
     }),
     "5547999989259",
   );
+});
+
+test("descobre contatos LID e os relaciona ao telefone retornado pela Evolution", () => {
+  assert.deepEqual(
+    lidJidsFromEvolutionContacts([
+      { remoteJid: "554799989259@s.whatsapp.net" },
+      { remoteJid: "90129888755887@lid" },
+      { remoteJid: "90129888755887@lid" },
+    ]),
+    ["90129888755887@lid"],
+  );
+  assert.deepEqual(
+    phoneMappingsFromEvolutionLookup([
+      {
+        jid: "554799989259@s.whatsapp.net",
+        number: "90129888755887@lid",
+        exists: true,
+      },
+    ]),
+    [{ lidJid: "90129888755887@lid", phone: "554799989259" }],
+  );
+});
+
+test("lê as etiquetas atuais persistidas no chat da Evolution", () => {
+  assert.deepEqual(
+    labelIdsFromEvolutionChat({ remoteJid: "90129888755887@lid", labels: ["8", "8"] }),
+    ["8"],
+  );
+  assert.deepEqual(labelIdsFromEvolutionChat({ labels: null }), []);
 });
 
 test("identifica remoção de etiqueta sem convertê-la em adição", () => {

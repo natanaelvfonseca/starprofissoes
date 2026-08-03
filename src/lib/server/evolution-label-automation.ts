@@ -4,16 +4,19 @@ import {
   chooseLeadCandidate,
   choosePipelineColumnByLabelName,
   evolutionEventSourceId,
+  labelIdsFromEvolutionChat,
+  lidJidsFromEvolutionContacts,
   phoneFromWhatsappJid,
   phoneFromEvolutionMessages,
   phoneFromEvolutionNumberLookup,
+  phoneMappingsFromEvolutionLookup,
   phonesMatch,
   parseWhatsappLabelAssociation,
   parseWhatsappLabelEdit,
 } from "@/lib/whatsapp-label-automation";
 import { ensureCommercialSchema } from "@/lib/server/commercial-schema";
 import { queryDb, withTransaction } from "@/lib/server/db";
-import { requestEvolution } from "@/lib/server/evolution-client";
+import { evolutionWebhookUrl, requestEvolution } from "@/lib/server/evolution-client";
 import { LeadPipelineMoveError, moveLeadToPipelineColumn } from "@/lib/server/lead-pipeline";
 
 type EvolutionInstance = QueryResultRow & {
@@ -23,6 +26,8 @@ type EvolutionInstance = QueryResultRow & {
   instance_name: string;
   status: string;
   webhook_secret: string;
+  label_webhook_configured_at?: string | null;
+  labels_reconciled_at?: string | null;
 };
 
 type EvolutionLabel = {
@@ -74,6 +79,8 @@ export async function ensureEvolutionLabelAutomationSchema() {
             add column if not exists labels_synced_at timestamptz;
           alter table app_whatsapp_instances
             add column if not exists label_webhook_configured_at timestamptz;
+          alter table app_whatsapp_instances
+            add column if not exists labels_reconciled_at timestamptz;
 
           create table if not exists app_whatsapp_labels (
             id uuid primary key default gen_random_uuid(),
@@ -507,6 +514,169 @@ async function resolvePipelineColumn(unitId: string, labelName: string) {
     [unitId],
   );
   return choosePipelineColumnByLabelName(result.rows, labelName);
+}
+
+async function discoverEvolutionLidMappings(instance: EvolutionInstance) {
+  const contactsPayload = await requestEvolution(
+    `/chat/findContacts/${encodeURIComponent(instance.instance_name)}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ offset: 2_500, page: 1 }),
+    },
+  );
+  const lids = lidJidsFromEvolutionContacts(contactsPayload);
+  if (!lids.length) return [];
+
+  const lookupPayload = await requestEvolution(
+    `/chat/whatsappNumbers/${encodeURIComponent(instance.instance_name)}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ numbers: lids }),
+    },
+  );
+  const mappings = phoneMappingsFromEvolutionLookup(lookupPayload);
+
+  await Promise.all(
+    mappings.map((mapping) => saveLidMapping(instance.id, mapping.lidJid, mapping.phone)),
+  );
+
+  return mappings;
+}
+
+async function reconcileEvolutionLabelAssociations(instance: EvolutionInstance) {
+  if (!instance.user_id) return { checked: 0, moved: 0 };
+
+  const [labels, discoveredMappings, columnsResult] = await Promise.all([
+    syncEvolutionLabels(instance),
+    discoverEvolutionLidMappings(instance),
+    queryDb<PipelineColumnRow>(
+      `
+        select id, name
+        from app_pipeline_columns
+        where unit_id = $1 and pipeline_type = 'leads'
+        order by position, created_at
+      `,
+      [instance.unit_id],
+    ),
+  ]);
+  const storedMappings = await queryDb<{ lid_jid: string; phone: string }>(
+    `
+      select lid_jid, phone
+      from app_whatsapp_jid_mappings
+      where instance_id = $1
+      order by updated_at desc
+      limit 500
+    `,
+    [instance.id],
+  );
+  const mappings = new Map<string, string>();
+  storedMappings.rows.forEach((mapping) => mappings.set(mapping.lid_jid, mapping.phone));
+  discoveredMappings.forEach((mapping) => mappings.set(mapping.lidJid, mapping.phone));
+  const labelById = new Map(labels.map((label) => [label.id, label]));
+
+  const chatMatches = await Promise.all(
+    Array.from(mappings, async ([lidJid, phone]) => {
+      try {
+        const chat = await requestEvolution(
+          `/chat/findChatByRemoteJid/${encodeURIComponent(instance.instance_name)}?remoteJid=${encodeURIComponent(lidJid)}`,
+        );
+        const matchingColumns = new Map<string, PipelineColumnRow>();
+
+        for (const labelId of labelIdsFromEvolutionChat(chat)) {
+          const label = labelById.get(labelId);
+          if (!label) continue;
+          const resolution = choosePipelineColumnByLabelName(columnsResult.rows, label.name);
+          if (resolution.column && !resolution.ambiguous) {
+            matchingColumns.set(resolution.column.id, resolution.column);
+          }
+        }
+
+        return { phone, columns: Array.from(matchingColumns.values()) };
+      } catch {
+        return { phone, columns: [] };
+      }
+    }),
+  );
+  const columnsByPhone = new Map<string, Map<string, PipelineColumnRow>>();
+  chatMatches.forEach(({ phone, columns }) => {
+    const current = columnsByPhone.get(phone) ?? new Map<string, PipelineColumnRow>();
+    columns.forEach((column) => current.set(column.id, column));
+    columnsByPhone.set(phone, current);
+  });
+
+  const reconciled = await Promise.all(
+    Array.from(columnsByPhone, async ([phone, matchingColumns]) => {
+      try {
+        if (matchingColumns.size !== 1) return false;
+        const column = Array.from(matchingColumns.values())[0];
+        const lead = await resolveLead(instance.unit_id, instance.user_id, phone);
+        if (!lead.candidate || lead.ambiguous) return false;
+
+        const moved = await moveLeadToPipelineColumn({
+          leadId: lead.candidate.id,
+          pipelineColumnId: column.id,
+          claimUserId: instance.user_id,
+        });
+        return moved.changed;
+      } catch {
+        return false;
+      }
+    }),
+  );
+
+  return { checked: mappings.size, moved: reconciled.filter(Boolean).length };
+}
+
+export async function reconcileEvolutionLabelsForUser(
+  userId: string,
+  unitId: string,
+  requestUrl: string,
+) {
+  await ensureEvolutionLabelAutomationSchema();
+  const lease = await queryDb<EvolutionInstance>(
+    `
+      update app_whatsapp_instances instance
+      set labels_reconciled_at = now(), updated_at = now()
+      where instance.id = (
+        select candidate.id
+        from app_whatsapp_instances candidate
+        where candidate.user_id = $1
+          and candidate.unit_id = $2
+          and candidate.status = 'connected'
+          and (
+            candidate.labels_reconciled_at is null
+            or candidate.labels_reconciled_at < now() - interval '20 seconds'
+          )
+        order by candidate.updated_at desc
+        limit 1
+        for update skip locked
+      )
+      returning instance.*
+    `,
+    [userId, unitId],
+  );
+  const instance = lease.rows[0];
+  if (!instance) return { checked: 0, moved: 0 };
+
+  const webhookConfiguredAt = instance.label_webhook_configured_at
+    ? new Date(instance.label_webhook_configured_at).getTime()
+    : 0;
+  if (!webhookConfiguredAt || Date.now() - webhookConfiguredAt > 5 * 60_000) {
+    try {
+      await configureEvolutionWebhook(
+        instance.instance_name,
+        evolutionWebhookUrl(requestUrl, instance.webhook_secret),
+      );
+      await queryDb(
+        `update app_whatsapp_instances set label_webhook_configured_at = now(), updated_at = now() where id = $1`,
+        [instance.id],
+      );
+    } catch {
+      // A reconciliação direta ainda funciona quando apenas o webhook está indisponível.
+    }
+  }
+
+  return reconcileEvolutionLabelAssociations(instance);
 }
 
 async function processLabelAssociation(params: {
