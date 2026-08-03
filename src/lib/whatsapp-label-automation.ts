@@ -96,6 +96,15 @@ export function labelIdsFromEvolutionChat(payload: unknown) {
     : [];
 }
 
+export function didEvolutionLabelStateChange(previous: unknown, current: unknown) {
+  if (!Array.isArray(previous) || !Array.isArray(current)) return false;
+  const normalize = (values: Array<unknown>) =>
+    Array.from(new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))).sort();
+  const before = normalize(previous);
+  const after = normalize(current);
+  return before.length !== after.length || before.some((label, index) => label !== after[index]);
+}
+
 export function phoneFromEvolutionNumberLookup(payload: unknown) {
   for (const item of recordsFromEvolutionPayload(payload)) {
     const record = asRecord(item);

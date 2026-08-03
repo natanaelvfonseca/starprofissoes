@@ -3,6 +3,7 @@ import type { QueryResultRow } from "pg";
 import {
   chooseLeadCandidate,
   choosePipelineColumnByLabelName,
+  didEvolutionLabelStateChange,
   evolutionEventSourceId,
   labelIdsFromEvolutionChat,
   lidJidsFromEvolutionContacts,
@@ -28,6 +29,7 @@ type EvolutionInstance = QueryResultRow & {
   webhook_secret: string;
   label_webhook_configured_at?: string | null;
   labels_reconciled_at?: string | null;
+  label_snapshots_initialized_at?: string | null;
 };
 
 type EvolutionLabel = {
@@ -81,6 +83,8 @@ export async function ensureEvolutionLabelAutomationSchema() {
             add column if not exists label_webhook_configured_at timestamptz;
           alter table app_whatsapp_instances
             add column if not exists labels_reconciled_at timestamptz;
+          alter table app_whatsapp_instances
+            add column if not exists label_snapshots_initialized_at timestamptz;
 
           create table if not exists app_whatsapp_labels (
             id uuid primary key default gen_random_uuid(),
@@ -130,6 +134,19 @@ export async function ensureEvolutionLabelAutomationSchema() {
             on app_whatsapp_label_events (instance_id, created_at desc);
           create index if not exists app_whatsapp_label_events_lead_idx
             on app_whatsapp_label_events (lead_id, created_at desc);
+
+          create table if not exists app_whatsapp_label_snapshots (
+            id uuid primary key default gen_random_uuid(),
+            instance_id uuid not null references app_whatsapp_instances(id) on delete cascade,
+            lid_jid text not null,
+            label_ids text[] not null default '{}',
+            observed_at timestamptz not null default now(),
+            created_at timestamptz not null default now(),
+            updated_at timestamptz not null default now(),
+            unique (instance_id, lid_jid)
+          );
+          create index if not exists app_whatsapp_label_snapshots_instance_idx
+            on app_whatsapp_label_snapshots (instance_id, updated_at desc);
         `),
       )
       .then(() => undefined)
@@ -405,6 +422,48 @@ async function saveLidMapping(instanceId: string, lidJid: string, phone: string)
   );
 }
 
+async function saveLabelSnapshot(instanceId: string, lidJid: string, labelIds: Array<string>) {
+  await queryDb(
+    `
+      insert into app_whatsapp_label_snapshots (instance_id, lid_jid, label_ids, observed_at)
+      values ($1, $2, $3::text[], now())
+      on conflict (instance_id, lid_jid) do update
+      set label_ids = excluded.label_ids,
+          observed_at = now(),
+          updated_at = now()
+    `,
+    [instanceId, lidJid, labelIds],
+  );
+}
+
+async function applyLabelSnapshotEvent(
+  instanceId: string,
+  lidJid: string,
+  labelId: string,
+  action: "add" | "remove",
+) {
+  if (!lidJid.toLowerCase().endsWith("@lid")) return;
+
+  await queryDb(
+    `
+      insert into app_whatsapp_label_snapshots (instance_id, lid_jid, label_ids, observed_at)
+      values ($1, $2, case when $4 = 'add' then array[$3]::text[] else '{}'::text[] end, now())
+      on conflict (instance_id, lid_jid) do update
+      set label_ids = case
+            when $4 = 'add' then array(
+              select distinct item
+              from unnest(app_whatsapp_label_snapshots.label_ids || array[$3]::text[]) item
+              order by item
+            )
+            else array_remove(app_whatsapp_label_snapshots.label_ids, $3)
+          end,
+          observed_at = now(),
+          updated_at = now()
+    `,
+    [instanceId, lidJid, labelId, action],
+  );
+}
+
 async function resolvePhone(instance: EvolutionInstance, chatId: string, phoneJid?: string) {
   const directPhone = phoneFromWhatsappJid(phoneJid) || phoneFromWhatsappJid(chatId);
   if (directPhone) return directPhone;
@@ -569,10 +628,21 @@ async function reconcileEvolutionLabelAssociations(instance: EvolutionInstance) 
     `,
     [instance.id],
   );
+  const storedSnapshots = await queryDb<{ lid_jid: string; label_ids: Array<string> }>(
+    `
+      select lid_jid, label_ids
+      from app_whatsapp_label_snapshots
+      where instance_id = $1
+    `,
+    [instance.id],
+  );
   const mappings = new Map<string, string>();
   storedMappings.rows.forEach((mapping) => mappings.set(mapping.lid_jid, mapping.phone));
   discoveredMappings.forEach((mapping) => mappings.set(mapping.lidJid, mapping.phone));
   const labelById = new Map(labels.map((label) => [label.id, label]));
+  const snapshotByLid = new Map(
+    storedSnapshots.rows.map((snapshot) => [snapshot.lid_jid, snapshot.label_ids]),
+  );
 
   const chatMatches = await Promise.all(
     Array.from(mappings, async ([lidJid, phone]) => {
@@ -581,8 +651,9 @@ async function reconcileEvolutionLabelAssociations(instance: EvolutionInstance) 
           `/chat/findChatByRemoteJid/${encodeURIComponent(instance.instance_name)}?remoteJid=${encodeURIComponent(lidJid)}`,
         );
         const matchingColumns = new Map<string, PipelineColumnRow>();
+        const currentLabelIds = labelIdsFromEvolutionChat(chat);
 
-        for (const labelId of labelIdsFromEvolutionChat(chat)) {
+        for (const labelId of currentLabelIds) {
           const label = labelById.get(labelId);
           if (!label) continue;
           const resolution = choosePipelineColumnByLabelName(columnsResult.rows, label.name);
@@ -591,14 +662,35 @@ async function reconcileEvolutionLabelAssociations(instance: EvolutionInstance) 
           }
         }
 
-        return { phone, columns: Array.from(matchingColumns.values()) };
+        return {
+          lidJid,
+          phone,
+          labelIds: currentLabelIds,
+          changed: snapshotByLid.has(lidJid)
+            ? didEvolutionLabelStateChange(snapshotByLid.get(lidJid), currentLabelIds)
+            : Boolean(instance.label_snapshots_initialized_at && currentLabelIds.length),
+          columns: Array.from(matchingColumns.values()),
+        };
       } catch {
-        return { phone, columns: [] };
+        return null;
       }
     }),
   );
+  await Promise.all(
+    chatMatches
+      .filter((match): match is NonNullable<typeof match> => Boolean(match))
+      .map((match) => saveLabelSnapshot(instance.id, match.lidJid, match.labelIds)),
+  );
+  if (!instance.label_snapshots_initialized_at) {
+    await queryDb(
+      `update app_whatsapp_instances set label_snapshots_initialized_at = now(), updated_at = now() where id = $1`,
+      [instance.id],
+    );
+  }
   const columnsByPhone = new Map<string, Map<string, PipelineColumnRow>>();
-  chatMatches.forEach(({ phone, columns }) => {
+  chatMatches.forEach((match) => {
+    if (!match?.changed) return;
+    const { phone, columns } = match;
     const current = columnsByPhone.get(phone) ?? new Map<string, PipelineColumnRow>();
     columns.forEach((column) => current.set(column.id, column));
     columnsByPhone.set(phone, current);
@@ -687,6 +779,12 @@ async function processLabelAssociation(params: {
   const association = parseWhatsappLabelAssociation(params.payload);
   if (!association) return;
 
+  await applyLabelSnapshotEvent(
+    params.instance.id,
+    association.chatId,
+    association.labelId,
+    association.action,
+  );
   const phone = await resolvePhone(params.instance, association.chatId, association.phoneJid);
   const labelResolution =
     association.action === "add"

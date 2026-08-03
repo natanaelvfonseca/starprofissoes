@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   chooseLeadCandidate,
   choosePipelineColumnByLabelName,
+  didEvolutionLabelStateChange,
   evolutionEventSourceId,
   labelIdsFromEvolutionChat,
   lidJidsFromEvolutionContacts,
@@ -122,6 +123,13 @@ test("lê as etiquetas atuais persistidas no chat da Evolution", () => {
     ["8"],
   );
   assert.deepEqual(labelIdsFromEvolutionChat({ labels: null }), []);
+});
+
+test("só considera mudança depois que existe um estado anterior de etiquetas", () => {
+  assert.equal(didEvolutionLabelStateChange(null, ["8"]), false);
+  assert.equal(didEvolutionLabelStateChange(["8"], ["8"]), false);
+  assert.equal(didEvolutionLabelStateChange(["8", "2"], ["2", "8"]), false);
+  assert.equal(didEvolutionLabelStateChange(["8"], ["7"]), true);
 });
 
 test("identifica remoção de etiqueta sem convertê-la em adição", () => {
