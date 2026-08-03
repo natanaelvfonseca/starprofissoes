@@ -6,6 +6,7 @@ import {
   didEvolutionLabelStateChange,
   evolutionEventSourceId,
   labelIdsFromEvolutionChat,
+  latestEvolutionChatLabelIds,
   lidJidsFromEvolutionContacts,
   phoneFromWhatsappJid,
   phoneFromEvolutionMessages,
@@ -602,6 +603,30 @@ async function discoverEvolutionLidMappings(instance: EvolutionInstance) {
   return mappings;
 }
 
+function evolutionChatJids(lidJid: string, phone: string) {
+  const phoneJids = Array.from(brazilianPhoneKeys(phone))
+    .filter((key) => key.startsWith("55") && key.length >= 12)
+    .map((key) => `${key}@s.whatsapp.net`);
+
+  return Array.from(new Set([lidJid, ...phoneJids]));
+}
+
+async function fetchCurrentEvolutionLabelIds(
+  instanceName: string,
+  lidJid: string,
+  phone: string,
+) {
+  const chats = await Promise.all(
+    evolutionChatJids(lidJid, phone).map((remoteJid) =>
+      requestEvolution(
+        `/chat/findChatByRemoteJid/${encodeURIComponent(instanceName)}?remoteJid=${encodeURIComponent(remoteJid)}`,
+      ).catch(() => null),
+    ),
+  );
+
+  return latestEvolutionChatLabelIds(chats);
+}
+
 async function reconcileEvolutionLabelAssociations(instance: EvolutionInstance) {
   if (!instance.user_id) return { checked: 0, moved: 0 };
 
@@ -647,11 +672,12 @@ async function reconcileEvolutionLabelAssociations(instance: EvolutionInstance) 
   const chatMatches = await Promise.all(
     Array.from(mappings, async ([lidJid, phone]) => {
       try {
-        const chat = await requestEvolution(
-          `/chat/findChatByRemoteJid/${encodeURIComponent(instance.instance_name)}?remoteJid=${encodeURIComponent(lidJid)}`,
-        );
         const matchingColumns = new Map<string, PipelineColumnRow>();
-        const currentLabelIds = labelIdsFromEvolutionChat(chat);
+        const currentLabelIds = await fetchCurrentEvolutionLabelIds(
+          instance.instance_name,
+          lidJid,
+          phone,
+        );
 
         for (const labelId of currentLabelIds) {
           const label = labelById.get(labelId);

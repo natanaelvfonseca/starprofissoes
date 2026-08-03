@@ -6,6 +6,7 @@ import {
   didEvolutionLabelStateChange,
   evolutionEventSourceId,
   labelIdsFromEvolutionChat,
+  latestEvolutionChatLabelIds,
   lidJidsFromEvolutionContacts,
   normalizeWhatsappLabelName,
   phoneMappingsFromEvolutionLookup,
@@ -123,6 +124,20 @@ test("lê as etiquetas atuais persistidas no chat da Evolution", () => {
     ["8"],
   );
   assert.deepEqual(labelIdsFromEvolutionChat({ labels: null }), []);
+});
+
+test("usa as etiquetas do identificador de chat atualizado mais recentemente", () => {
+  assert.deepEqual(
+    latestEvolutionChatLabelIds([
+      { remoteJid: "123@lid", labels: ["8"], updatedAt: "2026-08-03T12:00:00Z" },
+      {
+        remoteJid: "5511999999999@s.whatsapp.net",
+        labels: ["7"],
+        updatedAt: "2026-08-03T12:01:00Z",
+      },
+    ]),
+    ["7"],
+  );
 });
 
 test("só considera mudança depois que existe um estado anterior de etiquetas", () => {

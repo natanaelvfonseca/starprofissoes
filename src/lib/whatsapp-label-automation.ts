@@ -96,6 +96,25 @@ export function labelIdsFromEvolutionChat(payload: unknown) {
     : [];
 }
 
+function evolutionChatTimestamp(payload: unknown) {
+  const record = asRecord(payload);
+  const raw = firstPresent(record.updatedAt, record.updated_at, record.createdAt, record.created_at);
+  if (typeof raw === "number") return raw > 10_000_000_000 ? raw : raw * 1000;
+  const parsed = Date.parse(String(raw ?? ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function latestEvolutionChatLabelIds(payloads: Array<unknown>) {
+  const chats = payloads.filter((payload) => Object.keys(asRecord(payload)).length > 0);
+  if (!chats.length) return [];
+
+  const latest = chats.reduce((selected, current) =>
+    evolutionChatTimestamp(current) > evolutionChatTimestamp(selected) ? current : selected,
+  );
+
+  return labelIdsFromEvolutionChat(latest);
+}
+
 export function didEvolutionLabelStateChange(previous: unknown, current: unknown) {
   if (!Array.isArray(previous) || !Array.isArray(current)) return false;
   const normalize = (values: Array<unknown>) =>
