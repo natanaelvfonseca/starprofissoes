@@ -391,7 +391,14 @@ export const Route = createFileRoute("/api/crm/leads")({
 
         if (listView === "pipeline" && session.user.role === "CONSULTOR") {
           await reconcileEvolutionLabelsForUser(session.user.id, unit.id, request.url).catch(
-            () => null,
+            (error) => {
+              console.error("[Evolution labels] Falha ao reconciliar etiquetas", {
+                userId: session.user.id,
+                unitId: unit.id,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              return null;
+            },
           );
         }
 

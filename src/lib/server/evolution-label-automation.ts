@@ -604,9 +604,8 @@ async function discoverEvolutionLidMappings(instance: EvolutionInstance) {
 }
 
 function evolutionChatJids(lidJid: string, phone: string) {
-  const phoneJids = Array.from(brazilianPhoneKeys(phone))
-    .filter((key) => key.startsWith("55") && key.length >= 12)
-    .map((key) => `${key}@s.whatsapp.net`);
+  const phoneDigits = phone.replace(/\D/g, "");
+  const phoneJids = phoneDigits ? [`${phoneDigits}@s.whatsapp.net`] : [];
 
   return Array.from(new Set([lidJid, ...phoneJids]));
 }
@@ -620,6 +619,7 @@ async function fetchCurrentEvolutionLabelIds(
     evolutionChatJids(lidJid, phone).map((remoteJid) =>
       requestEvolution(
         `/chat/findChatByRemoteJid/${encodeURIComponent(instanceName)}?remoteJid=${encodeURIComponent(remoteJid)}`,
+        { signal: AbortSignal.timeout(4_000) },
       ).catch(() => null),
     ),
   );
