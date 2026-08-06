@@ -17,6 +17,7 @@ import {
 import { getSessionFromRequest } from "@/lib/server/auth";
 import { getUnitFromBody, getUnitFromRequest } from "@/lib/server/commercial-schema";
 import { queryDb } from "@/lib/server/db";
+import { buildYouTubeWatchUrl, extractYouTubeVideoId } from "@/lib/utils";
 
 type TrainingLessonRow = QueryResultRow & {
   id: string;
@@ -271,12 +272,9 @@ async function insertLesson(input: TrainingLessonInput, session: AuthSession) {
         thumbnail_data_url,
         video_source,
         video_url,
-        video_file_name,
-        video_mime_type,
-        video_data_url,
         created_by
       )
-      values ($1, $2, $3, $4, $5, $6, $7, $8, nullif($9, ''), $10, $11, $12, $13)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, nullif($9, ''), $10)
       returning
         id,
         unit_id,
@@ -290,7 +288,7 @@ async function insertLesson(input: TrainingLessonInput, session: AuthSession) {
         video_url,
         video_file_name,
         video_mime_type,
-        $14::text as created_by_name,
+        $11::text as created_by_name,
         created_at::text,
         null::text as completed_at
     `,
@@ -304,9 +302,6 @@ async function insertLesson(input: TrainingLessonInput, session: AuthSession) {
       input.thumbnailDataUrl,
       input.videoSource,
       input.videoUrl,
-      input.videoFileName,
-      input.videoMimeType,
-      input.videoDataUrl,
       session.user.id,
       session.user.name,
     ],
@@ -396,7 +391,16 @@ export const Route = createFileRoute("/api/training")({
 
           if (!videoUrl) {
             return Response.json(
-              { ok: false, error: "Informe uma URL HTTPS direta do vídeo." },
+              { ok: false, error: "Informe uma URL válida do YouTube." },
+              { status: 400 },
+            );
+          }
+
+          const videoId = extractYouTubeVideoId(videoUrl);
+
+          if (!videoId) {
+            return Response.json(
+              { ok: false, error: "Informe uma URL válida do YouTube." },
               { status: 400 },
             );
           }
@@ -410,9 +414,9 @@ export const Route = createFileRoute("/api/training")({
             orderIndex,
             thumbnailDataUrl,
             videoSource: "url",
-            videoUrl,
-            videoFileName: readString(body.videoFileName, 240) || "video-url",
-            videoMimeType: readString(body.videoMimeType, 120) || "video/mp4",
+            videoUrl: buildYouTubeWatchUrl(videoId),
+            videoFileName: "",
+            videoMimeType: "",
             videoDataUrl: null,
           };
         } else {
@@ -431,13 +435,8 @@ export const Route = createFileRoute("/api/training")({
           const orderIndex = Number.parseInt(readString(form.get("orderIndex"), 12), 10) || 0;
           const trailValue = form.get("trail");
           const trail: TrainingTrailId = isTrainingTrail(trailValue) ? trailValue : "plataforma";
-          const videoSourceValue = form.get("videoSource");
-          const videoSource: TrainingVideoSource = isVideoSource(videoSourceValue)
-            ? videoSourceValue
-            : "upload";
-          const videoFile = getFile(form.get("video"));
           const thumbnailFile = getFile(form.get("thumbnail"));
-          const videoUrl = normalizeVideoUrl(readString(form.get("videoUrl"), 1000));
+          const videoUrl = readString(form.get("videoUrl"), 1000);
 
           if (scope === "unit" && !requestedUnit) {
             return Response.json({ ok: false, error: "Unidade indisponível." }, { status: 403 });
@@ -450,36 +449,20 @@ export const Route = createFileRoute("/api/training")({
             );
           }
 
-          let videoDataUrl: string | null = null;
-          let videoFileName = "";
-          let videoMimeType = "video/mp4";
+          if (!videoUrl) {
+            return Response.json(
+              { ok: false, error: "Informe uma URL válida do YouTube." },
+              { status: 400 },
+            );
+          }
 
-          if (videoSource === "upload") {
-            if (!videoFile) {
-              return Response.json({ ok: false, error: "Envie um vídeo válido." }, { status: 400 });
-            }
+          const videoId = extractYouTubeVideoId(videoUrl);
 
-            videoDataUrl = await fileToDataUrl(videoFile, MAX_VIDEO_FILE_SIZE, "video/");
-
-            if (!videoDataUrl) {
-              return Response.json(
-                { ok: false, error: "O vídeo precisa ser MP4/WebM e ter até 60 MB." },
-                { status: 400 },
-              );
-            }
-
-            videoFileName = videoFile.name;
-            videoMimeType = videoFile.type || "video/mp4";
-          } else {
-            if (!videoUrl) {
-              return Response.json(
-                { ok: false, error: "Informe uma URL HTTPS direta do vídeo." },
-                { status: 400 },
-              );
-            }
-
-            videoFileName = "video-url";
-            videoMimeType = "video/mp4";
+          if (!videoId) {
+            return Response.json(
+              { ok: false, error: "Informe uma URL válida do YouTube." },
+              { status: 400 },
+            );
           }
 
           let thumbnailDataUrl: string | null = null;
@@ -507,11 +490,11 @@ export const Route = createFileRoute("/api/training")({
             durationLabel,
             orderIndex,
             thumbnailDataUrl,
-            videoSource,
-            videoUrl,
-            videoFileName,
-            videoMimeType,
-            videoDataUrl,
+            videoSource: "url",
+            videoUrl: buildYouTubeWatchUrl(videoId),
+            videoFileName: "",
+            videoMimeType: "",
+            videoDataUrl: null,
           };
         }
 
@@ -539,6 +522,7 @@ export const Route = createFileRoute("/api/training")({
           orderIndex?: unknown;
           trail?: unknown;
           scope?: unknown;
+          videoUrl?: unknown;
         } | null;
         const lessonId = readString(body?.lessonId, 80);
 
@@ -560,6 +544,29 @@ export const Route = createFileRoute("/api/training")({
           const durationLabel = readString(body.durationLabel, 40);
           const orderIndex = Math.max(0, Number.parseInt(readString(body.orderIndex, 12), 10) || 0);
           const trail = isTrainingTrail(body.trail) ? body.trail : "plataforma";
+          const rawVideoUrl = body.videoUrl === undefined ? undefined : readString(body.videoUrl, MAX_MEDIA_URL_LENGTH);
+          let videoUpdateSql = "";
+          const videoParams: Array<unknown> = [];
+
+          if (rawVideoUrl) {
+            const videoId = extractYouTubeVideoId(rawVideoUrl);
+
+            if (!videoId) {
+              return Response.json(
+                { ok: false, error: "Informe uma URL válida do YouTube." },
+                { status: 400 },
+              );
+            }
+
+            const normalizedUrl = buildYouTubeWatchUrl(videoId);
+            videoUpdateSql = `,
+                video_source = 'url',
+                video_url = $${8 + videoParams.length},
+                video_data_url = null,
+                video_file_name = '',
+                video_mime_type = ''`;
+            videoParams.push(normalizedUrl);
+          }
 
           if (scope === "unit" && !requestedUnit) {
             return Response.json({ ok: false, error: "Unidade indisponível." }, { status: 403 });
@@ -572,6 +579,17 @@ export const Route = createFileRoute("/api/training")({
             );
           }
 
+          const params = [
+            lessonId,
+            scope === "unit" ? (requestedUnit?.id ?? null) : null,
+            trail,
+            title,
+            description,
+            durationLabel,
+            orderIndex,
+            ...videoParams,
+          ];
+
           const updated = await queryDb<{ id: string } & QueryResultRow>(
             `
               update app_training_lessons
@@ -580,25 +598,14 @@ export const Route = createFileRoute("/api/training")({
                   title = $4,
                   description = $5,
                   duration_label = $6,
-                  order_index = $7,
+                  order_index = $7
+                  ${videoUpdateSql},
                   updated_at = now()
               where id = $1 and status = 'published'
               returning id
             `,
-            [
-              lessonId,
-              scope === "unit" ? (requestedUnit?.id ?? null) : null,
-              trail,
-              title,
-              description,
-              durationLabel,
-              orderIndex,
-            ],
+            params,
           );
-
-          if (!updated.rows[0]) {
-            return Response.json({ ok: false, error: "Aula não encontrada." }, { status: 404 });
-          }
 
           const unit = requestedUnit ?? session.activeUnit;
 

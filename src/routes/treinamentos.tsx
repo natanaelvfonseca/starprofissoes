@@ -51,9 +51,8 @@ import {
   type TrainingLessonScope,
   type TrainingSummary,
   type TrainingTrailId,
-  type TrainingVideoSource,
 } from "@/lib/training-types";
-import { cn } from "@/lib/utils";
+import { cn, extractYouTubeVideoId, buildYouTubeEmbedUrl } from "@/lib/utils";
 import { toast } from "sonner";
 
 type TrainingResponse = {
@@ -71,9 +70,7 @@ type UploadFormState = {
   durationLabel: string;
   orderIndex: string;
   scope: TrainingLessonScope;
-  videoSource: TrainingVideoSource;
   videoUrl: string;
-  videoFile: File | null;
   thumbnailFile: File | null;
 };
 
@@ -89,13 +86,10 @@ const initialUploadForm: UploadFormState = {
   durationLabel: "",
   orderIndex: "0",
   scope: "global",
-  videoSource: "upload",
   videoUrl: "",
-  videoFile: null,
   thumbnailFile: null,
 };
 
-const MAX_VIDEO_UPLOAD_BYTES = 60 * 1024 * 1024;
 const MAX_THUMBNAIL_UPLOAD_BYTES = 6 * 1024 * 1024;
 const PLAYBACK_RATES = ["0.75", "1", "1.25", "1.5", "2"] as const;
 
@@ -165,28 +159,18 @@ function sortLessons(lessons: Array<TrainingLesson>) {
   );
 }
 
-function buildVideoSrc(lesson: TrainingLesson, unitId: string) {
-  if (lesson.videoSource === "url" && lesson.videoUrl) {
-    return lesson.videoUrl;
-  }
-
+function buildUploadVideoSrc(lesson: TrainingLesson, unitId: string) {
   const params = new URLSearchParams({ id: lesson.id, unitId });
-
   return `/api/training/video?${params.toString()}`;
 }
 
-function validateVideoFile(file: File) {
-  if (!file.type.startsWith("video/")) {
-    toast.error("Selecione um vídeo válido.");
-    return false;
+function getYouTubeEmbedSrc(videoUrl: string) {
+  try {
+    const id = extractYouTubeVideoId(videoUrl);
+    return id ? buildYouTubeEmbedUrl(id) : "";
+  } catch {
+    return "";
   }
-
-  if (file.size > MAX_VIDEO_UPLOAD_BYTES) {
-    toast.error("O vídeo precisa ter até 60 MB.");
-    return false;
-  }
-
-  return true;
 }
 
 function validateImageFile(file: File) {
@@ -243,17 +227,6 @@ function UploadDialog({
     setForm((current) => ({ ...current, ...patch }));
   };
 
-  const handleVideoChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] ?? null;
-    event.target.value = "";
-
-    if (!file || !validateVideoFile(file)) {
-      return;
-    }
-
-    updateForm({ videoFile: file });
-  };
-
   const handleThumbnailChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
     event.target.value = "";
@@ -276,12 +249,7 @@ function UploadDialog({
       return;
     }
 
-    if (form.videoSource === "upload" && !form.videoFile) {
-      toast.error("Envie o vídeo da aula.");
-      return;
-    }
-
-    if (form.videoSource === "url" && !form.videoUrl.trim()) {
+    if (!form.videoUrl.trim()) {
       toast.error("Informe a URL do vídeo.");
       return;
     }
@@ -298,10 +266,7 @@ function UploadDialog({
       payload.set("durationLabel", form.durationLabel);
       payload.set("orderIndex", form.orderIndex);
       payload.set("scope", form.scope);
-      payload.set("videoSource", form.videoSource);
       payload.set("videoUrl", form.videoUrl.trim());
-
-      if (form.videoFile) payload.set("video", form.videoFile);
       if (form.thumbnailFile) payload.set("thumbnail", form.thumbnailFile);
 
       setUploadStep("Publicando na área exclusiva da Star");
@@ -418,48 +383,14 @@ function UploadDialog({
               placeholder="Resumo objetivo do que o time vai aprender nesta aula."
             />
           </div>
-          <div className="space-y-1.5">
-            <Label>Origem do vídeo</Label>
-            <Select
-              value={form.videoSource}
-              onValueChange={(value) => updateForm({ videoSource: value as TrainingVideoSource })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="upload">Upload MP4/WebM</SelectItem>
-                <SelectItem value="url">URL HTTPS direta</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="space-y-1.5 md:col-span-2">
+            <Label>URL do vídeo</Label>
+            <Input
+              value={form.videoUrl}
+              onChange={(event) => updateForm({ videoUrl: event.target.value })}
+              placeholder="https://..."
+            />
           </div>
-          {form.videoSource === "upload" ? (
-            <div className="space-y-1.5">
-              <Label>Vídeo da aula</Label>
-              <input
-                id="training-video-upload"
-                type="file"
-                accept="video/mp4,video/webm,video/quicktime"
-                className="hidden"
-                onChange={handleVideoChange}
-              />
-              <Button asChild variant="outline" className="w-full justify-start gap-2">
-                <label htmlFor="training-video-upload">
-                  <Upload className="h-4 w-4" />
-                  {form.videoFile ? form.videoFile.name : "Selecionar vídeo"}
-                </label>
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-1.5">
-              <Label>URL do vídeo</Label>
-              <Input
-                value={form.videoUrl}
-                onChange={(event) => updateForm({ videoUrl: event.target.value })}
-                placeholder="https://..."
-              />
-            </div>
-          )}
           <div className="space-y-1.5 md:col-span-2">
             <Label>Capa da aula</Label>
             <input
@@ -1046,23 +977,35 @@ function Treinamentos() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <video
-                    key={selectedLesson.id}
-                    ref={videoRef}
-                    className="aspect-video w-full max-w-full rounded-lg bg-black shadow-[0_24px_70px_-36px_rgba(0,0,0,0.85)]"
-                    controls
-                    controlsList="nodownload noremoteplayback"
-                    disablePictureInPicture
-                    disableRemotePlayback
-                    onContextMenu={(event) => event.preventDefault()}
-                    onDragStart={(event) => event.preventDefault()}
-                    poster={selectedLesson.thumbnailDataUrl ?? undefined}
-                    preload="metadata"
-                    src={buildVideoSrc(selectedLesson, activeUnitId)}
-                    onLoadedMetadata={(event) => {
-                      event.currentTarget.playbackRate = Number(playbackRate);
-                    }}
-                  />
+                  {selectedLesson.videoSource === "url" && selectedLesson.videoUrl ? (
+                    <div className="aspect-video w-full max-w-full overflow-hidden rounded-lg bg-black shadow-[0_24px_70px_-36px_rgba(0,0,0,0.85)]">
+                      <iframe
+                        title={selectedLesson.title}
+                        src={getYouTubeEmbedSrc(selectedLesson.videoUrl)}
+                        className="h-full w-full"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      />
+                    </div>
+                  ) : (
+                    <video
+                      key={selectedLesson.id}
+                      ref={videoRef}
+                      className="aspect-video w-full max-w-full rounded-lg bg-black shadow-[0_24px_70px_-36px_rgba(0,0,0,0.85)]"
+                      controls
+                      controlsList="nodownload noremoteplayback"
+                      disablePictureInPicture
+                      disableRemotePlayback
+                      onContextMenu={(event) => event.preventDefault()}
+                      onDragStart={(event) => event.preventDefault()}
+                      poster={selectedLesson.thumbnailDataUrl ?? undefined}
+                      preload="metadata"
+                      src={buildUploadVideoSrc(selectedLesson, activeUnitId)}
+                      onLoadedMetadata={(event) => {
+                        event.currentTarget.playbackRate = Number(playbackRate);
+                      }}
+                    />
+                  )}
                   <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gold to-transparent" />
                 </div>
               </>
