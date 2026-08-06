@@ -597,7 +597,7 @@ export const Route = createFileRoute("/api/crm/leads")({
               shared_queue,
               created_by
             )
-            values ($1, $2, $3, $4, nullif($5, ''), nullif($6, ''), nullif($7, ''), $8, $9, $10, $11, $12, nullif($13, ''), true, null)
+            values ($1, $2, $3, $4, nullif($5, ''), nullif($6, ''), nullif($7, ''), $8, $9, $10, $11, $12, nullif($13, ''), true, $14)
             returning
               id,
               unit_id,
@@ -639,6 +639,7 @@ export const Route = createFileRoute("/api/crm/leads")({
             channel?.id ?? null,
             channel?.name ?? null,
             payload.observations,
+            session.user.id,
           ],
         );
 
