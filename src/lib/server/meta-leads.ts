@@ -1879,6 +1879,56 @@ export async function disconnectAllMetaPages() {
   return { disconnected: true, count: disconnectedPages.length, pages: disconnectedPages };
 }
 
+export async function resetMetaConnection() {
+  const integration = await ensureMetaIntegration();
+  const pagesResult = await queryDb<MetaPageRow>(
+    `
+      select p.*, '0'::text as forms_count,
+        p.created_at::text, p.updated_at::text, p.last_validated_at::text
+      from app_meta_pages p
+      where p.integration_id = $1
+      order by p.created_at asc
+    `,
+    [integration.id],
+  );
+  const unsubscribeFailures: Array<{ pageId: string; name: string }> = [];
+
+  for (const page of pagesResult.rows) {
+    try {
+      await unsubscribeMetaPage(page, integration.graph_api_version || "v23.0");
+    } catch (error) {
+      unsubscribeFailures.push({ pageId: page.page_id, name: page.page_name });
+      console.error("[Meta Ads] Reset continuará somente com a limpeza local", {
+        pageDbId: page.id,
+        metaPageId: page.page_id,
+        error: error instanceof Error ? error.message : "Erro desconhecido",
+      });
+    }
+  }
+
+  await withTransaction(async (client) => {
+    // Forms and consultant mappings are removed by cascade. Historical events and CRM leads
+    // remain available because their page/form references use ON DELETE SET NULL.
+    await client.query(`delete from app_meta_pages where integration_id = $1`, [integration.id]);
+    await client.query(
+      `
+        update app_meta_integrations
+        set status = 'inactive',
+            last_communication_at = null,
+            updated_at = now()
+        where id = $1
+      `,
+      [integration.id],
+    );
+  });
+
+  return {
+    reset: true,
+    removedPages: pagesResult.rows.length,
+    unsubscribeFailures,
+  };
+}
+
 async function defaultMarketingOwner(client: PoolClient, unitId: string | null) {
   if (!unitId) {
     return null;

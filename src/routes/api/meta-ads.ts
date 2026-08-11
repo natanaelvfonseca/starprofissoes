@@ -7,6 +7,7 @@ import {
   duplicateMetaForm,
   listMetaState,
   reprocessMetaEvent,
+  resetMetaConnection,
   subscribeMetaPage,
   syncFormsForPage,
   upsertMetaForm,
@@ -77,6 +78,9 @@ export const Route = createFileRoute("/api/meta-ads")({
           }
           if (action === "disconnectMeta") {
             return Response.json({ result: await disconnectAllMetaPages() });
+          }
+          if (action === "resetMeta") {
+            return Response.json({ result: await resetMetaConnection() });
           }
           if (action === "reprocessEvent") {
             return Response.json({ result: await reprocessMetaEvent(String(body?.eventId ?? "")) });

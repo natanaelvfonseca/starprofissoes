@@ -133,8 +133,21 @@ export const Route = createFileRoute("/api/meta/oauth-complete")({
               name: page.name,
             },
           });
-        } catch {
-          return Response.json({ error: "Falha ao concluir a conexão Meta." }, { status: 502 });
+        } catch (error) {
+          console.error("[Meta Ads] Falha ao concluir OAuth", {
+            pageId: page.id,
+            pageName: page.name,
+            error: error instanceof Error ? error.message : "Erro desconhecido",
+          });
+          return Response.json(
+            {
+              error:
+                error instanceof Error && error.message
+                  ? error.message
+                  : "Falha ao concluir a conexão Meta.",
+            },
+            { status: 502 },
+          );
         }
       },
     },

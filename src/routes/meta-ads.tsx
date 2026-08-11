@@ -386,7 +386,7 @@ function MetaAdsPage() {
       ? "disconnectMeta"
       : `disconnectPage-${metaDisconnectTarget.page.id}`;
     const body = disconnectingAll
-      ? { action: "disconnectMeta" }
+      ? { action: "resetMeta" }
       : { action: "disconnectPage", pageId: metaDisconnectTarget.page.id };
 
     setWorkingKey(key);
@@ -400,7 +400,11 @@ function MetaAdsPage() {
           body: JSON.stringify(body),
         }),
       );
-      toast.success(disconnectingAll ? "Meta desconectada." : "Página desconectada.");
+      toast.success(
+        disconnectingAll
+          ? "Conexão Meta limpa. Você já pode conectar novamente."
+          : "Página desconectada.",
+      );
       setMetaDisconnectTarget(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao desconectar a Meta.");
@@ -845,12 +849,12 @@ function MetaAdsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>
               {metaDisconnectTarget?.scope === "all"
-                ? "Desconectar a Meta da Star Profissões?"
+                ? "Limpar a conexão Meta e começar novamente?"
                 : "Desconectar esta página?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {metaDisconnectTarget?.scope === "all"
-                ? "Todas as páginas conectadas deixarão de enviar novos leads para o CRM. Os dados e leads existentes serão preservados."
+                ? "Páginas, tokens e configurações de formulários da conexão atual serão removidos. Leads e eventos históricos do CRM serão preservados."
                 : "A Star deixará de receber novos leads e sincronizar formulários desta página. Os leads que já entraram no CRM serão preservados."}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -871,7 +875,9 @@ function MetaAdsPage() {
               ) : (
                 <Unplug />
               )}
-              {metaDisconnectTarget?.scope === "all" ? "Desconectar Meta" : "Desconectar página"}
+              {metaDisconnectTarget?.scope === "all"
+                ? "Limpar e desconectar"
+                : "Desconectar página"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1054,7 +1060,7 @@ function MetaConnectionPanel({
               disabled={!canManage || !connectedPages.length || disconnecting}
             >
               <Unplug />
-              Desconectar Meta
+              Limpar conexão Meta
             </Button>
           </div>
         </CardContent>
