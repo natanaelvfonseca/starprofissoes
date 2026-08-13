@@ -4,7 +4,7 @@
   "crons": [
     {
       "path": "/api/cron/whatsapp-analysis",
-      "schedule": "0 * * * *"
+      "schedule": "0 6 * * *"
     }
   ],
   "headers": [
