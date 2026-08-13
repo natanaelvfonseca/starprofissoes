@@ -1,4 +1,31 @@
 {
   "buildCommand": "npm run build",
-  "installCommand": "npm ci"
+  "installCommand": "npm ci",
+  "headers": [
+    {
+      "source": "/api/meta/oauth-complete",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "https://kogna.online"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "POST, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, X-Kogna-Signature"
+        },
+        {
+          "key": "Access-Control-Max-Age",
+          "value": "600"
+        },
+        {
+          "key": "Vary",
+          "value": "Origin"
+        }
+      ]
+    }
+  ]
 }

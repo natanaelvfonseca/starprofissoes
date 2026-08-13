@@ -22,6 +22,29 @@ type MetaOAuthPage = {
   accessToken: string;
 };
 
+const META_CONNECT_ORIGIN = "https://kogna.online";
+const META_CORS_HEADERS = {
+  "Access-Control-Allow-Origin": META_CONNECT_ORIGIN,
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, X-Kogna-Signature",
+  "Access-Control-Max-Age": "600",
+  Vary: "Origin",
+};
+
+function metaResponse(request: Request, body: unknown, init?: ResponseInit) {
+  const headers = new Headers(init?.headers);
+
+  if (request.headers.get("Origin") === META_CONNECT_ORIGIN) {
+    for (const [name, value] of Object.entries(META_CORS_HEADERS)) {
+      headers.set(name, value);
+    }
+  } else {
+    headers.append("Vary", "Origin");
+  }
+
+  return Response.json(body, { ...init, headers });
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -58,11 +81,25 @@ function hasValidSignature(rawBody: Buffer, signature: string | null, secret: st
 export const Route = createFileRoute("/api/meta/oauth-complete")({
   server: {
     handlers: {
+      OPTIONS: async ({ request }) => {
+        if (request.headers.get("Origin") !== META_CONNECT_ORIGIN) {
+          return new Response(null, {
+            status: 403,
+            headers: { Vary: "Origin" },
+          });
+        }
+
+        return new Response(null, {
+          status: 204,
+          headers: META_CORS_HEADERS,
+        });
+      },
       POST: async ({ request }) => {
         const secret = process.env.KOGNA_META_CONNECT_SECRET?.trim();
 
         if (!secret) {
-          return Response.json(
+          return metaResponse(
+            request,
             { error: "A conexão segura com a Meta ainda não está configurada." },
             { status: 503 },
           );
@@ -72,7 +109,7 @@ export const Route = createFileRoute("/api/meta/oauth-complete")({
         const signature = request.headers.get("X-Kogna-Signature");
 
         if (!hasValidSignature(rawBody, signature, secret)) {
-          return Response.json({ error: "Assinatura inválida." }, { status: 401 });
+          return metaResponse(request, { error: "Assinatura inválida." }, { status: 401 });
         }
 
         let payload: MetaOAuthCompletePayload;
@@ -80,17 +117,17 @@ export const Route = createFileRoute("/api/meta/oauth-complete")({
         try {
           payload = JSON.parse(rawBody.toString("utf8")) as MetaOAuthCompletePayload;
         } catch {
-          return Response.json({ error: "JSON inválido." }, { status: 400 });
+          return metaResponse(request, { error: "JSON inválido." }, { status: 400 });
         }
 
         if (!isRecord(payload) || payload.client !== "star") {
-          return Response.json({ error: "Cliente inválido." }, { status: 400 });
+          return metaResponse(request, { error: "Cliente inválido." }, { status: 400 });
         }
 
         const page = parsePage(payload.page);
 
         if (!page) {
-          return Response.json({ error: "Página inválida." }, { status: 400 });
+          return metaResponse(request, { error: "Página inválida." }, { status: 400 });
         }
 
         try {
@@ -125,21 +162,25 @@ export const Route = createFileRoute("/api/meta/oauth-complete")({
 
           await syncFormsForPage(savedPage.id);
 
-          return Response.json({
-            success: true,
-            connected: true,
-            page: {
-              id: page.id,
-              name: page.name,
+          return metaResponse(
+            request,
+            {
+              success: true,
+              connected: true,
+              page: {
+                id: page.id,
+                name: page.name,
+              },
             },
-          });
+          );
         } catch (error) {
           console.error("[Meta Ads] Falha ao concluir OAuth", {
             pageId: page.id,
             pageName: page.name,
             error: error instanceof Error ? error.message : "Erro desconhecido",
           });
-          return Response.json(
+          return metaResponse(
+            request,
             {
               error:
                 error instanceof Error && error.message
