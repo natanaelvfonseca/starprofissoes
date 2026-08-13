@@ -169,7 +169,16 @@ export async function configureEvolutionWebhook(instanceName: string, url: strin
         url,
         byEvents: false,
         base64: true,
-        events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE", "LABELS_EDIT", "LABELS_ASSOCIATION"],
+        events: [
+          "MESSAGES_UPSERT",
+          "MESSAGES_EDITED",
+          "MESSAGES_UPDATE",
+          "MESSAGES_DELETE",
+          "SEND_MESSAGE",
+          "CONNECTION_UPDATE",
+          "LABELS_EDIT",
+          "LABELS_ASSOCIATION",
+        ],
       },
     }),
   });

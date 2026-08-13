@@ -11,6 +11,7 @@ import {
   LogOut,
   MapPinned,
   Megaphone,
+  MessageCircleMore,
   MessagesSquare,
   UserRoundCheck,
   UsersRound,
@@ -64,6 +65,7 @@ type NavigationItem = {
   systemFeedbackOnly?: boolean;
   salesAiOnly?: boolean;
   devOnly?: boolean;
+  whatsappOnly?: boolean;
 };
 
 type NavigationGroup = {
@@ -82,6 +84,12 @@ const groups: Array<NavigationGroup> = [
       { title: "Leads", url: "/crm", icon: ContactRound },
       { title: "Alunos", url: "/leads", icon: UserRoundCheck, studentViewOnly: true },
       { title: "IA Comercial", url: "/ia-comercial", icon: WandSparkles, salesAiOnly: true },
+      {
+        title: "Conversas WhatsApp",
+        url: "/conversas-whatsapp",
+        icon: MessageCircleMore,
+        whatsappOnly: true,
+      },
     ],
   },
   {
@@ -157,6 +165,9 @@ export function AppSidebar() {
           (!item.studentViewOnly || canViewStudentList) &&
           (!item.systemFeedbackOnly || canViewSystemFeedback) &&
           (!item.salesAiOnly || canSeeSalesAi) &&
+          (!item.whatsappOnly ||
+            user?.role === "CONSULTOR" ||
+            Boolean(session?.features.whatsappSupervision)) &&
           (!item.devOnly || user?.role === "DEV"),
       ),
     }))

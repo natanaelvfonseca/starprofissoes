@@ -30,6 +30,9 @@ export type AuthSession = {
   activeUnit: UnitSummary | null;
   canRegisterUsers: boolean;
   canCreateUnits: boolean;
+  features: {
+    whatsappSupervision: boolean;
+  };
 };
 
 export type ManagedUser = {

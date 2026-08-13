@@ -1,6 +1,12 @@
 {
   "buildCommand": "npm run build",
   "installCommand": "npm ci",
+  "crons": [
+    {
+      "path": "/api/cron/whatsapp-analysis",
+      "schedule": "0 * * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/api/meta/oauth-complete",

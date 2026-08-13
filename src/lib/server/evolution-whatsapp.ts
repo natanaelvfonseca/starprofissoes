@@ -11,6 +11,11 @@ import {
   isEvolutionConfigured,
   requestEvolution,
 } from "@/lib/server/evolution-client";
+import {
+  confirmIntervention,
+  ensureWhatsappSupervisionSchema,
+  upsertCanonicalConversationForMessage,
+} from "@/lib/server/whatsapp-supervision";
 
 export { requestEvolution } from "@/lib/server/evolution-client";
 
@@ -547,7 +552,7 @@ export async function receiveEvolutionWebhook(payload: unknown, token: string | 
     );
   }
 
-  if (event === "messages.upsert" || event === "message") {
+  if (event === "messages.upsert" || event === "message" || event === "send.message") {
     const parsed = extractMessage(payload);
     if (parsed.id && parsed.remoteJid && !parsed.remoteJid.endsWith("@g.us")) {
       const phone =
@@ -602,9 +607,43 @@ export async function receiveEvolutionWebhook(payload: unknown, token: string | 
           [instance.id, lidJid, phone],
         );
       }
+      const conversationId = await upsertCanonicalConversationForMessage({
+        instanceId: instance.id,
+        unitId: instance.unit_id,
+        consultantId: instance.user_id,
+        remoteJid: parsed.remoteJid,
+        alternateJid: parsed.alternateJid,
+        phone,
+        contactName: parsed.contactName,
+        messageId: parsed.id,
+      });
+      if (parsed.fromMe) {
+        await confirmIntervention(
+          instance.id,
+          parsed.id,
+          conversationId ? { conversationId, content: parsed.content } : undefined,
+        );
+      }
       await queryDb(
         `update app_whatsapp_instances set last_event_at = now(), updated_at = now() where id = $1`,
         [instance.id],
+      );
+    }
+  }
+
+  if (["messages.edited", "messages.update", "messages.delete"].includes(event)) {
+    const parsed = extractMessage(payload);
+    const messageId = parsed.id || String(firstValue(dataRecord.id, dataRecord.messageId, ""));
+    if (messageId) {
+      await queryDb(
+        event === "messages.delete"
+          ? `update app_whatsapp_messages set deleted_at = now(), content = '', media_url = null
+             where instance_id = $1 and evolution_message_id = $2`
+          : `update app_whatsapp_messages set edited_at = now(), content = $3
+             where instance_id = $1 and evolution_message_id = $2`,
+        event === "messages.delete"
+          ? [instance.id, messageId]
+          : [instance.id, messageId, parsed.content],
       );
     }
   }
@@ -614,4 +653,73 @@ export async function receiveEvolutionWebhook(payload: unknown, token: string | 
   }
 
   return { ok: true, status: 200 };
+}
+
+function historyItems(value: unknown, depth = 0): Array<unknown> {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== "object" || depth > 4) return [];
+  const record = asRecord(value);
+  for (const key of ["records", "messages", "data", "items", "result"]) {
+    const found = historyItems(record[key], depth + 1);
+    if (found.length) return found;
+  }
+  return [];
+}
+
+export async function syncStarEvolutionHistory() {
+  await ensureEvolutionSchema();
+  await ensureWhatsappSupervisionSchema();
+  if (!isEvolutionConfigured()) return { configured: false, instances: 0, imported: 0, failed: 0 };
+  const instances = await queryDb<InstanceRow & { last_synced_at: string | null }>(`
+    select instance.*, checkpoint.last_synced_at::text
+    from app_whatsapp_instances instance
+    left join app_whatsapp_sync_checkpoints checkpoint on checkpoint.instance_id = instance.id
+    where left(instance.instance_name, 5) = 'star_' and instance.user_id is not null`);
+  let imported = 0;
+  let failed = 0;
+  for (const instance of instances.rows) {
+    const since = instance.last_synced_at
+      ? Math.floor((new Date(instance.last_synced_at).getTime() - 5 * 60_000) / 1000)
+      : Math.floor((Date.now() - 90 * 24 * 60 * 60_000) / 1000);
+    try {
+      if (process.env.PUBLIC_APP_URL) {
+        await configureEvolutionWebhook(
+          instance.instance_name,
+          evolutionWebhookUrl(process.env.PUBLIC_APP_URL, instance.webhook_secret),
+        );
+      }
+      for (let offset = 0; offset < 2_000; offset += 100) {
+        const payload = await requestEvolution(
+          `/chat/findMessages/${encodeURIComponent(instance.instance_name)}`,
+          { method: "POST", body: JSON.stringify({
+            where: { messageTimestamp: { gte: since } }, limit: 100, offset,
+            sort: { messageTimestamp: "asc" },
+          }) },
+        );
+        const items = historyItems(payload);
+        for (const item of items) {
+          const result = await receiveEvolutionWebhook(
+            { event: "messages.upsert", instance: instance.instance_name, data: item },
+            instance.webhook_secret,
+          );
+          if (result.ok) imported += 1;
+        }
+        if (items.length < 100) break;
+      }
+      await queryDb(`insert into app_whatsapp_sync_checkpoints
+          (instance_id, history_since, last_synced_at, last_error, updated_at)
+        values ($1, to_timestamp($2), now(), null, now())
+        on conflict (instance_id) do update
+        set last_synced_at = now(), last_error = null, updated_at = now()`, [instance.id, since]);
+    } catch (error) {
+      failed += 1;
+      await queryDb(`insert into app_whatsapp_sync_checkpoints
+          (instance_id, history_since, last_error, updated_at)
+        values ($1, to_timestamp($2), $3, now())
+        on conflict (instance_id) do update
+        set last_error = excluded.last_error, updated_at = now()`, [instance.id, since,
+        error instanceof Error ? error.message.slice(0, 800) : "Falha na sincronização"]);
+    }
+  }
+  return { configured: true, instances: instances.rows.length, imported, failed };
 }

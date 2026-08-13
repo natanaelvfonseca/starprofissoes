@@ -11,6 +11,7 @@ import {
   type UnitSummary,
   type UserRole,
 } from "@/lib/auth-types";
+import { canUseWhatsappSupervision } from "@/lib/server/whatsapp-supervision";
 import { queryDb } from "@/lib/server/db";
 
 const scrypt = promisify(scryptCallback);
@@ -313,12 +314,12 @@ export async function getAccessibleUnits(userId: string, role: UserRole) {
   return result.rows;
 }
 
-function buildSession(
+async function buildSession(
   row: SessionRow,
   units: Array<UnitSummary>,
   activeUnit: UnitSummary | null,
-): AuthSession {
-  return {
+): Promise<AuthSession> {
+  const session: AuthSession = {
     user: {
       id: row.user_id,
       email: row.email,
@@ -330,7 +331,12 @@ function buildSession(
     activeUnit,
     canRegisterUsers: canRegisterUsers(row.role),
     canCreateUnits: canCreateUnits(row.role),
+    features: { whatsappSupervision: false },
   };
+  session.features.whatsappSupervision = await canUseWhatsappSupervision(session).catch(
+    () => row.role === "DEV",
+  );
+  return session;
 }
 
 export async function getSessionFromRequest(request: Request): Promise<AuthSession | null> {

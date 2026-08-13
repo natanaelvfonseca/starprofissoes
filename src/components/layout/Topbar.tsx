@@ -17,6 +17,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useAuth } from "@/lib/auth";
 import { canViewCrmFinancialSwitcher, canViewStudentSwitcher } from "@/lib/auth-types";
 import type { CrmLeadTask } from "@/lib/crm-task-types";
+import type { WhatsappInterventionNotification } from "@/lib/whatsapp-supervision-types";
 import { cn } from "@/lib/utils";
 
 type NotificationsResponse = {
@@ -55,6 +56,9 @@ export function Topbar() {
   const canShowCrmFinancial = session ? canViewCrmFinancialSwitcher(session.user.role) : false;
   const canShowStudent = session ? canViewStudentSwitcher(session.user.role) : false;
   const [notifications, setNotifications] = React.useState<Array<CrmLeadTask>>([]);
+  const [whatsappNotifications, setWhatsappNotifications] = React.useState<
+    Array<WhatsappInterventionNotification>
+  >([]);
   const [loadingNotifications, setLoadingNotifications] = React.useState(false);
   const [updatingTaskId, setUpdatingTaskId] = React.useState<string | null>(null);
   const [browserPermission, setBrowserPermission] = React.useState<
@@ -103,14 +107,21 @@ export function Topbar() {
       }
 
       try {
-        const data = await readJson<NotificationsResponse>(
-          await fetch("/api/crm/tasks?view=notifications", {
+        const [data, whatsappData] = await Promise.all([
+          readJson<NotificationsResponse>(await fetch("/api/crm/tasks?view=notifications", {
             credentials: "same-origin",
             headers: { Accept: "application/json" },
-          }),
-        );
+          })),
+          readJson<{ notifications: Array<WhatsappInterventionNotification> }>(
+            await fetch("/api/whatsapp-supervision/notifications", {
+              credentials: "same-origin",
+              headers: { Accept: "application/json" },
+            }),
+          ).catch(() => ({ notifications: [] })),
+        ]);
 
         setNotifications(data.tasks);
+        setWhatsappNotifications(whatsappData.notifications.filter((item) => !item.readAt));
         notifyBrowser(data.tasks);
       } catch (error) {
         if (!silent) {
@@ -182,6 +193,16 @@ export function Topbar() {
     }
   }
 
+  async function readWhatsappNotification(item: WhatsappInterventionNotification) {
+    await fetch("/api/whatsapp-supervision/notifications", {
+      method: "PATCH",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notificationId: item.id }),
+    });
+    setWhatsappNotifications((current) => current.filter((value) => value.id !== item.id));
+  }
+
   return (
     <div className="pointer-events-none fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between px-4 md:left-auto md:right-4 md:top-4 md:h-auto md:w-auto md:px-0 md:pointer-events-auto">
       <div className="pointer-events-auto flex items-center gap-2">
@@ -235,9 +256,9 @@ export function Topbar() {
               className="relative rounded-xl border-border/80 bg-white/90 shadow-card backdrop-blur hover:bg-accent hover:text-accent-foreground"
             >
               <Bell className="h-5 w-5" />
-              {notifications.length ? (
+              {notifications.length + whatsappNotifications.length ? (
                 <Badge className="absolute -right-1 -top-1 h-4 min-w-4 rounded-full bg-gold p-0 px-1 text-[10px] text-gold-foreground">
-                  {notifications.length}
+                  {notifications.length + whatsappNotifications.length}
                 </Badge>
               ) : null}
             </Button>
@@ -269,8 +290,21 @@ export function Topbar() {
             </div>
 
             <div className="max-h-[360px] overflow-y-auto p-3">
-              {notifications.length ? (
+              {notifications.length || whatsappNotifications.length ? (
                 <div className="space-y-2">
+                  {whatsappNotifications.map((item) => (
+                    <Link
+                      key={item.id}
+                      to="/conversas-whatsapp"
+                      onClick={() => void readWhatsappNotification(item)}
+                      className="block rounded-lg border border-primary/20 bg-primary/5 p-3 shadow-sm"
+                    >
+                      <div className="text-sm font-bold">Intervenção no WhatsApp</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {item.actorName}: {item.content}
+                      </div>
+                    </Link>
+                  ))}
                   {notifications.map((task) => (
                     <div key={task.id} className="rounded-lg border bg-card p-3 shadow-sm">
                       <div className="flex items-start justify-between gap-3">

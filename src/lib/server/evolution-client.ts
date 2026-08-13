@@ -2,6 +2,16 @@ export function isEvolutionConfigured() {
   return Boolean(process.env.EVOLUTION_API_URL && process.env.EVOLUTION_API_KEY);
 }
 
+export class EvolutionRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "EvolutionRequestError";
+    this.status = status;
+  }
+}
+
 function evolutionConfig() {
   const url = process.env.EVOLUTION_API_URL?.replace(/\/+$/, "");
   const apiKey = process.env.EVOLUTION_API_KEY;
@@ -48,7 +58,10 @@ export async function requestEvolution(path: string, init: RequestInit = {}) {
         : typeof dataRecord.error === "string"
           ? dataRecord.error
           : text;
-    throw new Error(detail || `Evolution API respondeu com status ${response.status}.`);
+    throw new EvolutionRequestError(
+      detail || `Evolution API respondeu com status ${response.status}.`,
+      response.status,
+    );
   }
 
   return data;

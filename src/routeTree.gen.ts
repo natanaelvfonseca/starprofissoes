@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AlunoRouteImport } from './routes/aluno'
 import { Route as BiRouteImport } from './routes/bi'
+import { Route as ConversasWhatsappRouteImport } from './routes/conversas-whatsapp'
 import { Route as CrmRouteImport } from './routes/crm'
 import { Route as FeedbackRouteImport } from './routes/feedback'
 import { Route as FinanceiroRouteImport } from './routes/financeiro'
@@ -29,6 +30,7 @@ import { Route as ApiProfileRouteImport } from './routes/api/profile'
 import { Route as ApiSystemFeedbackRouteImport } from './routes/api/system-feedback'
 import { Route as ApiSystemSettingsRouteImport } from './routes/api/system-settings'
 import { Route as ApiTrainingRouteImport } from './routes/api/training'
+import { Route as ApiWhatsappSupervisionRouteImport } from './routes/api/whatsapp-supervision'
 import { Route as CrmImportarRouteImport } from './routes/crm.importar'
 import { Route as CrmTransferenciaRouteImport } from './routes/crm.transferencia'
 import { Route as GestaoCadastroRouteImport } from './routes/gestao.cadastro'
@@ -36,6 +38,7 @@ import { Route as LeadsIndexRouteImport } from './routes/leads.index'
 import { Route as LeadsIdRouteImport } from './routes/leads.$id'
 import { Route as ApiAdminUnitsRouteImport } from './routes/api/admin/units'
 import { Route as ApiAdminUsersRouteImport } from './routes/api/admin/users'
+import { Route as ApiAtendimentosMidiaRouteImport } from './routes/api/atendimentos.midia'
 import { Route as ApiAuthLoginRouteImport } from './routes/api/auth/login'
 import { Route as ApiAuthLogoutRouteImport } from './routes/api/auth/logout'
 import { Route as ApiAuthSessionRouteImport } from './routes/api/auth/session'
@@ -43,6 +46,7 @@ import { Route as ApiCrmImportRouteImport } from './routes/api/crm/import'
 import { Route as ApiCrmLeadsRouteImport } from './routes/api/crm/leads'
 import { Route as ApiCrmTasksRouteImport } from './routes/api/crm/tasks'
 import { Route as ApiCrmTransferRouteImport } from './routes/api/crm/transfer'
+import { Route as ApiCronWhatsappAnalysisRouteImport } from './routes/api/cron.whatsapp-analysis'
 import { Route as ApiGestaoAttendancesRouteImport } from './routes/api/gestao/attendances'
 import { Route as ApiGestaoChannelsRouteImport } from './routes/api/gestao/channels'
 import { Route as ApiGestaoCoursesRouteImport } from './routes/api/gestao/courses'
@@ -56,10 +60,13 @@ import { Route as ApiMetaOauthCompleteRouteImport } from './routes/api/meta/oaut
 import { Route as ApiTrainingVideoRouteImport } from './routes/api/training.video'
 import { Route as ApiWebhooksEvolutionRouteImport } from './routes/api/webhooks/evolution'
 import { Route as ApiWebhooksMetaLeadsRouteImport } from './routes/api/webhooks/meta-leads'
+import { Route as ApiWhatsappSupervisionAccessRouteImport } from './routes/api/whatsapp-supervision.access'
+import { Route as ApiWhatsappSupervisionNotificationsRouteImport } from './routes/api/whatsapp-supervision.notifications'
 import { Route as FinanceiroAlunoStudentIdRouteImport } from './routes/financeiro.aluno.$studentId'
 import { Route as ApiCrmLeadsIdRouteImport } from './routes/api/crm/leads.$id'
 import { Route as ApiGestaoChannelsIdRouteImport } from './routes/api/gestao/channels.$id'
 import { Route as ApiGestaoCoursesIdRouteImport } from './routes/api/gestao/courses.$id'
+import { Route as ApiWhatsappSupervisionConversationsIdRouteImport } from './routes/api/whatsapp-supervision.conversations.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -74,6 +81,11 @@ const AlunoRoute = AlunoRouteImport.update({
 const BiRoute = BiRouteImport.update({
   id: '/bi',
   path: '/bi',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConversasWhatsappRoute = ConversasWhatsappRouteImport.update({
+  id: '/conversas-whatsapp',
+  path: '/conversas-whatsapp',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CrmRoute = CrmRouteImport.update({
@@ -161,6 +173,11 @@ const ApiTrainingRoute = ApiTrainingRouteImport.update({
   path: '/api/training',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiWhatsappSupervisionRoute = ApiWhatsappSupervisionRouteImport.update({
+  id: '/api/whatsapp-supervision',
+  path: '/api/whatsapp-supervision',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CrmImportarRoute = CrmImportarRouteImport.update({
   id: '/importar',
   path: '/importar',
@@ -196,6 +213,11 @@ const ApiAdminUsersRoute = ApiAdminUsersRouteImport.update({
   path: '/api/admin/users',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAtendimentosMidiaRoute = ApiAtendimentosMidiaRouteImport.update({
+  id: '/api/atendimentos/midia',
+  path: '/api/atendimentos/midia',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthLoginRoute = ApiAuthLoginRouteImport.update({
   id: '/api/auth/login',
   path: '/api/auth/login',
@@ -229,6 +251,11 @@ const ApiCrmTasksRoute = ApiCrmTasksRouteImport.update({
 const ApiCrmTransferRoute = ApiCrmTransferRouteImport.update({
   id: '/api/crm/transfer',
   path: '/api/crm/transfer',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCronWhatsappAnalysisRoute = ApiCronWhatsappAnalysisRouteImport.update({
+  id: '/api/cron/whatsapp-analysis',
+  path: '/api/cron/whatsapp-analysis',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiGestaoAttendancesRoute = ApiGestaoAttendancesRouteImport.update({
@@ -298,6 +325,18 @@ const ApiWebhooksMetaLeadsRoute = ApiWebhooksMetaLeadsRouteImport.update({
   path: '/api/webhooks/meta-leads',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiWhatsappSupervisionAccessRoute =
+  ApiWhatsappSupervisionAccessRouteImport.update({
+    id: '/access',
+    path: '/access',
+    getParentRoute: () => ApiWhatsappSupervisionRoute,
+  } as any)
+const ApiWhatsappSupervisionNotificationsRoute =
+  ApiWhatsappSupervisionNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => ApiWhatsappSupervisionRoute,
+  } as any)
 const FinanceiroAlunoStudentIdRoute =
   FinanceiroAlunoStudentIdRouteImport.update({
     id: '/aluno/$studentId',
@@ -319,11 +358,18 @@ const ApiGestaoCoursesIdRoute = ApiGestaoCoursesIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => ApiGestaoCoursesRoute,
 } as any)
+const ApiWhatsappSupervisionConversationsIdRoute =
+  ApiWhatsappSupervisionConversationsIdRouteImport.update({
+    id: '/conversations/$id',
+    path: '/conversations/$id',
+    getParentRoute: () => ApiWhatsappSupervisionRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/aluno': typeof AlunoRoute
   '/bi': typeof BiRoute
+  '/conversas-whatsapp': typeof ConversasWhatsappRoute
   '/crm': typeof CrmRouteWithChildren
   '/feedback': typeof FeedbackRoute
   '/financeiro': typeof FinanceiroRouteWithChildren
@@ -341,6 +387,7 @@ export interface FileRoutesByFullPath {
   '/api/system-feedback': typeof ApiSystemFeedbackRoute
   '/api/system-settings': typeof ApiSystemSettingsRoute
   '/api/training': typeof ApiTrainingRouteWithChildren
+  '/api/whatsapp-supervision': typeof ApiWhatsappSupervisionRouteWithChildren
   '/crm/importar': typeof CrmImportarRoute
   '/crm/transferencia': typeof CrmTransferenciaRoute
   '/gestao/cadastro': typeof GestaoCadastroRoute
@@ -348,6 +395,7 @@ export interface FileRoutesByFullPath {
   '/leads/': typeof LeadsIndexRoute
   '/api/admin/units': typeof ApiAdminUnitsRoute
   '/api/admin/users': typeof ApiAdminUsersRoute
+  '/api/atendimentos/midia': typeof ApiAtendimentosMidiaRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
@@ -355,6 +403,7 @@ export interface FileRoutesByFullPath {
   '/api/crm/leads': typeof ApiCrmLeadsRouteWithChildren
   '/api/crm/tasks': typeof ApiCrmTasksRoute
   '/api/crm/transfer': typeof ApiCrmTransferRoute
+  '/api/cron/whatsapp-analysis': typeof ApiCronWhatsappAnalysisRoute
   '/api/gestao/attendances': typeof ApiGestaoAttendancesRoute
   '/api/gestao/channels': typeof ApiGestaoChannelsRouteWithChildren
   '/api/gestao/courses': typeof ApiGestaoCoursesRouteWithChildren
@@ -368,15 +417,19 @@ export interface FileRoutesByFullPath {
   '/api/training/video': typeof ApiTrainingVideoRoute
   '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
   '/api/webhooks/meta-leads': typeof ApiWebhooksMetaLeadsRoute
+  '/api/whatsapp-supervision/access': typeof ApiWhatsappSupervisionAccessRoute
+  '/api/whatsapp-supervision/notifications': typeof ApiWhatsappSupervisionNotificationsRoute
   '/financeiro/aluno/$studentId': typeof FinanceiroAlunoStudentIdRoute
   '/api/crm/leads/$id': typeof ApiCrmLeadsIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
+  '/api/whatsapp-supervision/conversations/$id': typeof ApiWhatsappSupervisionConversationsIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/aluno': typeof AlunoRoute
   '/bi': typeof BiRoute
+  '/conversas-whatsapp': typeof ConversasWhatsappRoute
   '/crm': typeof CrmRouteWithChildren
   '/feedback': typeof FeedbackRoute
   '/financeiro': typeof FinanceiroRouteWithChildren
@@ -394,6 +447,7 @@ export interface FileRoutesByTo {
   '/api/system-feedback': typeof ApiSystemFeedbackRoute
   '/api/system-settings': typeof ApiSystemSettingsRoute
   '/api/training': typeof ApiTrainingRouteWithChildren
+  '/api/whatsapp-supervision': typeof ApiWhatsappSupervisionRouteWithChildren
   '/crm/importar': typeof CrmImportarRoute
   '/crm/transferencia': typeof CrmTransferenciaRoute
   '/gestao/cadastro': typeof GestaoCadastroRoute
@@ -401,6 +455,7 @@ export interface FileRoutesByTo {
   '/leads': typeof LeadsIndexRoute
   '/api/admin/units': typeof ApiAdminUnitsRoute
   '/api/admin/users': typeof ApiAdminUsersRoute
+  '/api/atendimentos/midia': typeof ApiAtendimentosMidiaRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
@@ -408,6 +463,7 @@ export interface FileRoutesByTo {
   '/api/crm/leads': typeof ApiCrmLeadsRouteWithChildren
   '/api/crm/tasks': typeof ApiCrmTasksRoute
   '/api/crm/transfer': typeof ApiCrmTransferRoute
+  '/api/cron/whatsapp-analysis': typeof ApiCronWhatsappAnalysisRoute
   '/api/gestao/attendances': typeof ApiGestaoAttendancesRoute
   '/api/gestao/channels': typeof ApiGestaoChannelsRouteWithChildren
   '/api/gestao/courses': typeof ApiGestaoCoursesRouteWithChildren
@@ -421,16 +477,20 @@ export interface FileRoutesByTo {
   '/api/training/video': typeof ApiTrainingVideoRoute
   '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
   '/api/webhooks/meta-leads': typeof ApiWebhooksMetaLeadsRoute
+  '/api/whatsapp-supervision/access': typeof ApiWhatsappSupervisionAccessRoute
+  '/api/whatsapp-supervision/notifications': typeof ApiWhatsappSupervisionNotificationsRoute
   '/financeiro/aluno/$studentId': typeof FinanceiroAlunoStudentIdRoute
   '/api/crm/leads/$id': typeof ApiCrmLeadsIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
+  '/api/whatsapp-supervision/conversations/$id': typeof ApiWhatsappSupervisionConversationsIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/aluno': typeof AlunoRoute
   '/bi': typeof BiRoute
+  '/conversas-whatsapp': typeof ConversasWhatsappRoute
   '/crm': typeof CrmRouteWithChildren
   '/feedback': typeof FeedbackRoute
   '/financeiro': typeof FinanceiroRouteWithChildren
@@ -448,6 +508,7 @@ export interface FileRoutesById {
   '/api/system-feedback': typeof ApiSystemFeedbackRoute
   '/api/system-settings': typeof ApiSystemSettingsRoute
   '/api/training': typeof ApiTrainingRouteWithChildren
+  '/api/whatsapp-supervision': typeof ApiWhatsappSupervisionRouteWithChildren
   '/crm/importar': typeof CrmImportarRoute
   '/crm/transferencia': typeof CrmTransferenciaRoute
   '/gestao/cadastro': typeof GestaoCadastroRoute
@@ -455,6 +516,7 @@ export interface FileRoutesById {
   '/leads/': typeof LeadsIndexRoute
   '/api/admin/units': typeof ApiAdminUnitsRoute
   '/api/admin/users': typeof ApiAdminUsersRoute
+  '/api/atendimentos/midia': typeof ApiAtendimentosMidiaRoute
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
@@ -462,6 +524,7 @@ export interface FileRoutesById {
   '/api/crm/leads': typeof ApiCrmLeadsRouteWithChildren
   '/api/crm/tasks': typeof ApiCrmTasksRoute
   '/api/crm/transfer': typeof ApiCrmTransferRoute
+  '/api/cron/whatsapp-analysis': typeof ApiCronWhatsappAnalysisRoute
   '/api/gestao/attendances': typeof ApiGestaoAttendancesRoute
   '/api/gestao/channels': typeof ApiGestaoChannelsRouteWithChildren
   '/api/gestao/courses': typeof ApiGestaoCoursesRouteWithChildren
@@ -475,10 +538,13 @@ export interface FileRoutesById {
   '/api/training/video': typeof ApiTrainingVideoRoute
   '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
   '/api/webhooks/meta-leads': typeof ApiWebhooksMetaLeadsRoute
+  '/api/whatsapp-supervision/access': typeof ApiWhatsappSupervisionAccessRoute
+  '/api/whatsapp-supervision/notifications': typeof ApiWhatsappSupervisionNotificationsRoute
   '/financeiro/aluno/$studentId': typeof FinanceiroAlunoStudentIdRoute
   '/api/crm/leads/$id': typeof ApiCrmLeadsIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
+  '/api/whatsapp-supervision/conversations/$id': typeof ApiWhatsappSupervisionConversationsIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -486,6 +552,7 @@ export interface FileRouteTypes {
     | '/'
     | '/aluno'
     | '/bi'
+    | '/conversas-whatsapp'
     | '/crm'
     | '/feedback'
     | '/financeiro'
@@ -503,6 +570,7 @@ export interface FileRouteTypes {
     | '/api/system-feedback'
     | '/api/system-settings'
     | '/api/training'
+    | '/api/whatsapp-supervision'
     | '/crm/importar'
     | '/crm/transferencia'
     | '/gestao/cadastro'
@@ -510,6 +578,7 @@ export interface FileRouteTypes {
     | '/leads/'
     | '/api/admin/units'
     | '/api/admin/users'
+    | '/api/atendimentos/midia'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
@@ -517,6 +586,7 @@ export interface FileRouteTypes {
     | '/api/crm/leads'
     | '/api/crm/tasks'
     | '/api/crm/transfer'
+    | '/api/cron/whatsapp-analysis'
     | '/api/gestao/attendances'
     | '/api/gestao/channels'
     | '/api/gestao/courses'
@@ -530,15 +600,19 @@ export interface FileRouteTypes {
     | '/api/training/video'
     | '/api/webhooks/evolution'
     | '/api/webhooks/meta-leads'
+    | '/api/whatsapp-supervision/access'
+    | '/api/whatsapp-supervision/notifications'
     | '/financeiro/aluno/$studentId'
     | '/api/crm/leads/$id'
     | '/api/gestao/channels/$id'
     | '/api/gestao/courses/$id'
+    | '/api/whatsapp-supervision/conversations/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/aluno'
     | '/bi'
+    | '/conversas-whatsapp'
     | '/crm'
     | '/feedback'
     | '/financeiro'
@@ -556,6 +630,7 @@ export interface FileRouteTypes {
     | '/api/system-feedback'
     | '/api/system-settings'
     | '/api/training'
+    | '/api/whatsapp-supervision'
     | '/crm/importar'
     | '/crm/transferencia'
     | '/gestao/cadastro'
@@ -563,6 +638,7 @@ export interface FileRouteTypes {
     | '/leads'
     | '/api/admin/units'
     | '/api/admin/users'
+    | '/api/atendimentos/midia'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
@@ -570,6 +646,7 @@ export interface FileRouteTypes {
     | '/api/crm/leads'
     | '/api/crm/tasks'
     | '/api/crm/transfer'
+    | '/api/cron/whatsapp-analysis'
     | '/api/gestao/attendances'
     | '/api/gestao/channels'
     | '/api/gestao/courses'
@@ -583,15 +660,19 @@ export interface FileRouteTypes {
     | '/api/training/video'
     | '/api/webhooks/evolution'
     | '/api/webhooks/meta-leads'
+    | '/api/whatsapp-supervision/access'
+    | '/api/whatsapp-supervision/notifications'
     | '/financeiro/aluno/$studentId'
     | '/api/crm/leads/$id'
     | '/api/gestao/channels/$id'
     | '/api/gestao/courses/$id'
+    | '/api/whatsapp-supervision/conversations/$id'
   id:
     | '__root__'
     | '/'
     | '/aluno'
     | '/bi'
+    | '/conversas-whatsapp'
     | '/crm'
     | '/feedback'
     | '/financeiro'
@@ -609,6 +690,7 @@ export interface FileRouteTypes {
     | '/api/system-feedback'
     | '/api/system-settings'
     | '/api/training'
+    | '/api/whatsapp-supervision'
     | '/crm/importar'
     | '/crm/transferencia'
     | '/gestao/cadastro'
@@ -616,6 +698,7 @@ export interface FileRouteTypes {
     | '/leads/'
     | '/api/admin/units'
     | '/api/admin/users'
+    | '/api/atendimentos/midia'
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
@@ -623,6 +706,7 @@ export interface FileRouteTypes {
     | '/api/crm/leads'
     | '/api/crm/tasks'
     | '/api/crm/transfer'
+    | '/api/cron/whatsapp-analysis'
     | '/api/gestao/attendances'
     | '/api/gestao/channels'
     | '/api/gestao/courses'
@@ -636,16 +720,20 @@ export interface FileRouteTypes {
     | '/api/training/video'
     | '/api/webhooks/evolution'
     | '/api/webhooks/meta-leads'
+    | '/api/whatsapp-supervision/access'
+    | '/api/whatsapp-supervision/notifications'
     | '/financeiro/aluno/$studentId'
     | '/api/crm/leads/$id'
     | '/api/gestao/channels/$id'
     | '/api/gestao/courses/$id'
+    | '/api/whatsapp-supervision/conversations/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AlunoRoute: typeof AlunoRoute
   BiRoute: typeof BiRoute
+  ConversasWhatsappRoute: typeof ConversasWhatsappRoute
   CrmRoute: typeof CrmRouteWithChildren
   FeedbackRoute: typeof FeedbackRoute
   FinanceiroRoute: typeof FinanceiroRouteWithChildren
@@ -663,11 +751,13 @@ export interface RootRouteChildren {
   ApiSystemFeedbackRoute: typeof ApiSystemFeedbackRoute
   ApiSystemSettingsRoute: typeof ApiSystemSettingsRoute
   ApiTrainingRoute: typeof ApiTrainingRouteWithChildren
+  ApiWhatsappSupervisionRoute: typeof ApiWhatsappSupervisionRouteWithChildren
   GestaoCadastroRoute: typeof GestaoCadastroRoute
   LeadsIdRoute: typeof LeadsIdRoute
   LeadsIndexRoute: typeof LeadsIndexRoute
   ApiAdminUnitsRoute: typeof ApiAdminUnitsRoute
   ApiAdminUsersRoute: typeof ApiAdminUsersRoute
+  ApiAtendimentosMidiaRoute: typeof ApiAtendimentosMidiaRoute
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
   ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
   ApiAuthSessionRoute: typeof ApiAuthSessionRoute
@@ -675,6 +765,7 @@ export interface RootRouteChildren {
   ApiCrmLeadsRoute: typeof ApiCrmLeadsRouteWithChildren
   ApiCrmTasksRoute: typeof ApiCrmTasksRoute
   ApiCrmTransferRoute: typeof ApiCrmTransferRoute
+  ApiCronWhatsappAnalysisRoute: typeof ApiCronWhatsappAnalysisRoute
   ApiGestaoAttendancesRoute: typeof ApiGestaoAttendancesRoute
   ApiGestaoChannelsRoute: typeof ApiGestaoChannelsRouteWithChildren
   ApiGestaoCoursesRoute: typeof ApiGestaoCoursesRouteWithChildren
@@ -708,6 +799,13 @@ declare module '@tanstack/react-router' {
       path: '/bi'
       fullPath: '/bi'
       preLoaderRoute: typeof BiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/conversas-whatsapp': {
+      id: '/conversas-whatsapp'
+      path: '/conversas-whatsapp'
+      fullPath: '/conversas-whatsapp'
+      preLoaderRoute: typeof ConversasWhatsappRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/crm': {
@@ -829,6 +927,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTrainingRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/whatsapp-supervision': {
+      id: '/api/whatsapp-supervision'
+      path: '/api/whatsapp-supervision'
+      fullPath: '/api/whatsapp-supervision'
+      preLoaderRoute: typeof ApiWhatsappSupervisionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/crm/importar': {
       id: '/crm/importar'
       path: '/importar'
@@ -878,6 +983,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAdminUsersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/atendimentos/midia': {
+      id: '/api/atendimentos/midia'
+      path: '/api/atendimentos/midia'
+      fullPath: '/api/atendimentos/midia'
+      preLoaderRoute: typeof ApiAtendimentosMidiaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/login': {
       id: '/api/auth/login'
       path: '/api/auth/login'
@@ -925,6 +1037,13 @@ declare module '@tanstack/react-router' {
       path: '/api/crm/transfer'
       fullPath: '/api/crm/transfer'
       preLoaderRoute: typeof ApiCrmTransferRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/cron/whatsapp-analysis': {
+      id: '/api/cron/whatsapp-analysis'
+      path: '/api/cron/whatsapp-analysis'
+      fullPath: '/api/cron/whatsapp-analysis'
+      preLoaderRoute: typeof ApiCronWhatsappAnalysisRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/gestao/attendances': {
@@ -1018,6 +1137,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWebhooksMetaLeadsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/whatsapp-supervision/access': {
+      id: '/api/whatsapp-supervision/access'
+      path: '/access'
+      fullPath: '/api/whatsapp-supervision/access'
+      preLoaderRoute: typeof ApiWhatsappSupervisionAccessRouteImport
+      parentRoute: typeof ApiWhatsappSupervisionRoute
+    }
+    '/api/whatsapp-supervision/notifications': {
+      id: '/api/whatsapp-supervision/notifications'
+      path: '/notifications'
+      fullPath: '/api/whatsapp-supervision/notifications'
+      preLoaderRoute: typeof ApiWhatsappSupervisionNotificationsRouteImport
+      parentRoute: typeof ApiWhatsappSupervisionRoute
+    }
     '/financeiro/aluno/$studentId': {
       id: '/financeiro/aluno/$studentId'
       path: '/aluno/$studentId'
@@ -1045,6 +1178,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/gestao/courses/$id'
       preLoaderRoute: typeof ApiGestaoCoursesIdRouteImport
       parentRoute: typeof ApiGestaoCoursesRoute
+    }
+    '/api/whatsapp-supervision/conversations/$id': {
+      id: '/api/whatsapp-supervision/conversations/$id'
+      path: '/conversations/$id'
+      fullPath: '/api/whatsapp-supervision/conversations/$id'
+      preLoaderRoute: typeof ApiWhatsappSupervisionConversationsIdRouteImport
+      parentRoute: typeof ApiWhatsappSupervisionRoute
     }
   }
 }
@@ -1099,6 +1239,26 @@ const ApiTrainingRouteWithChildren = ApiTrainingRoute._addFileChildren(
   ApiTrainingRouteChildren,
 )
 
+interface ApiWhatsappSupervisionRouteChildren {
+  ApiWhatsappSupervisionAccessRoute: typeof ApiWhatsappSupervisionAccessRoute
+  ApiWhatsappSupervisionNotificationsRoute: typeof ApiWhatsappSupervisionNotificationsRoute
+  ApiWhatsappSupervisionConversationsIdRoute: typeof ApiWhatsappSupervisionConversationsIdRoute
+}
+
+const ApiWhatsappSupervisionRouteChildren: ApiWhatsappSupervisionRouteChildren =
+  {
+    ApiWhatsappSupervisionAccessRoute: ApiWhatsappSupervisionAccessRoute,
+    ApiWhatsappSupervisionNotificationsRoute:
+      ApiWhatsappSupervisionNotificationsRoute,
+    ApiWhatsappSupervisionConversationsIdRoute:
+      ApiWhatsappSupervisionConversationsIdRoute,
+  }
+
+const ApiWhatsappSupervisionRouteWithChildren =
+  ApiWhatsappSupervisionRoute._addFileChildren(
+    ApiWhatsappSupervisionRouteChildren,
+  )
+
 interface ApiCrmLeadsRouteChildren {
   ApiCrmLeadsIdRoute: typeof ApiCrmLeadsIdRoute
 }
@@ -1137,6 +1297,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AlunoRoute: AlunoRoute,
   BiRoute: BiRoute,
+  ConversasWhatsappRoute: ConversasWhatsappRoute,
   CrmRoute: CrmRouteWithChildren,
   FeedbackRoute: FeedbackRoute,
   FinanceiroRoute: FinanceiroRouteWithChildren,
@@ -1154,11 +1315,13 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSystemFeedbackRoute: ApiSystemFeedbackRoute,
   ApiSystemSettingsRoute: ApiSystemSettingsRoute,
   ApiTrainingRoute: ApiTrainingRouteWithChildren,
+  ApiWhatsappSupervisionRoute: ApiWhatsappSupervisionRouteWithChildren,
   GestaoCadastroRoute: GestaoCadastroRoute,
   LeadsIdRoute: LeadsIdRoute,
   LeadsIndexRoute: LeadsIndexRoute,
   ApiAdminUnitsRoute: ApiAdminUnitsRoute,
   ApiAdminUsersRoute: ApiAdminUsersRoute,
+  ApiAtendimentosMidiaRoute: ApiAtendimentosMidiaRoute,
   ApiAuthLoginRoute: ApiAuthLoginRoute,
   ApiAuthLogoutRoute: ApiAuthLogoutRoute,
   ApiAuthSessionRoute: ApiAuthSessionRoute,
@@ -1166,6 +1329,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCrmLeadsRoute: ApiCrmLeadsRouteWithChildren,
   ApiCrmTasksRoute: ApiCrmTasksRoute,
   ApiCrmTransferRoute: ApiCrmTransferRoute,
+  ApiCronWhatsappAnalysisRoute: ApiCronWhatsappAnalysisRoute,
   ApiGestaoAttendancesRoute: ApiGestaoAttendancesRoute,
   ApiGestaoChannelsRoute: ApiGestaoChannelsRouteWithChildren,
   ApiGestaoCoursesRoute: ApiGestaoCoursesRouteWithChildren,
