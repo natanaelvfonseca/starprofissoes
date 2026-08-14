@@ -33,6 +33,7 @@ export async function requestEvolution(path: string, init: RequestInit = {}) {
   const { url, apiKey } = evolutionConfig();
   const response = await fetch(`${url}${path}`, {
     ...init,
+    signal: init.signal ?? AbortSignal.timeout(20_000),
     headers: {
       apikey: apiKey,
       ...(init.body ? { "Content-Type": "application/json" } : {}),
