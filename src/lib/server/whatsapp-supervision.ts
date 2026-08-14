@@ -333,21 +333,35 @@ async function refreshSupervisionContactMetadata(
     const [chatsPayload, contactsPayload] = await Promise.all([
       requestEvolution(`/chat/findChats/${encodeURIComponent(instance.instance_name)}`, {
         method: "POST",
+        signal: AbortSignal.timeout(8_000),
         body: JSON.stringify({
           limit: 1_000,
           offset: 0,
           sort: { field: "updatedAt", order: "desc" },
         }),
-      }),
+      }).catch(() => null),
       requestEvolution(`/chat/findContacts/${encodeURIComponent(instance.instance_name)}`, {
         method: "POST",
+        signal: AbortSignal.timeout(8_000),
         body: JSON.stringify({ offset: 2_500, page: 1 }),
       }).catch(() => null),
     ]);
+    if (!chatsPayload && !contactsPayload) {
+      throw new Error("A Evolution não respondeu à atualização de contatos.");
+    }
     const contacts = [
       ...nestedEvolutionRecords(chatsPayload),
       ...nestedEvolutionRecords(contactsPayload),
     ];
+    const updates = new Map<
+      string,
+      {
+        remote_jid: string;
+        phone: string;
+        contact_name: string;
+        profile_picture_url: string;
+      }
+    >();
     for (const rawContact of contacts) {
       const contact = recordOf(rawContact);
       const key = recordOf(contact.key);
@@ -379,19 +393,46 @@ async function refreshSupervisionContactMetadata(
       const usableName =
         !nameIsSelf && isUsefulWhatsappContactName(name, instance.consultant_name, phone);
       if (!usableName && !profilePictureUrl) continue;
+      const updateKey = phone ? `phone:${phone}` : `jid:${remoteJid}`;
+      const current = updates.get(updateKey);
+      updates.set(updateKey, {
+        remote_jid: remoteJid || current?.remote_jid || "",
+        phone: phone || current?.phone || "",
+        contact_name: usableName ? name : current?.contact_name || "",
+        profile_picture_url: profilePictureUrl || current?.profile_picture_url || "",
+      });
+    }
+    if (updates.size) {
       await queryDb(
-        `update app_whatsapp_conversations conversation
-        set contact_name = case when $4::text = '' then conversation.contact_name else $4 end,
-            profile_picture_url = case when $5::text ~ '^https?://' then $5
-              else conversation.profile_picture_url end,
-            updated_at = now()
-        where conversation.instance_id = $1 and conversation.merged_into_id is null
-          and (conversation.canonical_phone = nullif($3, '') or exists (
-            select 1 from app_whatsapp_conversation_aliases alias
-            where alias.conversation_id = conversation.id and alias.instance_id = $1
-              and alias.remote_jid = $2
-          ))`,
-        [instance.id, remoteJid, phone, usableName ? name : "", profilePictureUrl],
+        `with contact_data as (
+           select * from jsonb_to_recordset($2::jsonb) as contact(
+             remote_jid text, phone text, contact_name text, profile_picture_url text
+           )
+         ), matched as (
+           select conversation.id,
+             max(nullif(contact.contact_name, '')) contact_name,
+             max(contact.profile_picture_url) filter (
+               where contact.profile_picture_url ~ '^https?://'
+             ) profile_picture_url
+           from app_whatsapp_conversations conversation
+           inner join contact_data contact on (
+             conversation.canonical_phone = nullif(contact.phone, '') or exists (
+               select 1 from app_whatsapp_conversation_aliases alias
+               where alias.conversation_id = conversation.id and alias.instance_id = $1
+                 and alias.remote_jid = contact.remote_jid
+             )
+           )
+           where conversation.instance_id = $1 and conversation.merged_into_id is null
+           group by conversation.id
+         )
+         update app_whatsapp_conversations conversation
+         set contact_name = coalesce(matched.contact_name, conversation.contact_name),
+             profile_picture_url = coalesce(
+               matched.profile_picture_url, conversation.profile_picture_url
+             ),
+             updated_at = now()
+         from matched where conversation.id = matched.id`,
+        [instance.id, JSON.stringify(Array.from(updates.values()))],
       );
     }
     await queryDb(
