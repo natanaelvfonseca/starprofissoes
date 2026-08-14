@@ -1,4 +1,4 @@
-function normalizedName(value: unknown) {
+export function normalizeWhatsappContactName(value: unknown) {
   return String(value ?? "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -18,7 +18,8 @@ export function isUsefulWhatsappContactName(
 ) {
   const value = String(name ?? "").trim();
   if (!value || value.includes("@")) return false;
-  if (normalizedName(value) === normalizedName(consultantName)) return false;
+  if (normalizeWhatsappContactName(value) === normalizeWhatsappContactName(consultantName))
+    return false;
   const nameDigits = digits(value);
   if (nameDigits.length >= 10 && nameDigits === digits(phone)) return false;
   return true;

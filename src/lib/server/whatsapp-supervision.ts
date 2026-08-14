@@ -10,6 +10,7 @@ import type {
 } from "@/lib/whatsapp-supervision-types";
 import {
   isUsefulWhatsappContactName,
+  normalizeWhatsappContactName,
   selectWhatsappContactName,
 } from "@/lib/whatsapp-contact-name";
 import {
@@ -302,6 +303,17 @@ async function refreshSupervisionContactMetadata(
   const instance = instanceResult.rows[0];
   if (!instance || instance.status !== "connected") return;
 
+  const selfNameResult = await queryDb<{ contact_name: string } & QueryResultRow>(
+    `select contact_name from app_whatsapp_messages
+     where instance_id = $1 and direction = 'outbound'
+       and nullif(trim(contact_name), '') is not null
+     group by contact_name having count(distinct remote_jid) > 1`,
+    [instance.id],
+  );
+  const selfNames = new Set(
+    selfNameResult.rows.map((row) => normalizeWhatsappContactName(row.contact_name)),
+  );
+
   await queryDb(
     `insert into app_whatsapp_sync_checkpoints (instance_id)
     values ($1) on conflict (instance_id) do nothing`,
@@ -318,18 +330,24 @@ async function refreshSupervisionContactMetadata(
   if (!claimed.rowCount) return;
 
   try {
-    const payload = await requestEvolution(
-      `/chat/findChats/${encodeURIComponent(instance.instance_name)}`,
-      {
+    const [chatsPayload, contactsPayload] = await Promise.all([
+      requestEvolution(`/chat/findChats/${encodeURIComponent(instance.instance_name)}`, {
         method: "POST",
         body: JSON.stringify({
           limit: 1_000,
           offset: 0,
           sort: { field: "updatedAt", order: "desc" },
         }),
-      },
-    );
-    const contacts = nestedEvolutionRecords(payload);
+      }),
+      requestEvolution(`/chat/findContacts/${encodeURIComponent(instance.instance_name)}`, {
+        method: "POST",
+        body: JSON.stringify({ offset: 2_500, page: 1 }),
+      }).catch(() => null),
+    ]);
+    const contacts = [
+      ...nestedEvolutionRecords(chatsPayload),
+      ...nestedEvolutionRecords(contactsPayload),
+    ];
     for (const rawContact of contacts) {
       const contact = recordOf(rawContact);
       const key = recordOf(contact.key);
@@ -357,8 +375,10 @@ async function refreshSupervisionContactMetadata(
         contact.picture,
         contact.avatar,
       );
-      if (!isUsefulWhatsappContactName(name, instance.consultant_name, phone) && !profilePictureUrl)
-        continue;
+      const nameIsSelf = selfNames.has(normalizeWhatsappContactName(name));
+      const usableName =
+        !nameIsSelf && isUsefulWhatsappContactName(name, instance.consultant_name, phone);
+      if (!usableName && !profilePictureUrl) continue;
       await queryDb(
         `update app_whatsapp_conversations conversation
         set contact_name = case when $4::text = '' then conversation.contact_name else $4 end,
@@ -371,13 +391,7 @@ async function refreshSupervisionContactMetadata(
             where alias.conversation_id = conversation.id and alias.instance_id = $1
               and alias.remote_jid = $2
           ))`,
-        [
-          instance.id,
-          remoteJid,
-          phone,
-          isUsefulWhatsappContactName(name, instance.consultant_name, phone) ? name : "",
-          profilePictureUrl,
-        ],
+        [instance.id, remoteJid, phone, usableName ? name : "", profilePictureUrl],
       );
     }
     await queryDb(
@@ -616,7 +630,7 @@ function conversationContactName(row: ConversationRow) {
   return selectWhatsappContactName({
     leadName: row.lead_name,
     inboundName: row.inbound_contact_name,
-    storedName: row.contact_name,
+    storedName: row.contact_name_is_self ? null : row.contact_name,
     consultantName: row.consultant_name,
     phone: row.canonical_phone,
     remoteJid: row.primary_remote_jid,
@@ -644,6 +658,14 @@ export async function listSupervisionConversations(
       consultant.name consultant_name,
       lead.full_name lead_name, coalesce(course.name, lead.course_name_snapshot) course_name,
       inbound_contact.contact_name inbound_contact_name,
+      exists (
+        select 1 from app_whatsapp_messages self_message
+        where self_message.instance_id = conversation.instance_id
+          and self_message.direction = 'outbound'
+          and lower(trim(self_message.contact_name)) = lower(trim(conversation.contact_name))
+        group by lower(trim(self_message.contact_name))
+        having count(distinct self_message.remote_jid) > 1
+      ) contact_name_is_self,
       analysis.id analysis_id, analysis.status analysis_status, analysis.rubric_type,
       analysis.score analysis_score, analysis.stage analysis_stage, analysis.intent analysis_intent,
       analysis.summary analysis_summary, analysis.objections, analysis.strengths, analysis.risks,
