@@ -1,6 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { QueryResultRow } from "pg";
 import { phoneFromWhatsappJid } from "@/lib/whatsapp-label-automation";
+import {
+  mergeWhatsappDeliveryStatus,
+  whatsappDeliveryStatusFromPayload,
+  type WhatsappDeliveryStatus,
+} from "@/lib/whatsapp-message-status";
 import { queryDb } from "@/lib/server/db";
 import {
   configureEvolutionWebhook,
@@ -109,6 +114,10 @@ export async function ensureEvolutionSchema() {
         add column if not exists media_mime_type text;
       alter table app_whatsapp_messages
         add column if not exists media_file_name text;
+      alter table app_whatsapp_messages
+        add column if not exists delivery_status text check (
+          delivery_status in ('pending', 'sent', 'delivered', 'read', 'played', 'failed')
+        );
       update app_whatsapp_messages message
       set user_id = instance.user_id
       from app_whatsapp_instances instance
@@ -508,7 +517,36 @@ function extractMessage(payload: unknown) {
           ? documentMessage.title
           : null,
     timestamp: Number(data.messageTimestamp ?? payloadRecord.date_time ?? Date.now() / 1000),
+    deliveryStatus: whatsappDeliveryStatusFromPayload(payload),
   };
+}
+
+function eventPayloads(payload: unknown) {
+  const root = asRecord(payload);
+  if (!Array.isArray(root.data)) return [payload];
+  return root.data.map((data) => ({ ...root, data }));
+}
+
+async function updateMessageDeliveryStatus(
+  instanceId: string,
+  messageId: string,
+  incoming: WhatsappDeliveryStatus | null,
+) {
+  if (!incoming || !messageId) return;
+  const current = await queryDb<
+    { delivery_status: WhatsappDeliveryStatus | null } & QueryResultRow
+  >(
+    `select delivery_status from app_whatsapp_messages
+     where instance_id = $1 and evolution_message_id = $2 limit 1`,
+    [instanceId, messageId],
+  );
+  const next = mergeWhatsappDeliveryStatus(current.rows[0]?.delivery_status, incoming);
+  if (!next || next === current.rows[0]?.delivery_status) return;
+  await queryDb(
+    `update app_whatsapp_messages set delivery_status = $3
+    where instance_id = $1 and evolution_message_id = $2`,
+    [instanceId, messageId, next],
+  );
 }
 
 export async function receiveEvolutionWebhook(payload: unknown, token: string | null) {
@@ -553,24 +591,25 @@ export async function receiveEvolutionWebhook(payload: unknown, token: string | 
   }
 
   if (event === "messages.upsert" || event === "message" || event === "send.message") {
-    const parsed = extractMessage(payload);
-    if (parsed.id && parsed.remoteJid && !parsed.remoteJid.endsWith("@g.us")) {
-      const phone =
-        phoneFromWhatsappJid(parsed.remoteJid) || phoneFromWhatsappJid(parsed.alternateJid);
-      const lidJid = [parsed.remoteJid, parsed.alternateJid].find((jid) =>
-        jid.toLowerCase().endsWith("@lid"),
-      );
-      const sentAt = new Date(
-        parsed.timestamp > 10_000_000_000 ? parsed.timestamp : parsed.timestamp * 1000,
-      );
-      await queryDb(
-        `
+    for (const messagePayload of eventPayloads(payload)) {
+      const parsed = extractMessage(messagePayload);
+      if (parsed.id && parsed.remoteJid && !parsed.remoteJid.endsWith("@g.us")) {
+        const phone =
+          phoneFromWhatsappJid(parsed.remoteJid) || phoneFromWhatsappJid(parsed.alternateJid);
+        const lidJid = [parsed.remoteJid, parsed.alternateJid].find((jid) =>
+          jid.toLowerCase().endsWith("@lid"),
+        );
+        const sentAt = new Date(
+          parsed.timestamp > 10_000_000_000 ? parsed.timestamp : parsed.timestamp * 1000,
+        );
+        await queryDb(
+          `
           insert into app_whatsapp_messages (
             unit_id, user_id, instance_id, evolution_message_id, remote_jid, phone,
             contact_name, direction, message_type, content, media_url, media_mime_type,
-            media_file_name, sent_at
+            media_file_name, delivery_status, sent_at
           )
-          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
           on conflict (instance_id, evolution_message_id) do update
           set contact_name = coalesce(excluded.contact_name, app_whatsapp_messages.contact_name),
               content = excluded.content,
@@ -579,72 +618,93 @@ export async function receiveEvolutionWebhook(payload: unknown, token: string | 
               media_mime_type = coalesce(excluded.media_mime_type, app_whatsapp_messages.media_mime_type),
               media_file_name = coalesce(excluded.media_file_name, app_whatsapp_messages.media_file_name)
         `,
-        [
-          instance.unit_id,
-          instance.user_id,
-          instance.id,
-          parsed.id,
-          parsed.remoteJid,
-          phone,
-          parsed.contactName,
-          parsed.fromMe ? "outbound" : "inbound",
-          parsed.type,
-          parsed.content,
-          parsed.mediaUrl,
-          parsed.mimeType,
-          parsed.fileName,
-          Number.isNaN(sentAt.getTime()) ? new Date() : sentAt,
-        ],
-      );
-      if (lidJid && phone) {
-        await queryDb(
-          `
+          [
+            instance.unit_id,
+            instance.user_id,
+            instance.id,
+            parsed.id,
+            parsed.remoteJid,
+            phone,
+            parsed.contactName,
+            parsed.fromMe ? "outbound" : "inbound",
+            parsed.type,
+            parsed.content,
+            parsed.mediaUrl,
+            parsed.mimeType,
+            parsed.fileName,
+            parsed.deliveryStatus,
+            Number.isNaN(sentAt.getTime()) ? new Date() : sentAt,
+          ],
+        );
+        await updateMessageDeliveryStatus(instance.id, parsed.id, parsed.deliveryStatus);
+        if (lidJid && phone) {
+          await queryDb(
+            `
             insert into app_whatsapp_jid_mappings (instance_id, lid_jid, phone)
             values ($1, $2, $3)
             on conflict (instance_id, lid_jid) do update
             set phone = excluded.phone, updated_at = now()
           `,
-          [instance.id, lidJid, phone],
+            [instance.id, lidJid, phone],
+          );
+        }
+        const conversationId = await upsertCanonicalConversationForMessage({
+          instanceId: instance.id,
+          unitId: instance.unit_id,
+          consultantId: instance.user_id,
+          remoteJid: parsed.remoteJid,
+          alternateJid: parsed.alternateJid,
+          phone,
+          contactName: parsed.contactName,
+          messageId: parsed.id,
+        });
+        if (parsed.fromMe) {
+          await confirmIntervention(
+            instance.id,
+            parsed.id,
+            conversationId ? { conversationId, content: parsed.content } : undefined,
+          );
+        }
+        await queryDb(
+          `update app_whatsapp_instances set last_event_at = now(), updated_at = now() where id = $1`,
+          [instance.id],
         );
       }
-      const conversationId = await upsertCanonicalConversationForMessage({
-        instanceId: instance.id,
-        unitId: instance.unit_id,
-        consultantId: instance.user_id,
-        remoteJid: parsed.remoteJid,
-        alternateJid: parsed.alternateJid,
-        phone,
-        contactName: parsed.contactName,
-        messageId: parsed.id,
-      });
-      if (parsed.fromMe) {
-        await confirmIntervention(
-          instance.id,
-          parsed.id,
-          conversationId ? { conversationId, content: parsed.content } : undefined,
-        );
-      }
-      await queryDb(
-        `update app_whatsapp_instances set last_event_at = now(), updated_at = now() where id = $1`,
-        [instance.id],
+    }
+  }
+
+  if (["messages.update", "send.message.update"].includes(event)) {
+    for (const messagePayload of eventPayloads(payload)) {
+      const parsed = extractMessage(messagePayload);
+      const messageRecord = asRecord(asRecord(messagePayload).data);
+      const messageId =
+        parsed.id || String(firstValue(messageRecord.id, messageRecord.messageId, ""));
+      await updateMessageDeliveryStatus(
+        instance.id,
+        messageId,
+        whatsappDeliveryStatusFromPayload(messagePayload),
       );
     }
   }
 
-  if (["messages.edited", "messages.update", "messages.delete"].includes(event)) {
-    const parsed = extractMessage(payload);
-    const messageId = parsed.id || String(firstValue(dataRecord.id, dataRecord.messageId, ""));
-    if (messageId) {
-      await queryDb(
-        event === "messages.delete"
-          ? `update app_whatsapp_messages set deleted_at = now(), content = '', media_url = null
-             where instance_id = $1 and evolution_message_id = $2`
-          : `update app_whatsapp_messages set edited_at = now(), content = $3
-             where instance_id = $1 and evolution_message_id = $2`,
-        event === "messages.delete"
-          ? [instance.id, messageId]
-          : [instance.id, messageId, parsed.content],
-      );
+  if (["messages.edited", "messages.delete"].includes(event)) {
+    for (const messagePayload of eventPayloads(payload)) {
+      const parsed = extractMessage(messagePayload);
+      const messageRecord = asRecord(asRecord(messagePayload).data);
+      const messageId =
+        parsed.id || String(firstValue(messageRecord.id, messageRecord.messageId, ""));
+      if (messageId) {
+        await queryDb(
+          event === "messages.delete"
+            ? `update app_whatsapp_messages set deleted_at = now(), content = '', media_url = null
+               where instance_id = $1 and evolution_message_id = $2`
+            : `update app_whatsapp_messages set edited_at = now(), content = $3
+               where instance_id = $1 and evolution_message_id = $2`,
+          event === "messages.delete"
+            ? [instance.id, messageId]
+            : [instance.id, messageId, parsed.content],
+        );
+      }
     }
   }
 
@@ -691,10 +751,15 @@ export async function syncStarEvolutionHistory() {
       for (let offset = 0; offset < 2_000; offset += 100) {
         const payload = await requestEvolution(
           `/chat/findMessages/${encodeURIComponent(instance.instance_name)}`,
-          { method: "POST", body: JSON.stringify({
-            where: { messageTimestamp: { gte: since } }, limit: 100, offset,
-            sort: { messageTimestamp: "asc" },
-          }) },
+          {
+            method: "POST",
+            body: JSON.stringify({
+              where: { messageTimestamp: { gte: since } },
+              limit: 100,
+              offset,
+              sort: { messageTimestamp: "asc" },
+            }),
+          },
         );
         const items = historyItems(payload);
         for (const item of items) {
@@ -706,19 +771,28 @@ export async function syncStarEvolutionHistory() {
         }
         if (items.length < 100) break;
       }
-      await queryDb(`insert into app_whatsapp_sync_checkpoints
+      await queryDb(
+        `insert into app_whatsapp_sync_checkpoints
           (instance_id, history_since, last_synced_at, last_error, updated_at)
         values ($1, to_timestamp($2), now(), null, now())
         on conflict (instance_id) do update
-        set last_synced_at = now(), last_error = null, updated_at = now()`, [instance.id, since]);
+        set last_synced_at = now(), last_error = null, updated_at = now()`,
+        [instance.id, since],
+      );
     } catch (error) {
       failed += 1;
-      await queryDb(`insert into app_whatsapp_sync_checkpoints
+      await queryDb(
+        `insert into app_whatsapp_sync_checkpoints
           (instance_id, history_since, last_error, updated_at)
         values ($1, to_timestamp($2), $3, now())
         on conflict (instance_id) do update
-        set last_error = excluded.last_error, updated_at = now()`, [instance.id, since,
-        error instanceof Error ? error.message.slice(0, 800) : "Falha na sincronização"]);
+        set last_error = excluded.last_error, updated_at = now()`,
+        [
+          instance.id,
+          since,
+          error instanceof Error ? error.message.slice(0, 800) : "Falha na sincronização",
+        ],
+      );
     }
   }
   return { configured: true, instances: instances.rows.length, imported, failed };

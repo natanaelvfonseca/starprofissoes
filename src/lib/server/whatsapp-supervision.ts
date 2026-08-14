@@ -9,15 +9,18 @@ import type {
   WhatsappSupervisionMessage,
 } from "@/lib/whatsapp-supervision-types";
 import {
+  isUsefulWhatsappContactName,
+  selectWhatsappContactName,
+} from "@/lib/whatsapp-contact-name";
+import {
   canonicalWhatsappIdentity,
   whatsappAliasType,
   whatsappDigits,
+  whatsappPhoneFromJid,
 } from "@/lib/whatsapp-conversation-identity";
+import type { WhatsappDeliveryStatus } from "@/lib/whatsapp-message-status";
 import { queryDb, withTransaction } from "@/lib/server/db";
-import {
-  EvolutionRequestError,
-  requestEvolution,
-} from "@/lib/server/evolution-client";
+import { EvolutionRequestError, requestEvolution } from "@/lib/server/evolution-client";
 
 export const WHATSAPP_SUPERVISION_FEATURE = "whatsapp_supervision";
 const LEADERSHIP_ROLES: Array<UserRole> = ["DEV", "CEO", "DIRETOR", "GERENTE"];
@@ -65,6 +68,7 @@ export function ensureWhatsappSupervisionSchema() {
       unique (instance_id, canonical_key)
     );
     alter table app_whatsapp_conversations add column if not exists merged_into_id uuid references app_whatsapp_conversations(id) on delete set null;
+    alter table app_whatsapp_conversations add column if not exists profile_picture_url text;
     create index if not exists app_whatsapp_conversations_unit_consultant_idx
       on app_whatsapp_conversations (unit_id, consultant_id, last_message_at desc);
     create index if not exists app_whatsapp_conversations_phone_idx
@@ -87,6 +91,9 @@ export function ensureWhatsappSupervisionSchema() {
     alter table app_whatsapp_messages add column if not exists conversation_id uuid references app_whatsapp_conversations(id) on delete set null;
     alter table app_whatsapp_messages add column if not exists edited_at timestamptz;
     alter table app_whatsapp_messages add column if not exists deleted_at timestamptz;
+    alter table app_whatsapp_messages add column if not exists delivery_status text check (
+      delivery_status in ('pending', 'sent', 'delivered', 'read', 'played', 'failed')
+    );
     create index if not exists app_whatsapp_messages_conversation_sent_idx
       on app_whatsapp_messages (conversation_id, sent_at desc);
 
@@ -165,6 +172,7 @@ export function ensureWhatsappSupervisionSchema() {
       history_since timestamptz, last_synced_at timestamptz, last_error text,
       updated_at timestamptz not null default now()
     );
+    alter table app_whatsapp_sync_checkpoints add column if not exists contacts_synced_at timestamptz;
   `)
     .then(() => undefined)
     .catch((error) => {
@@ -231,18 +239,162 @@ export async function setWhatsappFeatureRole(role: UserRole, enabled: boolean, a
       [WHATSAPP_SUPERVISION_FEATURE, role, enabled, actorId],
     );
     if (!enabled && role === "CEO") {
-      await client.query(`update app_feature_role_access set enabled = false, updated_by = $2, updated_at = now()
-        where feature_key = $1 and role in ('DIRETOR','GERENTE')`, [WHATSAPP_SUPERVISION_FEATURE, actorId]);
+      await client.query(
+        `update app_feature_role_access set enabled = false, updated_by = $2, updated_at = now()
+        where feature_key = $1 and role in ('DIRETOR','GERENTE')`,
+        [WHATSAPP_SUPERVISION_FEATURE, actorId],
+      );
     }
     if (!enabled && role === "DIRETOR") {
-      await client.query(`update app_feature_role_access set enabled = false, updated_by = $2, updated_at = now()
-        where feature_key = $1 and role = 'GERENTE'`, [WHATSAPP_SUPERVISION_FEATURE, actorId]);
+      await client.query(
+        `update app_feature_role_access set enabled = false, updated_by = $2, updated_at = now()
+        where feature_key = $1 and role = 'GERENTE'`,
+        [WHATSAPP_SUPERVISION_FEATURE, actorId],
+      );
     }
   });
 }
 
 function allowedUnitIds(session: AuthSession) {
   return session.units.map((unit) => unit.id);
+}
+
+function recordOf(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function firstText(...values: Array<unknown>) {
+  const value = values.find((item) => typeof item === "string" && item.trim());
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function nestedEvolutionRecords(value: unknown, depth = 0): Array<unknown> {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== "object" || depth > 4) return [];
+  const record = recordOf(value);
+  for (const key of ["records", "chats", "contacts", "data", "items", "result"]) {
+    const records = nestedEvolutionRecords(record[key], depth + 1);
+    if (records.length) return records;
+  }
+  return [];
+}
+
+async function refreshSupervisionContactMetadata(
+  session: AuthSession,
+  consultantId: string,
+  requestedUnitId?: string | null,
+) {
+  const units = allowedUnitIds(session);
+  if (requestedUnitId && !units.includes(requestedUnitId)) return;
+  const instanceResult = await queryDb<
+    { id: string; instance_name: string; status: string; consultant_name: string } & QueryResultRow
+  >(
+    `select instance.id, instance.instance_name, instance.status, consultant.name consultant_name
+     from app_whatsapp_instances instance
+     inner join app_users consultant on consultant.id = instance.user_id
+     where instance.user_id = $1 and instance.unit_id = any($2::uuid[])
+       and left(instance.instance_name, 5) = 'star_'
+     limit 1`,
+    [consultantId, requestedUnitId ? [requestedUnitId] : units],
+  );
+  const instance = instanceResult.rows[0];
+  if (!instance || instance.status !== "connected") return;
+
+  await queryDb(
+    `insert into app_whatsapp_sync_checkpoints (instance_id)
+    values ($1) on conflict (instance_id) do nothing`,
+    [instance.id],
+  );
+  const claimed = await queryDb(
+    `update app_whatsapp_sync_checkpoints
+    set contacts_synced_at = now(), updated_at = now()
+    where instance_id = $1
+      and (contacts_synced_at is null or contacts_synced_at < now() - interval '5 minutes')
+    returning instance_id`,
+    [instance.id],
+  );
+  if (!claimed.rowCount) return;
+
+  try {
+    const payload = await requestEvolution(
+      `/chat/findChats/${encodeURIComponent(instance.instance_name)}`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          limit: 1_000,
+          offset: 0,
+          sort: { field: "updatedAt", order: "desc" },
+        }),
+      },
+    );
+    const contacts = nestedEvolutionRecords(payload);
+    for (const rawContact of contacts) {
+      const contact = recordOf(rawContact);
+      const key = recordOf(contact.key);
+      const lastMessage = recordOf(contact.lastMessage);
+      const lastMessageKey = recordOf(lastMessage.key);
+      const remoteJid = firstText(
+        contact.remoteJid,
+        contact.jid,
+        contact.id,
+        key.remoteJid,
+        lastMessageKey.remoteJid,
+      );
+      if (!remoteJid.includes("@") || remoteJid.endsWith("@g.us")) continue;
+      const phone = whatsappPhoneFromJid(remoteJid);
+      const name = firstText(
+        contact.name,
+        contact.contactName,
+        contact.verifiedName,
+        contact.pushName,
+        lastMessage.pushName,
+      );
+      const profilePictureUrl = firstText(
+        contact.profilePictureUrl,
+        contact.profilePicUrl,
+        contact.picture,
+        contact.avatar,
+      );
+      if (!isUsefulWhatsappContactName(name, instance.consultant_name, phone) && !profilePictureUrl)
+        continue;
+      await queryDb(
+        `update app_whatsapp_conversations conversation
+        set contact_name = case when $4::text = '' then conversation.contact_name else $4 end,
+            profile_picture_url = case when $5::text ~ '^https?://' then $5
+              else conversation.profile_picture_url end,
+            updated_at = now()
+        where conversation.instance_id = $1 and conversation.merged_into_id is null
+          and (conversation.canonical_phone = nullif($3, '') or exists (
+            select 1 from app_whatsapp_conversation_aliases alias
+            where alias.conversation_id = conversation.id and alias.instance_id = $1
+              and alias.remote_jid = $2
+          ))`,
+        [
+          instance.id,
+          remoteJid,
+          phone,
+          isUsefulWhatsappContactName(name, instance.consultant_name, phone) ? name : "",
+          profilePictureUrl,
+        ],
+      );
+    }
+    await queryDb(
+      `update app_whatsapp_sync_checkpoints set last_error = null, updated_at = now()
+      where instance_id = $1`,
+      [instance.id],
+    );
+  } catch (error) {
+    await queryDb(
+      `update app_whatsapp_sync_checkpoints set last_error = $2, updated_at = now()
+      where instance_id = $1`,
+      [
+        instance.id,
+        error instanceof Error ? error.message.slice(0, 800) : "Falha ao atualizar contatos",
+      ],
+    );
+  }
 }
 
 export async function upsertCanonicalConversationForMessage(input: {
@@ -397,12 +549,20 @@ export async function listSupervisionConsultants(session: AuthSession, unitId?: 
   const selected = requested ? [requested] : units;
   const result = await queryDb<
     {
-      id: string; name: string; avatar_url: string | null; unit_id: string; unit_name: string;
-      status: WhatsappSupervisionConsultant["status"]; phone_number: string | null;
-      conversation_count: string; last_message_at: string | null;
+      id: string;
+      name: string;
+      avatar_url: string | null;
+      unit_id: string;
+      unit_name: string;
+      status: WhatsappSupervisionConsultant["status"];
+      phone_number: string | null;
+      conversation_count: string;
+      last_message_at: string | null;
+      last_event_at: string | null;
     } & QueryResultRow
-  >(`select u.id, u.name, u.avatar_url, instance.unit_id, unit.name unit_name,
-       instance.status, instance.phone_number,
+  >(
+    `select u.id, u.name, u.avatar_url, instance.unit_id, unit.name unit_name,
+       instance.status, instance.phone_number, instance.last_event_at::text,
        count(conversation.id)::text conversation_count,
        max(conversation.last_message_at)::text last_message_at
      from app_whatsapp_instances instance
@@ -411,12 +571,22 @@ export async function listSupervisionConsultants(session: AuthSession, unitId?: 
      left join app_whatsapp_conversations conversation on conversation.instance_id = instance.id
      where instance.unit_id = any($1::uuid[]) and left(instance.instance_name, 5) = 'star_'
        and u.role = 'CONSULTOR' and u.status = 'active'
-     group by u.id, u.name, u.avatar_url, instance.unit_id, unit.name, instance.status, instance.phone_number
-     order by unit.name, u.name`, [selected]);
+     group by u.id, u.name, u.avatar_url, instance.unit_id, unit.name, instance.status,
+       instance.phone_number, instance.last_event_at
+     order by unit.name, u.name`,
+    [selected],
+  );
   return result.rows.map<WhatsappSupervisionConsultant>((row) => ({
-    id: row.id, name: row.name, avatarUrl: row.avatar_url, unitId: row.unit_id,
-    unitName: row.unit_name, status: row.status, phoneNumber: row.phone_number,
-    conversationCount: Number(row.conversation_count), lastMessageAt: row.last_message_at,
+    id: row.id,
+    name: row.name,
+    avatarUrl: row.avatar_url,
+    unitId: row.unit_id,
+    unitName: row.unit_name,
+    status: row.status,
+    phoneNumber: row.phone_number,
+    conversationCount: Number(row.conversation_count),
+    lastMessageAt: row.last_message_at,
+    lastEventAt: row.last_event_at,
   }));
 }
 
@@ -425,24 +595,55 @@ type ConversationRow = QueryResultRow & Record<string, unknown>;
 function mapAnalysis(row: ConversationRow): WhatsappConversationAnalysis | null {
   if (!row.analysis_id) return null;
   return {
-    id: row.analysis_id, status: row.analysis_status, rubricType: row.rubric_type,
-    score: row.analysis_score === null ? null : Number(row.analysis_score), stage: row.analysis_stage,
-    intent: row.analysis_intent, summary: row.analysis_summary, objections: jsonArray(row.objections),
-    strengths: jsonArray(row.strengths), risks: jsonArray(row.risks), nextSteps: jsonArray(row.next_steps),
-    evidence: jsonArray(row.evidence), model: row.analysis_model, createdAt: row.analysis_created_at,
+    id: row.analysis_id,
+    status: row.analysis_status,
+    rubricType: row.rubric_type,
+    score: row.analysis_score === null ? null : Number(row.analysis_score),
+    stage: row.analysis_stage,
+    intent: row.analysis_intent,
+    summary: row.analysis_summary,
+    objections: jsonArray(row.objections),
+    strengths: jsonArray(row.strengths),
+    risks: jsonArray(row.risks),
+    nextSteps: jsonArray(row.next_steps),
+    evidence: jsonArray(row.evidence),
+    model: row.analysis_model,
+    createdAt: row.analysis_created_at,
   };
 }
 
-export async function listSupervisionConversations(session: AuthSession, params: {
-  consultantId: string; unitId?: string | null; search?: string | null; limit?: number; before?: string | null;
-}) {
+function conversationContactName(row: ConversationRow) {
+  return selectWhatsappContactName({
+    leadName: row.lead_name,
+    inboundName: row.inbound_contact_name,
+    storedName: row.contact_name,
+    consultantName: row.consultant_name,
+    phone: row.canonical_phone,
+    remoteJid: row.primary_remote_jid,
+  });
+}
+
+export async function listSupervisionConversations(
+  session: AuthSession,
+  params: {
+    consultantId: string;
+    unitId?: string | null;
+    search?: string | null;
+    limit?: number;
+    before?: string | null;
+  },
+) {
   if (!(await canUseWhatsappSupervision(session))) return null;
   const units = allowedUnitIds(session);
   if (params.unitId && !units.includes(params.unitId)) return null;
+  await refreshSupervisionContactMetadata(session, params.consultantId, params.unitId);
   const limit = Math.min(Math.max(Number(params.limit) || 30, 1), 100);
-  const result = await queryDb<ConversationRow>(`
+  const result = await queryDb<ConversationRow>(
+    `
     select conversation.*,
+      consultant.name consultant_name,
       lead.full_name lead_name, coalesce(course.name, lead.course_name_snapshot) course_name,
+      inbound_contact.contact_name inbound_contact_name,
       analysis.id analysis_id, analysis.status analysis_status, analysis.rubric_type,
       analysis.score analysis_score, analysis.stage analysis_stage, analysis.intent analysis_intent,
       analysis.summary analysis_summary, analysis.objections, analysis.strengths, analysis.risks,
@@ -450,39 +651,69 @@ export async function listSupervisionConversations(session: AuthSession, params:
       analysis.created_at::text analysis_created_at
     from app_whatsapp_conversations conversation
     inner join app_whatsapp_instances instance on instance.id = conversation.instance_id
+    inner join app_users consultant on consultant.id = conversation.consultant_id
     left join app_leads lead on lead.id = conversation.lead_id
     left join app_courses course on course.id = lead.course_id
     left join lateral (
       select * from app_whatsapp_conversation_analyses item
       where item.conversation_id = conversation.id order by item.created_at desc limit 1
     ) analysis on true
+    left join lateral (
+      select nullif(trim(message.contact_name), '') contact_name
+      from app_whatsapp_messages message
+      where message.conversation_id = conversation.id and message.direction = 'inbound'
+        and nullif(trim(message.contact_name), '') is not null
+      order by message.sent_at desc limit 1
+    ) inbound_contact on true
     where conversation.consultant_id = $1
       and conversation.merged_into_id is null
       and conversation.unit_id = any($2::uuid[])
       and left(instance.instance_name, 5) = 'star_'
       and ($3::text is null or conversation.last_message_at < $3::timestamptz)
-      and ($4::text = '' or concat_ws(' ', conversation.contact_name, conversation.canonical_phone,
-        conversation.primary_remote_jid) ilike '%' || $4 || '%')
+      and ($4::text = '' or concat_ws(' ', lead.full_name, inbound_contact.contact_name,
+        conversation.contact_name, conversation.canonical_phone, conversation.primary_remote_jid)
+        ilike '%' || $4 || '%')
     order by conversation.last_message_at desc nulls last limit $5`,
-    [params.consultantId, params.unitId ? [params.unitId] : units, params.before || null, params.search?.trim() || "", limit],
+    [
+      params.consultantId,
+      params.unitId ? [params.unitId] : units,
+      params.before || null,
+      params.search?.trim() || "",
+      limit,
+    ],
   );
   return result.rows.map<WhatsappSupervisionConversation>((row) => ({
-    id: row.id, consultantId: row.consultant_id, unitId: row.unit_id,
-    phone: row.canonical_phone, remoteJid: row.primary_remote_jid,
-    contactName: row.contact_name || row.canonical_phone || row.primary_remote_jid,
-    lastMessage: row.last_message_preview || "[Mensagem]", lastMessageAt: row.last_message_at,
-    messageType: normalizeType(row.last_message_type) as WhatsappSupervisionConversation["messageType"],
-    messageCount: Number(row.message_count), inboundCount: Number(row.inbound_count),
+    id: row.id,
+    consultantId: row.consultant_id,
+    unitId: row.unit_id,
+    phone: row.canonical_phone,
+    remoteJid: row.primary_remote_jid,
+    contactName: conversationContactName(row),
+    profilePictureUrl: row.profile_picture_url || null,
+    lastMessage: row.last_message_preview || "[Mensagem]",
+    lastMessageAt: row.last_message_at,
+    messageType: normalizeType(
+      row.last_message_type,
+    ) as WhatsappSupervisionConversation["messageType"],
+    messageCount: Number(row.message_count),
+    inboundCount: Number(row.inbound_count),
     outboundCount: Number(row.outbound_count),
-    lead: row.lead_id ? { id: row.lead_id, name: row.lead_name, courseName: row.course_name } : null,
+    lead: row.lead_id
+      ? { id: row.lead_id, name: row.lead_name, courseName: row.course_name }
+      : null,
     latestAnalysis: mapAnalysis(row),
   }));
 }
 
-async function accessibleConversation(session: AuthSession, conversationId: string, leadership = false) {
+async function accessibleConversation(
+  session: AuthSession,
+  conversationId: string,
+  leadership = false,
+) {
   await ensureWhatsappSupervisionSchema();
   if (leadership && !(await canUseWhatsappSupervision(session))) return null;
-  const result = await queryDb<ConversationRow>(`
+  const result = await queryDb<ConversationRow>(
+    `
     select conversation.*, instance.instance_name, instance.status instance_status,
       consultant.name consultant_name
     from app_whatsapp_conversations conversation
@@ -497,11 +728,16 @@ async function accessibleConversation(session: AuthSession, conversationId: stri
   return result.rows[0] ?? null;
 }
 
-export async function listSupervisionMessages(session: AuthSession, conversationId: string, before?: string | null) {
+export async function listSupervisionMessages(
+  session: AuthSession,
+  conversationId: string,
+  before?: string | null,
+) {
   const leadership = session.user.role !== "CONSULTOR";
   const conversation = await accessibleConversation(session, conversationId, leadership);
   if (!conversation) return null;
-  const result = await queryDb<ConversationRow>(`
+  const result = await queryDb<ConversationRow>(
+    `
     select message.*, intervention.id intervention_id, intervention.status intervention_status,
       actor.name actor_name, actor.role actor_role
     from app_whatsapp_messages message
@@ -511,34 +747,49 @@ export async function listSupervisionMessages(session: AuthSession, conversation
     left join app_users actor on actor.id = intervention.actor_user_id
     where message.conversation_id = $1
       and ($2::text is null or message.sent_at < $2::timestamptz)
-    order by message.sent_at desc limit 60`, [conversationId, before || null]);
+    order by message.sent_at desc limit 60`,
+    [conversationId, before || null],
+  );
   return result.rows.reverse().map<WhatsappSupervisionMessage>((row) => ({
-    id: row.evolution_message_id || row.id, direction: row.direction,
+    id: row.evolution_message_id || row.id,
+    direction: row.direction,
     type: normalizeType(row.message_type) as WhatsappSupervisionMessage["type"],
-    content: row.deleted_at ? "Mensagem apagada" : row.content || "[Mensagem]", sentAt: row.sent_at,
-    mediaUrl: normalizeType(row.message_type) !== "text" && normalizeType(row.message_type) !== "unknown"
-      ? `/api/atendimentos/midia?${new URLSearchParams({
-          consultantId: String(conversation.consultant_id),
-          unitId: String(conversation.unit_id),
-          remoteJid: String(row.remote_jid),
-          messageId: String(row.evolution_message_id),
-          direction: String(row.direction),
-          type: String(row.message_type),
-        })}`
+    content: row.deleted_at ? "Mensagem apagada" : row.content || "[Mensagem]",
+    sentAt: row.sent_at,
+    mediaUrl:
+      normalizeType(row.message_type) !== "text" && normalizeType(row.message_type) !== "unknown"
+        ? `/api/atendimentos/midia?${new URLSearchParams({
+            consultantId: String(conversation.consultant_id),
+            unitId: String(conversation.unit_id),
+            remoteJid: String(row.remote_jid),
+            messageId: String(row.evolution_message_id),
+            direction: String(row.direction),
+            type: String(row.message_type),
+          })}`
+        : null,
+    mimeType: row.media_mime_type,
+    fileName: row.media_file_name,
+    editedAt: row.edited_at,
+    deletedAt: row.deleted_at,
+    deliveryStatus: (row.delivery_status as WhatsappDeliveryStatus | null) || null,
+    intervention: row.intervention_id
+      ? {
+          id: row.intervention_id,
+          actorName: row.actor_name,
+          actorRole: row.actor_role,
+          status: row.intervention_status,
+        }
       : null,
-    mimeType: row.media_mime_type, fileName: row.media_file_name,
-    editedAt: row.edited_at, deletedAt: row.deleted_at,
-    intervention: row.intervention_id ? {
-      id: row.intervention_id, actorName: row.actor_name, actorRole: row.actor_role,
-      status: row.intervention_status,
-    } : null,
   }));
 }
 
 function extractProviderMessageId(value: unknown, depth = 0): string | null {
   if (!value || depth > 5) return null;
   if (Array.isArray(value)) {
-    for (const item of value) { const id = extractProviderMessageId(item, depth + 1); if (id) return id; }
+    for (const item of value) {
+      const id = extractProviderMessageId(item, depth + 1);
+      if (id) return id;
+    }
     return null;
   }
   if (typeof value !== "object") return null;
@@ -547,33 +798,50 @@ function extractProviderMessageId(value: unknown, depth = 0): string | null {
   if (typeof key?.id === "string" && key.id) return key.id;
   if (typeof record.messageId === "string" && record.messageId) return record.messageId;
   for (const nested of Object.values(record)) {
-    const id = extractProviderMessageId(nested, depth + 1); if (id) return id;
+    const id = extractProviderMessageId(nested, depth + 1);
+    if (id) return id;
   }
   return null;
 }
 
-export async function sendLeadershipReply(session: AuthSession, input: {
-  conversationId: string; clientRequestId: string; text: string;
-}) {
+export async function sendLeadershipReply(
+  session: AuthSession,
+  input: {
+    conversationId: string;
+    clientRequestId: string;
+    text: string;
+  },
+) {
   const conversation = await accessibleConversation(session, input.conversationId, true);
   if (!conversation) return null;
   const text = input.text.trim().slice(0, MAX_REPLY_CHARS);
   const requestId = input.clientRequestId.trim().slice(0, 160);
   if (!text || !requestId) throw new Error("Informe a mensagem e o identificador do envio.");
-  if (conversation.instance_status !== "connected") throw new Error("O WhatsApp do consultor não está conectado.");
+  if (conversation.instance_status !== "connected")
+    throw new Error("O WhatsApp do consultor não está conectado.");
 
   const claimed = await withTransaction(async (client) => {
-    await client.query(`select pg_advisory_xact_lock(hashtext($1))`, [`${session.user.id}:${requestId}`]);
+    await client.query(`select pg_advisory_xact_lock(hashtext($1))`, [
+      `${session.user.id}:${requestId}`,
+    ]);
     const existing = await client.query<ConversationRow>(
       `select * from app_whatsapp_interventions where actor_user_id = $1 and client_request_id = $2 limit 1`,
       [session.user.id, requestId],
     );
     if (existing.rows[0]) return { intervention: existing.rows[0], shouldSend: false };
-    const inserted = await client.query<ConversationRow>(`
+    const inserted = await client.query<ConversationRow>(
+      `
       insert into app_whatsapp_interventions
         (unit_id, consultant_id, conversation_id, actor_user_id, client_request_id, content)
       values ($1, $2, $3, $4, $5, $6) returning *`,
-      [conversation.unit_id, conversation.consultant_id, conversation.id, session.user.id, requestId, text],
+      [
+        conversation.unit_id,
+        conversation.consultant_id,
+        conversation.id,
+        session.user.id,
+        requestId,
+        text,
+      ],
     );
     return { intervention: inserted.rows[0], shouldSend: true };
   });
@@ -587,37 +855,66 @@ export async function sendLeadershipReply(session: AuthSession, input: {
   try {
     const payload = await requestEvolution(
       `/message/sendText/${encodeURIComponent(conversation.instance_name)}`,
-      { method: "POST", body: JSON.stringify(legacyPayload
-        ? { number, textMessage: { text } }
-        : { number, text }) },
+      {
+        method: "POST",
+        body: JSON.stringify(legacyPayload ? { number, textMessage: { text } } : { number, text }),
+      },
     );
     const messageId = extractProviderMessageId(payload);
-    const updated = await queryDb<ConversationRow>(`
+    const updated = await queryDb<ConversationRow>(
+      `
       update app_whatsapp_interventions set status = 'sent', evolution_message_id = $2,
         sent_at = now(), error_message = null, updated_at = now() where id = $1 returning *`,
       [intervention.id, messageId],
     );
-    await queryDb(`insert into app_whatsapp_notifications (user_id, intervention_id, conversation_id)
+    await queryDb(
+      `insert into app_whatsapp_notifications (user_id, intervention_id, conversation_id)
       values ($1, $2, $3) on conflict (user_id, intervention_id) do nothing`,
-      [conversation.consultant_id, intervention.id, conversation.id]);
+      [conversation.consultant_id, intervention.id, conversation.id],
+    );
     if (messageId) {
-      await queryDb(`insert into app_whatsapp_messages (
+      await queryDb(
+        `insert into app_whatsapp_messages (
           unit_id, user_id, instance_id, conversation_id, evolution_message_id, remote_jid, phone,
-          contact_name, direction, message_type, content, sent_at
-        ) values ($1,$2,$3,$4,$5,$6,$7,$8,'outbound','text',$9,now())
-        on conflict (instance_id, evolution_message_id) do nothing`, [
-        conversation.unit_id, conversation.consultant_id, conversation.instance_id, conversation.id,
-        messageId, conversation.primary_remote_jid, conversation.canonical_phone || "",
-        conversation.contact_name, text,
-      ]);
+          contact_name, direction, message_type, content, delivery_status, sent_at
+        ) values ($1,$2,$3,$4,$5,$6,$7,$8,'outbound','text',$9,'sent',now())
+        on conflict (instance_id, evolution_message_id) do nothing`,
+        [
+          conversation.unit_id,
+          conversation.consultant_id,
+          conversation.instance_id,
+          conversation.id,
+          messageId,
+          conversation.primary_remote_jid,
+          conversation.canonical_phone || "",
+          conversation.contact_name,
+          text,
+        ],
+      );
+      await upsertCanonicalConversationForMessage({
+        instanceId: conversation.instance_id,
+        unitId: conversation.unit_id,
+        consultantId: conversation.consultant_id,
+        remoteJid: conversation.primary_remote_jid,
+        phone: conversation.canonical_phone,
+        contactName: conversation.contact_name,
+        messageId,
+      });
     }
     return updated.rows[0];
   } catch (error) {
-    const definitive = error instanceof EvolutionRequestError && error.status >= 400 && error.status < 500;
-    const updated = await queryDb<ConversationRow>(`
+    const definitive =
+      error instanceof EvolutionRequestError && error.status >= 400 && error.status < 500;
+    const updated = await queryDb<ConversationRow>(
+      `
       update app_whatsapp_interventions set status = $2, error_message = $3, updated_at = now()
-      where id = $1 returning *`, [intervention.id, definitive ? "failed" : "pending",
-      error instanceof Error ? error.message.slice(0, 500) : "Falha ao enviar"]);
+      where id = $1 returning *`,
+      [
+        intervention.id,
+        definitive ? "failed" : "pending",
+        error instanceof Error ? error.message.slice(0, 500) : "Falha ao enviar",
+      ],
+    );
     return updated.rows[0];
   }
 }
@@ -628,7 +925,9 @@ export async function confirmIntervention(
   match?: { conversationId: string; content: string },
 ) {
   await ensureWhatsappSupervisionSchema();
-  let result = await queryDb<{ id: string; consultant_id: string; conversation_id: string } & QueryResultRow>(
+  let result = await queryDb<
+    { id: string; consultant_id: string; conversation_id: string } & QueryResultRow
+  >(
     `update app_whatsapp_interventions intervention set status = 'confirmed',
       confirmed_at = now(), updated_at = now()
     from app_whatsapp_conversations conversation
@@ -638,7 +937,10 @@ export async function confirmIntervention(
     [instanceId, messageId],
   );
   if (!result.rows[0] && match) {
-    result = await queryDb<{ id: string; consultant_id: string; conversation_id: string } & QueryResultRow>(`
+    result = await queryDb<
+      { id: string; consultant_id: string; conversation_id: string } & QueryResultRow
+    >(
+      `
       with candidate as (
         select intervention.id from app_whatsapp_interventions intervention
         inner join app_whatsapp_conversations conversation on conversation.id = intervention.conversation_id
@@ -658,35 +960,53 @@ export async function confirmIntervention(
   }
   const intervention = result.rows[0];
   if (intervention) {
-    await queryDb(`insert into app_whatsapp_notifications (user_id, intervention_id, conversation_id)
+    await queryDb(
+      `insert into app_whatsapp_notifications (user_id, intervention_id, conversation_id)
       values ($1, $2, $3) on conflict (user_id, intervention_id) do nothing`,
-      [intervention.consultant_id, intervention.id, intervention.conversation_id]);
+      [intervention.consultant_id, intervention.id, intervention.conversation_id],
+    );
   }
 }
 
 export async function listWhatsappNotifications(session: AuthSession) {
   await ensureWhatsappSupervisionSchema();
-  const result = await queryDb<ConversationRow>(`
+  const result = await queryDb<ConversationRow>(
+    `
     select notification.id, notification.conversation_id, notification.read_at::text,
       notification.created_at::text, intervention.content, actor.name actor_name
     from app_whatsapp_notifications notification
     inner join app_whatsapp_interventions intervention on intervention.id = notification.intervention_id
     inner join app_users actor on actor.id = intervention.actor_user_id
-    where notification.user_id = $1 order by notification.created_at desc limit 50`, [session.user.id]);
+    where notification.user_id = $1 order by notification.created_at desc limit 50`,
+    [session.user.id],
+  );
   return result.rows.map<WhatsappInterventionNotification>((row) => ({
-    id: row.id, conversationId: row.conversation_id, actorName: row.actor_name,
-    content: row.content, readAt: row.read_at, createdAt: row.created_at,
+    id: row.id,
+    conversationId: row.conversation_id,
+    actorName: row.actor_name,
+    content: row.content,
+    readAt: row.read_at,
+    createdAt: row.created_at,
   }));
 }
 
 export async function markWhatsappNotificationRead(session: AuthSession, notificationId: string) {
   await ensureWhatsappSupervisionSchema();
-  await queryDb(`update app_whatsapp_notifications set read_at = coalesce(read_at, now())
-    where id = $1 and user_id = $2`, [notificationId, session.user.id]);
+  await queryDb(
+    `update app_whatsapp_notifications set read_at = coalesce(read_at, now())
+    where id = $1 and user_id = $2`,
+    [notificationId, session.user.id],
+  );
 }
 
-export function conversationFingerprint(conversationId: string, lastMessageAt: string, messageCount: number) {
-  return createHash("sha256").update(`${conversationId}:${lastMessageAt}:${messageCount}`).digest("hex");
+export function conversationFingerprint(
+  conversationId: string,
+  lastMessageAt: string,
+  messageCount: number,
+) {
+  return createHash("sha256")
+    .update(`${conversationId}:${lastMessageAt}:${messageCount}`)
+    .digest("hex");
 }
 
 export function normalizedLeadPhone(value: unknown) {

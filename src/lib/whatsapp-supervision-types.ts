@@ -3,6 +3,7 @@ import type {
   AttendanceMessageDirection,
   AttendanceMessageType,
 } from "@/lib/attendance-types";
+import type { WhatsappDeliveryStatus } from "@/lib/whatsapp-message-status";
 
 export type WhatsappSupervisionConsultant = {
   id: string;
@@ -12,6 +13,7 @@ export type WhatsappSupervisionConsultant = {
   unitName: string;
   status: AttendanceConnectionStatus;
   phoneNumber: string | null;
+  lastEventAt: string | null;
   conversationCount: number;
   lastMessageAt: string | null;
 };
@@ -40,6 +42,7 @@ export type WhatsappSupervisionConversation = {
   phone: string | null;
   remoteJid: string;
   contactName: string;
+  profilePictureUrl: string | null;
   lastMessage: string;
   lastMessageAt: string | null;
   messageType: AttendanceMessageType;
@@ -61,6 +64,7 @@ export type WhatsappSupervisionMessage = {
   fileName: string | null;
   editedAt: string | null;
   deletedAt: string | null;
+  deliveryStatus: WhatsappDeliveryStatus | null;
   intervention: {
     id: string;
     actorName: string;
