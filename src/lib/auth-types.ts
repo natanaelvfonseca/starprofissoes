@@ -153,7 +153,7 @@ export function canManageBrandPlen(role: UserRole) {
 }
 
 export function canManageMetaAds(role: UserRole) {
-  return isMasterRole(role);
+  return isMasterRole(role) || role === "MARKETING";
 }
 
 export function canConnectMetaAds(role: UserRole) {

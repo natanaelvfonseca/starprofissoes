@@ -3,13 +3,13 @@ import test from "node:test";
 import { canManageMetaAds } from "../src/lib/auth-types.ts";
 import { isMetaConnectionAlreadyUnavailable } from "../src/lib/server/meta-disconnect.ts";
 
-test("permite desconexão somente para DEV e CVO", () => {
+test("permite gerenciamento do Meta Ads para perfis master e Marketing", () => {
   assert.equal(canManageMetaAds("DEV"), true);
   assert.equal(canManageMetaAds("CVO"), true);
+  assert.equal(canManageMetaAds("MARKETING"), true);
   assert.equal(canManageMetaAds("CEO"), false);
   assert.equal(canManageMetaAds("DIRETOR"), false);
   assert.equal(canManageMetaAds("GERENTE"), false);
-  assert.equal(canManageMetaAds("MARKETING"), false);
   assert.equal(canManageMetaAds("CONSULTOR"), false);
 });
 
