@@ -16,7 +16,7 @@ import {
 } from "@/lib/training-types";
 import { getSessionFromRequest } from "@/lib/server/auth";
 import { getUnitFromBody, getUnitFromRequest } from "@/lib/server/commercial-schema";
-import { queryDb } from "@/lib/server/db";
+import { ensureRuntimeSchema, queryDb } from "@/lib/server/db";
 import { buildYouTubeWatchUrl, extractYouTubeVideoId } from "@/lib/utils";
 
 type TrainingLessonRow = QueryResultRow & {
@@ -61,7 +61,9 @@ const MAX_MEDIA_URL_LENGTH = 4000;
 let trainingSchemaPromise: Promise<void> | null = null;
 
 function ensureTrainingSchema() {
-  trainingSchemaPromise ??= queryDb(`
+  trainingSchemaPromise ??= ensureRuntimeSchema(
+    "training",
+    `
     create table if not exists app_training_lessons (
       id uuid primary key default gen_random_uuid(),
       unit_id uuid references app_units(id) on delete cascade,
@@ -111,7 +113,8 @@ function ensureTrainingSchema() {
 
     create index if not exists app_training_progress_user_idx
       on app_training_progress (user_id, completed_at desc);
-  `)
+  `,
+  )
     .then(() => undefined)
     .catch((error) => {
       trainingSchemaPromise = null;
@@ -544,7 +547,10 @@ export const Route = createFileRoute("/api/training")({
           const durationLabel = readString(body.durationLabel, 40);
           const orderIndex = Math.max(0, Number.parseInt(readString(body.orderIndex, 12), 10) || 0);
           const trail = isTrainingTrail(body.trail) ? body.trail : "plataforma";
-          const rawVideoUrl = body.videoUrl === undefined ? undefined : readString(body.videoUrl, MAX_MEDIA_URL_LENGTH);
+          const rawVideoUrl =
+            body.videoUrl === undefined
+              ? undefined
+              : readString(body.videoUrl, MAX_MEDIA_URL_LENGTH);
           let videoUpdateSql = "";
           const videoParams: Array<unknown> = [];
 

@@ -8,7 +8,7 @@ import {
   getAttendanceConsultants,
   parseCampaignRoute,
 } from "@/lib/server/course-attendances";
-import { queryDb, withTransaction } from "@/lib/server/db";
+import { ensureRuntimeSchema, queryDb, withTransaction } from "@/lib/server/db";
 import {
   isMetaConnectionAlreadyUnavailable,
   type MetaGraphErrorPayload,
@@ -191,7 +191,9 @@ export async function ensureMetaLeadSchema() {
   await ensureCommercialSchema();
   await ensureCourseAttendanceSchema();
 
-  metaSchemaPromise ??= queryDb(`
+  metaSchemaPromise ??= ensureRuntimeSchema(
+    "meta-leads",
+    `
     create table if not exists app_meta_integrations (
       id uuid primary key default gen_random_uuid(),
       app_id text,
@@ -317,7 +319,13 @@ export async function ensureMetaLeadSchema() {
       add column if not exists routing_source text;
     alter table app_meta_lead_events
       add column if not exists routing_error text;
-  `).then(() => undefined);
+  `,
+  )
+    .then(() => undefined)
+    .catch((error) => {
+      metaSchemaPromise = null;
+      throw error;
+    });
 
   await metaSchemaPromise;
 }

@@ -6,7 +6,7 @@ import {
   whatsappDeliveryStatusFromPayload,
   type WhatsappDeliveryStatus,
 } from "@/lib/whatsapp-message-status";
-import { queryDb } from "@/lib/server/db";
+import { ensureRuntimeSchema, queryDb } from "@/lib/server/db";
 import {
   configureEvolutionWebhook,
   processEvolutionLabelEvent,
@@ -43,7 +43,9 @@ let schemaPromise: Promise<void> | null = null;
 
 export async function ensureEvolutionSchema() {
   if (!schemaPromise) {
-    schemaPromise = queryDb(`
+    schemaPromise = ensureRuntimeSchema(
+      "evolution-whatsapp",
+      `
       create table if not exists app_whatsapp_instances (
         id uuid primary key default gen_random_uuid(),
         unit_id uuid not null references app_units(id) on delete cascade,
@@ -149,7 +151,8 @@ export async function ensureEvolutionSchema() {
       );
       create index if not exists app_whatsapp_label_snapshots_instance_idx
         on app_whatsapp_label_snapshots (instance_id, updated_at desc);
-    `)
+    `,
+    )
       .then(() => undefined)
       .catch((error) => {
         schemaPromise = null;

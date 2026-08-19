@@ -1,9 +1,11 @@
 import * as React from "react";
+import { isUnauthenticatedError, loadAuthSession } from "@/lib/auth-request";
 import type { AuthSession } from "@/lib/auth-types";
 
 type AuthContextValue = {
   session: AuthSession | null;
   loading: boolean;
+  unavailable: boolean;
   refreshSession: () => Promise<AuthSession | null>;
   logout: () => Promise<void>;
   setActiveUnit: (unitId: string) => Promise<void>;
@@ -28,20 +30,22 @@ async function readJson<T>(response: Response): Promise<T> {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = React.useState<AuthSession | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [unavailable, setUnavailable] = React.useState(false);
 
   const refreshSession = React.useCallback(async () => {
     try {
-      const nextSession = await readJson<AuthSession>(
-        await fetch("/api/auth/session", {
-          credentials: "same-origin",
-          headers: { Accept: "application/json" },
-        }),
-      );
+      const nextSession = await loadAuthSession();
 
       setSession(nextSession);
+      setUnavailable(false);
       return nextSession;
-    } catch {
-      setSession(null);
+    } catch (error) {
+      if (isUnauthenticatedError(error)) {
+        setSession(null);
+        setUnavailable(false);
+      } else {
+        setUnavailable(true);
+      }
       return null;
     } finally {
       setLoading(false);
@@ -79,8 +83,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = React.useMemo(
-    () => ({ session, loading, refreshSession, logout, setActiveUnit }),
-    [loading, logout, refreshSession, session, setActiveUnit],
+    () => ({ session, loading, unavailable, refreshSession, logout, setActiveUnit }),
+    [loading, logout, refreshSession, session, setActiveUnit, unavailable],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

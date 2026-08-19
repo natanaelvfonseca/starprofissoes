@@ -4,7 +4,7 @@ import { CRM_TASK_STATUSES, type CrmLeadTask, type CrmTaskStatus } from "@/lib/c
 import { canTransferLeads } from "@/lib/auth-types";
 import { ensureCommercialSchema, isUuid } from "@/lib/server/commercial-schema";
 import { getSessionFromRequest } from "@/lib/server/auth";
-import { queryDb } from "@/lib/server/db";
+import { ensureRuntimeSchema, queryDb } from "@/lib/server/db";
 
 type TaskRow = QueryResultRow & {
   id: string;
@@ -39,7 +39,9 @@ const MAX_NOTES_LENGTH = 1200;
 let crmTaskSchemaPromise: Promise<void> | null = null;
 
 function ensureCrmTaskSchema() {
-  crmTaskSchemaPromise ??= queryDb(`
+  crmTaskSchemaPromise ??= ensureRuntimeSchema(
+    "crm-tasks",
+    `
     create table if not exists app_crm_tasks (
       id uuid primary key default gen_random_uuid(),
       unit_id uuid not null references app_units(id) on delete cascade,
@@ -70,7 +72,8 @@ function ensureCrmTaskSchema() {
 
     create index if not exists app_crm_tasks_reminder_idx
       on app_crm_tasks (created_by, status, due_at asc);
-  `)
+  `,
+  )
     .then(() => undefined)
     .catch((error) => {
       crmTaskSchemaPromise = null;

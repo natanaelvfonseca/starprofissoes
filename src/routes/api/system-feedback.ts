@@ -17,7 +17,7 @@ import {
 } from "@/lib/system-feedback-types";
 import { getSessionFromRequest } from "@/lib/server/auth";
 import { getUnitFromBody, isUuid } from "@/lib/server/commercial-schema";
-import { queryDb } from "@/lib/server/db";
+import { ensureRuntimeSchema, queryDb } from "@/lib/server/db";
 
 type FeedbackTicketRow = QueryResultRow & {
   id: string;
@@ -43,7 +43,9 @@ const MAX_TEAM_NOTE_LENGTH = 1600;
 let feedbackSchemaPromise: Promise<void> | null = null;
 
 function ensureFeedbackSchema() {
-  feedbackSchemaPromise ??= queryDb(`
+  feedbackSchemaPromise ??= ensureRuntimeSchema(
+    "system-feedback",
+    `
     create table if not exists app_system_feedback_tickets (
       id uuid primary key default gen_random_uuid(),
       unit_id uuid references app_units(id) on delete set null,
@@ -77,7 +79,8 @@ function ensureFeedbackSchema() {
 
     create index if not exists app_system_feedback_unit_idx
       on app_system_feedback_tickets (unit_id, created_at desc);
-  `)
+  `,
+  )
     .then(() => undefined)
     .catch((error) => {
       feedbackSchemaPromise = null;

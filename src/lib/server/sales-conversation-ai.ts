@@ -9,7 +9,7 @@ import type {
   SalesScriptRecord,
 } from "@/lib/sales-ai-types";
 import { ensureCommercialSchema, isUuid } from "@/lib/server/commercial-schema";
-import { queryDb } from "@/lib/server/db";
+import { ensureRuntimeSchema, queryDb } from "@/lib/server/db";
 import {
   getAttendanceUnitScope,
   listAttendanceConversations,
@@ -125,7 +125,9 @@ export function canManageSalesAi(session: AuthSession | null) {
 }
 
 export function ensureSalesAiSchema() {
-  salesAiSchemaPromise ??= queryDb(`
+  salesAiSchemaPromise ??= ensureRuntimeSchema(
+    "sales-ai",
+    `
     create table if not exists app_sales_scripts (
       id uuid primary key default gen_random_uuid(),
       unit_id uuid not null references app_units(id) on delete cascade,
@@ -175,7 +177,8 @@ export function ensureSalesAiSchema() {
 
     create index if not exists app_sales_conversation_analyses_course_idx
       on app_sales_conversation_analyses (unit_id, course_id, created_at desc);
-  `)
+  `,
+  )
     .then(() => undefined)
     .catch((error) => {
       salesAiSchemaPromise = null;

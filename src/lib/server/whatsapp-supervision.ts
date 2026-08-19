@@ -20,7 +20,7 @@ import {
   whatsappPhoneFromJid,
 } from "@/lib/whatsapp-conversation-identity";
 import type { WhatsappDeliveryStatus } from "@/lib/whatsapp-message-status";
-import { queryDb, withTransaction } from "@/lib/server/db";
+import { ensureRuntimeSchema, queryDb, withTransaction } from "@/lib/server/db";
 import { EvolutionRequestError, requestEvolution } from "@/lib/server/evolution-client";
 
 export const WHATSAPP_SUPERVISION_FEATURE = "whatsapp_supervision";
@@ -30,7 +30,9 @@ const MAX_REPLY_CHARS = 4_000;
 let schemaPromise: Promise<void> | null = null;
 
 export function ensureWhatsappSupervisionSchema() {
-  schemaPromise ??= queryDb(`
+  schemaPromise ??= ensureRuntimeSchema(
+    "whatsapp-supervision",
+    `
     create table if not exists app_feature_role_access (
       feature_key text not null,
       role text not null,
@@ -174,7 +176,8 @@ export function ensureWhatsappSupervisionSchema() {
       updated_at timestamptz not null default now()
     );
     alter table app_whatsapp_sync_checkpoints add column if not exists contacts_synced_at timestamptz;
-  `)
+  `,
+  )
     .then(() => undefined)
     .catch((error) => {
       schemaPromise = null;

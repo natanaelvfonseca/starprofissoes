@@ -1,6 +1,6 @@
 import type { QueryResultRow } from "pg";
 import type { AuthSession, UnitSummary } from "@/lib/auth-types";
-import { queryDb } from "@/lib/server/db";
+import { ensureRuntimeSchema, queryDb } from "@/lib/server/db";
 
 export const DEFAULT_ACQUISITION_CHANNELS = [
   { name: "Meta Ads", type: "Pago" },
@@ -40,7 +40,9 @@ export function isUniqueError(error: unknown) {
 }
 
 export async function ensureCommercialSchema() {
-  commercialSchemaPromise ??= queryDb(`
+  commercialSchemaPromise ??= ensureRuntimeSchema(
+    "commercial",
+    `
     create table if not exists app_courses (
       id uuid primary key default gen_random_uuid(),
       unit_id uuid not null references app_units(id) on delete cascade,
@@ -388,7 +390,13 @@ export async function ensureCommercialSchema() {
 
     create index if not exists app_lead_owner_transfers_unit_created_idx
       on app_lead_owner_transfers (unit_id, created_at desc);
-  `).then(() => undefined);
+  `,
+  )
+    .then(() => undefined)
+    .catch((error) => {
+      commercialSchemaPromise = null;
+      throw error;
+    });
 
   return commercialSchemaPromise;
 }

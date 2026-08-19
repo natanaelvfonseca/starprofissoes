@@ -1,6 +1,6 @@
 import type { PoolClient, QueryResultRow } from "pg";
 import { isUuid } from "@/lib/server/commercial-schema";
-import { queryDb, withTransaction } from "@/lib/server/db";
+import { ensureRuntimeSchema, queryDb, withTransaction } from "@/lib/server/db";
 
 export type CourseAttendanceStatus = "active" | "inactive";
 
@@ -74,7 +74,9 @@ export function formatCourseAttendanceName(input: {
 }
 
 export async function ensureCourseAttendanceSchema() {
-  schemaPromise ??= queryDb(`
+  schemaPromise ??= ensureRuntimeSchema(
+    "course-attendances",
+    `
     create table if not exists app_course_attendances (
       id uuid primary key default gen_random_uuid(),
       unit_id uuid not null references app_units(id) on delete cascade,
@@ -137,7 +139,8 @@ export async function ensureCourseAttendanceSchema() {
           and consultant.role = 'CONSULTOR'
           and consultant.status = 'active'
       );
-  `)
+  `,
+  )
     .then(() => undefined)
     .catch((error) => {
       schemaPromise = null;

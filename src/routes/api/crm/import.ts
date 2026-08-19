@@ -9,7 +9,7 @@ import {
 } from "@/lib/server/commercial-schema";
 import { getSessionFromRequest } from "@/lib/server/auth";
 import { ensureCourseAttendanceSchema } from "@/lib/server/course-attendances";
-import { queryDb, withTransaction } from "@/lib/server/db";
+import { ensureRuntimeSchema, queryDb, withTransaction } from "@/lib/server/db";
 
 type CourseRow = QueryResultRow & {
   id: string;
@@ -39,7 +39,9 @@ type ImportRow = {
 const MAX_IMPORT_ROWS = 2_000;
 
 async function ensureLeadImportSchema() {
-  await queryDb(`
+  await ensureRuntimeSchema(
+    "lead-import",
+    `
     create table if not exists app_lead_import_rows (
       id uuid primary key default gen_random_uuid(),
       lead_id uuid not null unique references app_leads(id) on delete cascade,
@@ -50,7 +52,8 @@ async function ensureLeadImportSchema() {
       created_at timestamptz not null default now()
     );
     create index if not exists app_lead_import_rows_campaign_idx on app_lead_import_rows (campaign_name);
-  `);
+  `,
+  );
 }
 
 function clean(value: unknown, max = 500) {

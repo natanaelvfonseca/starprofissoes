@@ -1,5 +1,5 @@
 import type { QueryResultRow } from "pg";
-import { queryDb } from "@/lib/server/db";
+import { ensureRuntimeSchema, queryDb } from "@/lib/server/db";
 
 type SettingRow = QueryResultRow & {
   value: string;
@@ -12,7 +12,9 @@ export type SystemSettings = {
 let systemSettingsSchemaPromise: Promise<void> | null = null;
 
 export function ensureSystemSettingsSchema() {
-  systemSettingsSchemaPromise ??= queryDb(`
+  systemSettingsSchemaPromise ??= ensureRuntimeSchema(
+    "system-settings",
+    `
     create table if not exists app_system_settings (
       key text primary key,
       value text not null,
@@ -23,7 +25,8 @@ export function ensureSystemSettingsSchema() {
     insert into app_system_settings (key, value)
     values ('system_locked', 'true')
     on conflict (key) do nothing;
-  `)
+  `,
+  )
     .then(() => undefined)
     .catch((error) => {
       systemSettingsSchemaPromise = null;

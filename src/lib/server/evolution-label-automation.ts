@@ -17,7 +17,7 @@ import {
   parseWhatsappLabelEdit,
 } from "@/lib/whatsapp-label-automation";
 import { ensureCommercialSchema } from "@/lib/server/commercial-schema";
-import { queryDb, withTransaction } from "@/lib/server/db";
+import { ensureRuntimeSchema, queryDb, withTransaction } from "@/lib/server/db";
 import { evolutionWebhookUrl, requestEvolution } from "@/lib/server/evolution-client";
 import { LeadPipelineMoveError, moveLeadToPipelineColumn } from "@/lib/server/lead-pipeline";
 
@@ -77,7 +77,9 @@ export async function ensureEvolutionLabelAutomationSchema() {
   if (!labelSchemaPromise) {
     labelSchemaPromise = ensureCommercialSchema()
       .then(() =>
-        queryDb(`
+        ensureRuntimeSchema(
+          "evolution-label-automation",
+          `
           alter table app_whatsapp_instances
             add column if not exists labels_synced_at timestamptz;
           alter table app_whatsapp_instances
@@ -148,7 +150,8 @@ export async function ensureEvolutionLabelAutomationSchema() {
           );
           create index if not exists app_whatsapp_label_snapshots_instance_idx
             on app_whatsapp_label_snapshots (instance_id, updated_at desc);
-        `),
+        `,
+        ),
       )
       .then(() => undefined)
       .catch((error) => {
@@ -619,11 +622,7 @@ function evolutionChatJids(lidJid: string, phone: string) {
   return Array.from(new Set([lidJid, ...phoneJids]));
 }
 
-async function fetchCurrentEvolutionLabelIds(
-  instanceName: string,
-  lidJid: string,
-  phone: string,
-) {
+async function fetchCurrentEvolutionLabelIds(instanceName: string, lidJid: string, phone: string) {
   const chats = await Promise.all(
     evolutionChatJids(lidJid, phone).map((remoteJid) =>
       requestEvolution(
