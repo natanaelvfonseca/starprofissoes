@@ -13,6 +13,11 @@ import {
   isMetaConnectionAlreadyUnavailable,
   type MetaGraphErrorPayload,
 } from "@/lib/server/meta-disconnect";
+import {
+  parseKognaMetaLeadEvent,
+  parseMetaLeadEvents,
+  type ParsedMetaLeadEvent,
+} from "@/lib/server/meta-webhook-payload";
 
 export type MetaDistributionRule =
   | "fixed"
@@ -926,25 +931,6 @@ export function mapMetaLead(lead: MetaLeadPayload, mapping: Array<MetaFieldMappi
   return mapped;
 }
 
-function parseMetaEntry(payload: Record<string, unknown>) {
-  const entry = Array.isArray(payload.entry) ? (payload.entry[0] as Record<string, unknown>) : null;
-  const change = Array.isArray(entry?.changes)
-    ? (entry?.changes[0] as Record<string, unknown>)
-    : null;
-  const value = (change?.value ?? change) as Record<string, unknown> | null;
-
-  return {
-    pageId: String(value?.page_id ?? entry?.id ?? "").trim(),
-    formId: String(value?.form_id ?? "").trim(),
-    leadgenId: String(value?.leadgen_id ?? value?.leadgen_id ?? "").trim(),
-    campaignId: stringOrNull(value?.campaign_id),
-    adsetId: stringOrNull(value?.adset_id),
-    adId: stringOrNull(value?.ad_id),
-    createdTime: stringOrNull(value?.created_time),
-    value: value ?? {},
-  };
-}
-
 function stringOrNull(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -1012,7 +998,7 @@ async function fetchMetaLeadDetailsWithRetry(
 
 function leadPayloadFromWebhookValue(
   value: Record<string, unknown>,
-  parsed: ReturnType<typeof parseMetaEntry>,
+  parsed: ParsedMetaLeadEvent,
 ): MetaLeadPayload | null {
   const fieldData = Array.isArray(value.field_data)
     ? (value.field_data as MetaLeadPayload["field_data"])
@@ -2490,30 +2476,11 @@ export async function reprocessMetaEvent(eventId: string) {
   return processEventById(eventId);
 }
 
-export async function receiveMetaWebhook(rawBody: string, signature: string | null) {
-  const integration = await ensureMetaIntegration();
-
-  if (!verifyMetaSignature(rawBody, signature, integration.app_secret)) {
-    await queryDb(
-      `
-        update app_meta_integrations
-        set total_errors = total_errors + 1,
-            last_communication_at = now(),
-            updated_at = now()
-        where id = $1
-      `,
-      [integration.id],
-    );
-    return { ok: false, status: 401, error: "Assinatura inválida." };
-  }
-
-  const payload = JSON.parse(rawBody || "{}") as Record<string, unknown>;
-  const parsed = parseMetaEntry(payload);
-
-  if (!parsed.pageId || !parsed.formId || !parsed.leadgenId) {
-    return { ok: false, status: 400, error: "Payload sem page_id, form_id ou leadgen_id." };
-  }
-
+async function processMetaLeadEvent(
+  payload: Record<string, unknown>,
+  parsed: ParsedMetaLeadEvent,
+  integration: MetaIntegrationRow,
+) {
   await queryDb(
     `
       update app_meta_integrations
@@ -2675,4 +2642,66 @@ export async function receiveMetaWebhook(rawBody: string, signature: string | nu
   });
 
   return { ok: true, status: 200, result: result.status, leadId: result.leadId };
+}
+
+async function processMetaLeadEvents(
+  payload: Record<string, unknown>,
+  parsedEvents: Array<ParsedMetaLeadEvent>,
+) {
+  if (!parsedEvents.length) {
+    return { ok: false, status: 400, error: "Payload sem page_id, form_id ou leadgen_id." };
+  }
+
+  const integration = await ensureMetaIntegration();
+  const results = [];
+
+  for (const parsed of parsedEvents) {
+    results.push(await processMetaLeadEvent(payload, parsed, integration));
+  }
+
+  if (results.length === 1) {
+    return results[0];
+  }
+
+  return {
+    ok: true,
+    status: 200,
+    result: "batch",
+    leadId: null,
+    results: results.map((item) => ({ result: item.result, leadId: item.leadId ?? null })),
+  };
+}
+
+export async function receiveMetaWebhook(rawBody: string, signature: string | null) {
+  const integration = await ensureMetaIntegration();
+
+  if (!verifyMetaSignature(rawBody, signature, integration.app_secret)) {
+    await queryDb(
+      `
+        update app_meta_integrations
+        set total_errors = total_errors + 1,
+            last_communication_at = now(),
+            updated_at = now()
+        where id = $1
+      `,
+      [integration.id],
+    );
+    return { ok: false, status: 401, error: "Assinatura inválida." };
+  }
+
+  let payload: Record<string, unknown>;
+
+  try {
+    payload = JSON.parse(rawBody || "{}") as Record<string, unknown>;
+  } catch {
+    return { ok: false, status: 400, error: "JSON inválido." };
+  }
+
+  return processMetaLeadEvents(payload, parseMetaLeadEvents(payload));
+}
+
+export async function receiveKognaMetaWebhook(payload: Record<string, unknown>) {
+  const event = parseKognaMetaLeadEvent(payload);
+
+  return processMetaLeadEvents(payload, event ? [event] : []);
 }

@@ -59,6 +59,7 @@ import { Route as ApiMetaConnectUrlRouteImport } from './routes/api/meta/connect
 import { Route as ApiMetaOauthCompleteRouteImport } from './routes/api/meta/oauth-complete'
 import { Route as ApiTrainingVideoRouteImport } from './routes/api/training.video'
 import { Route as ApiWebhooksEvolutionRouteImport } from './routes/api/webhooks/evolution'
+import { Route as ApiWebhooksKognaMetaLeadsRouteImport } from './routes/api/webhooks/kogna-meta-leads'
 import { Route as ApiWebhooksMetaLeadsRouteImport } from './routes/api/webhooks/meta-leads'
 import { Route as ApiWhatsappSupervisionAccessRouteImport } from './routes/api/whatsapp-supervision.access'
 import { Route as ApiWhatsappSupervisionNotificationsRouteImport } from './routes/api/whatsapp-supervision.notifications'
@@ -320,6 +321,12 @@ const ApiWebhooksEvolutionRoute = ApiWebhooksEvolutionRouteImport.update({
   path: '/api/webhooks/evolution',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiWebhooksKognaMetaLeadsRoute =
+  ApiWebhooksKognaMetaLeadsRouteImport.update({
+    id: '/api/webhooks/kogna-meta-leads',
+    path: '/api/webhooks/kogna-meta-leads',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiWebhooksMetaLeadsRoute = ApiWebhooksMetaLeadsRouteImport.update({
   id: '/api/webhooks/meta-leads',
   path: '/api/webhooks/meta-leads',
@@ -416,6 +423,7 @@ export interface FileRoutesByFullPath {
   '/api/meta/oauth-complete': typeof ApiMetaOauthCompleteRoute
   '/api/training/video': typeof ApiTrainingVideoRoute
   '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
+  '/api/webhooks/kogna-meta-leads': typeof ApiWebhooksKognaMetaLeadsRoute
   '/api/webhooks/meta-leads': typeof ApiWebhooksMetaLeadsRoute
   '/api/whatsapp-supervision/access': typeof ApiWhatsappSupervisionAccessRoute
   '/api/whatsapp-supervision/notifications': typeof ApiWhatsappSupervisionNotificationsRoute
@@ -476,6 +484,7 @@ export interface FileRoutesByTo {
   '/api/meta/oauth-complete': typeof ApiMetaOauthCompleteRoute
   '/api/training/video': typeof ApiTrainingVideoRoute
   '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
+  '/api/webhooks/kogna-meta-leads': typeof ApiWebhooksKognaMetaLeadsRoute
   '/api/webhooks/meta-leads': typeof ApiWebhooksMetaLeadsRoute
   '/api/whatsapp-supervision/access': typeof ApiWhatsappSupervisionAccessRoute
   '/api/whatsapp-supervision/notifications': typeof ApiWhatsappSupervisionNotificationsRoute
@@ -537,6 +546,7 @@ export interface FileRoutesById {
   '/api/meta/oauth-complete': typeof ApiMetaOauthCompleteRoute
   '/api/training/video': typeof ApiTrainingVideoRoute
   '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
+  '/api/webhooks/kogna-meta-leads': typeof ApiWebhooksKognaMetaLeadsRoute
   '/api/webhooks/meta-leads': typeof ApiWebhooksMetaLeadsRoute
   '/api/whatsapp-supervision/access': typeof ApiWhatsappSupervisionAccessRoute
   '/api/whatsapp-supervision/notifications': typeof ApiWhatsappSupervisionNotificationsRoute
@@ -599,6 +609,7 @@ export interface FileRouteTypes {
     | '/api/meta/oauth-complete'
     | '/api/training/video'
     | '/api/webhooks/evolution'
+    | '/api/webhooks/kogna-meta-leads'
     | '/api/webhooks/meta-leads'
     | '/api/whatsapp-supervision/access'
     | '/api/whatsapp-supervision/notifications'
@@ -659,6 +670,7 @@ export interface FileRouteTypes {
     | '/api/meta/oauth-complete'
     | '/api/training/video'
     | '/api/webhooks/evolution'
+    | '/api/webhooks/kogna-meta-leads'
     | '/api/webhooks/meta-leads'
     | '/api/whatsapp-supervision/access'
     | '/api/whatsapp-supervision/notifications'
@@ -719,6 +731,7 @@ export interface FileRouteTypes {
     | '/api/meta/oauth-complete'
     | '/api/training/video'
     | '/api/webhooks/evolution'
+    | '/api/webhooks/kogna-meta-leads'
     | '/api/webhooks/meta-leads'
     | '/api/whatsapp-supervision/access'
     | '/api/whatsapp-supervision/notifications'
@@ -775,6 +788,7 @@ export interface RootRouteChildren {
   ApiMetaConnectUrlRoute: typeof ApiMetaConnectUrlRoute
   ApiMetaOauthCompleteRoute: typeof ApiMetaOauthCompleteRoute
   ApiWebhooksEvolutionRoute: typeof ApiWebhooksEvolutionRoute
+  ApiWebhooksKognaMetaLeadsRoute: typeof ApiWebhooksKognaMetaLeadsRoute
   ApiWebhooksMetaLeadsRoute: typeof ApiWebhooksMetaLeadsRoute
 }
 
@@ -1130,6 +1144,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWebhooksEvolutionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/webhooks/kogna-meta-leads': {
+      id: '/api/webhooks/kogna-meta-leads'
+      path: '/api/webhooks/kogna-meta-leads'
+      fullPath: '/api/webhooks/kogna-meta-leads'
+      preLoaderRoute: typeof ApiWebhooksKognaMetaLeadsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/webhooks/meta-leads': {
       id: '/api/webhooks/meta-leads'
       path: '/api/webhooks/meta-leads'
@@ -1339,6 +1360,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMetaConnectUrlRoute: ApiMetaConnectUrlRoute,
   ApiMetaOauthCompleteRoute: ApiMetaOauthCompleteRoute,
   ApiWebhooksEvolutionRoute: ApiWebhooksEvolutionRoute,
+  ApiWebhooksKognaMetaLeadsRoute: ApiWebhooksKognaMetaLeadsRoute,
   ApiWebhooksMetaLeadsRoute: ApiWebhooksMetaLeadsRoute,
 }
 export const routeTree = rootRouteImport
