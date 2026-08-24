@@ -4,6 +4,7 @@ import type { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
 
 declare global {
   var __starDbPool: Pool | undefined;
+  var __starDbPoolPromise: Promise<Pool> | undefined;
 }
 
 const RUNTIME_SCHEMA_LOCK_KEY = "star_profissoes:runtime_schema";
@@ -28,22 +29,34 @@ const getDatabaseSchema = createServerOnlyFn(() => {
   return schema;
 });
 
-const getDbPool = createServerOnlyFn(async () => {
+const getDbPool = createServerOnlyFn(() => {
   if (globalThis.__starDbPool) {
-    return globalThis.__starDbPool;
+    return Promise.resolve(globalThis.__starDbPool);
   }
 
-  const { Pool } = await import("pg");
+  if (!globalThis.__starDbPoolPromise) {
+    globalThis.__starDbPoolPromise = import("pg")
+      .then(({ Pool }) => {
+        const pool = new Pool({
+          connectionString: getDatabaseUrl(),
+          options: `-c search_path=${getDatabaseSchema()},public`,
+          application_name: "star-easypanel",
+          connectionTimeoutMillis: 20_000,
+          idleTimeoutMillis: 30_000,
+          keepAlive: true,
+          max: 10,
+        });
 
-  globalThis.__starDbPool = new Pool({
-    connectionString: getDatabaseUrl(),
-    options: `-c search_path=${getDatabaseSchema()},public`,
-    connectionTimeoutMillis: 5_000,
-    idleTimeoutMillis: 30_000,
-    max: 5,
-  });
+        globalThis.__starDbPool = pool;
+        return pool;
+      })
+      .catch((error) => {
+        globalThis.__starDbPoolPromise = undefined;
+        throw error;
+      });
+  }
 
-  return globalThis.__starDbPool;
+  return globalThis.__starDbPoolPromise;
 });
 
 export async function queryDb<TRow extends QueryResultRow = QueryResultRow>(
