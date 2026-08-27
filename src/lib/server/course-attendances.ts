@@ -484,7 +484,11 @@ function findRegisteredCampaignMatches<
   });
 }
 
-export async function findCampaignAttendance(client: PoolClient, campaignName: string | null) {
+export async function findCampaignAttendance(
+  client: PoolClient,
+  campaignName: string | null,
+  unitId: string,
+) {
   if (!campaignName) {
     return { attendance: null, error: "Campanha sem nome." } as const;
   }
@@ -505,6 +509,7 @@ export async function findCampaignAttendance(client: PoolClient, campaignName: s
     inner join app_courses c on c.id = a.course_id
     where a.status = 'active'
       and c.status = 'active'
+      and a.unit_id = $1
   `;
 
   let matches: Array<CampaignAttendanceRow> = [];
@@ -513,11 +518,11 @@ export async function findCampaignAttendance(client: PoolClient, campaignName: s
     const result = await client.query<CampaignAttendanceRow>(
       `
         ${selectAttendanceSql}
-          and a.city_normalized = $1
-          and a.state = $2
+          and a.city_normalized = $2
+          and a.state = $3
         for update of a
       `,
-      [parsed.normalizedCity, parsed.state],
+      [unitId, parsed.normalizedCity, parsed.state],
     );
     matches = result.rows.filter(
       (row) => normalizeRoutingText(row.course_name) === parsed.normalizedCourse,
@@ -530,6 +535,7 @@ export async function findCampaignAttendance(client: PoolClient, campaignName: s
         ${selectAttendanceSql}
         for update of a
       `,
+      [unitId],
     );
     matches = findRegisteredCampaignMatches(campaignName, registeredResult.rows);
   }

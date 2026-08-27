@@ -18,6 +18,7 @@ import {
   parseMetaLeadEvents,
   type ParsedMetaLeadEvent,
 } from "@/lib/server/meta-webhook-payload";
+import { getMetaUnitConfigurationIssue, resolveMetaPageUnit } from "@/lib/server/meta-unit-routing";
 
 export type MetaDistributionRule =
   | "fixed"
@@ -65,6 +66,8 @@ type MetaIntegrationRow = QueryResultRow & {
 type MetaPageRow = QueryResultRow & {
   id: string;
   integration_id: string;
+  unit_id: string | null;
+  unit_name?: string | null;
   page_name: string;
   page_id: string;
   page_access_token_encrypted: string | null;
@@ -87,6 +90,7 @@ type MetaFormRow = QueryResultRow & {
   form_name: string;
   meta_form_id: string;
   unit_id: string | null;
+  page_unit_id?: string | null;
   unit_name: string | null;
   course_id: string | null;
   course_name: string | null;
@@ -236,8 +240,30 @@ export async function ensureMetaLeadSchema() {
       unique (page_id)
     );
 
+    alter table app_meta_pages
+      add column if not exists unit_id uuid references app_units(id) on delete restrict;
+
     create index if not exists app_meta_pages_integration_idx on app_meta_pages (integration_id);
     create index if not exists app_meta_pages_status_idx on app_meta_pages (status);
+    create index if not exists app_meta_pages_unit_idx
+      on app_meta_pages (unit_id, status, created_at desc);
+
+    create table if not exists app_meta_oauth_unit_contexts (
+      id uuid primary key default gen_random_uuid(),
+      nonce text not null unique,
+      user_id uuid not null references app_users(id) on delete cascade,
+      unit_id uuid not null references app_units(id) on delete restrict,
+      connect_timestamp bigint not null,
+      callback_count integer not null default 0 check (callback_count >= 0),
+      last_callback_at timestamptz,
+      completed_at timestamptz,
+      expires_at timestamptz not null,
+      created_at timestamptz not null default now()
+    );
+
+    create index if not exists app_meta_oauth_unit_contexts_pending_idx
+      on app_meta_oauth_unit_contexts (expires_at desc)
+      where completed_at is null;
 
     create table if not exists app_meta_forms (
       id uuid primary key default gen_random_uuid(),
@@ -335,6 +361,112 @@ export async function ensureMetaLeadSchema() {
   await metaSchemaPromise;
 }
 
+const META_OAUTH_CONTEXT_LOCK = "star_profissoes:meta_oauth_unit_context";
+
+export async function createMetaOAuthUnitContext(userId: string, unitId: string) {
+  await ensureMetaLeadSchema();
+
+  return withTransaction(async (client) => {
+    await client.query("select pg_advisory_xact_lock(hashtext($1))", [META_OAUTH_CONTEXT_LOCK]);
+
+    const activeResult = await client.query<{
+      user_id: string;
+      unit_id: string;
+    }>(
+      `
+        select user_id, unit_id
+        from app_meta_oauth_unit_contexts
+        where completed_at is null and expires_at > now()
+        order by created_at desc
+        limit 2
+        for update
+      `,
+    );
+    const active = activeResult.rows[0];
+
+    if (
+      activeResult.rows.some((context) => context.user_id !== userId || context.unit_id !== unitId)
+    ) {
+      throw new Error(
+        "Já existe uma conexão Meta em andamento para outra unidade. Conclua ou aguarde alguns minutos.",
+      );
+    }
+
+    if (active) {
+      await client.query(
+        `update app_meta_oauth_unit_contexts set completed_at = now() where completed_at is null`,
+      );
+    }
+
+    const nonce = randomBytes(24).toString("hex");
+    const connectTimestamp = Math.floor(Date.now() / 1000);
+    await client.query(
+      `
+        insert into app_meta_oauth_unit_contexts (
+          nonce, user_id, unit_id, connect_timestamp, expires_at
+        )
+        values ($1, $2, $3, $4, now() + interval '15 minutes')
+      `,
+      [nonce, userId, unitId, connectTimestamp],
+    );
+
+    return { nonce, timestamp: connectTimestamp };
+  });
+}
+
+export async function resolveMetaOAuthUnitContext() {
+  await ensureMetaLeadSchema();
+
+  return withTransaction(async (client) => {
+    await client.query("select pg_advisory_xact_lock(hashtext($1))", [META_OAUTH_CONTEXT_LOCK]);
+    const contextResult = await client.query<{ id: string; unit_id: string }>(
+      `
+        select id, unit_id
+        from app_meta_oauth_unit_contexts
+        where completed_at is null and expires_at > now()
+        order by created_at desc
+        limit 2
+        for update
+      `,
+    );
+
+    if (contextResult.rows.length !== 1) {
+      throw new Error(
+        contextResult.rows.length
+          ? "Há mais de um contexto de unidade para esta conexão Meta. Inicie a conexão novamente."
+          : "O contexto de unidade da conexão Meta expirou. Inicie a conexão novamente.",
+      );
+    }
+
+    const context = contextResult.rows[0];
+    await client.query(
+      `
+        update app_meta_oauth_unit_contexts
+        set callback_count = callback_count + 1, last_callback_at = now()
+        where id = $1
+      `,
+      [context.id],
+    );
+
+    return { unitId: context.unit_id };
+  });
+}
+
+export async function completeMetaOAuthUnitContext(userId: string) {
+  await ensureMetaLeadSchema();
+  const result = await queryDb(
+    `
+      update app_meta_oauth_unit_contexts
+      set completed_at = now()
+      where user_id = $1 and completed_at is null
+      returning id
+    `,
+    [userId],
+  );
+
+  return { completed: Boolean(result.rowCount) };
+}
+
 export async function ensureMetaIntegration(createdBy?: string) {
   await ensureMetaLeadSchema();
 
@@ -402,6 +534,22 @@ export async function ensureMetaIntegration(createdBy?: string) {
 
 export async function getMetaIntegration() {
   return ensureMetaIntegration();
+}
+
+export async function assertMetaPageInUnit(pageDbId: string, unitId: string) {
+  if (!isUuid(pageDbId) || !isUuid(unitId)) {
+    throw new Error("Página inválida.");
+  }
+
+  await ensureMetaLeadSchema();
+  const result = await queryDb(
+    `select 1 from app_meta_pages where id = $1 and unit_id = $2 limit 1`,
+    [pageDbId, unitId],
+  );
+
+  if (!result.rowCount) {
+    throw new Error("A Página Meta não pertence à unidade ativa.");
+  }
 }
 
 function encryptionKey() {
@@ -1038,7 +1186,11 @@ export function verifyMetaSignature(
   return expected.length === signature.length && expected === signature;
 }
 
-export async function listMetaState(searchValue = "") {
+export async function listMetaState(unitId: string, searchValue = "") {
+  if (!isUuid(unitId)) {
+    throw new Error("Unidade inválida.");
+  }
+
   const integration = await ensureMetaIntegration();
   const search = searchValue.trim().slice(0, 200);
 
@@ -1049,6 +1201,7 @@ export async function listMetaState(searchValue = "") {
     pendingEventsResult,
     optionsResult,
     alertsResult,
+    metricsResult,
   ] = await Promise.all([
     queryDb<MetaPageRow>(
       `
@@ -1057,17 +1210,22 @@ export async function listMetaState(searchValue = "") {
           p.created_at::text,
           p.updated_at::text,
           p.last_validated_at::text,
+          u.name as unit_name,
           count(f.id)::text as forms_count
         from app_meta_pages p
+        inner join app_units u on u.id = p.unit_id
         left join app_meta_forms f on f.page_id = p.id
-        group by p.id
+        where p.unit_id = $1
+        group by p.id, u.id
         order by p.created_at desc
       `,
+      [unitId],
     ),
     queryDb<MetaFormRow>(
       `
         select
           f.*,
+          p.unit_id,
           p.page_name,
           p.page_id as meta_page_id,
           u.name as unit_name,
@@ -1086,15 +1244,17 @@ export async function listMetaState(searchValue = "") {
           f.last_lead_received_at::text
         from app_meta_forms f
         inner join app_meta_pages p on p.id = f.page_id
-        left join app_units u on u.id = f.unit_id
+        inner join app_units u on u.id = p.unit_id
         left join app_courses c on c.id = f.course_id
         left join app_course_attendances a on a.id = f.attendance_id
         left join app_acquisition_channels ch on ch.id = f.acquisition_channel_id
         left join app_users owner on owner.id = f.default_responsible_id
         left join app_meta_form_consultants fc on fc.form_id = f.id
+        where p.unit_id = $1
         group by f.id, p.id, u.id, c.id, a.id, ch.id, owner.id
         order by f.created_at desc
       `,
+      [unitId],
     ),
     queryDb<MetaEventRow>(
       `
@@ -1129,16 +1289,20 @@ export async function listMetaState(searchValue = "") {
           mapped_payload
         from app_meta_lead_events
         where status in ('processed', 'duplicate')
+          and exists (
+            select 1 from app_meta_pages p
+            where p.unit_id = $1 and (p.id = app_meta_lead_events.page_db_id or p.page_id = app_meta_lead_events.page_id)
+          )
           and (
-            $1 = '' or concat_ws(' ', id::text, leadgen_id, form_id, page_id, campaign_name,
+            $2 = '' or concat_ws(' ', id::text, leadgen_id, form_id, page_id, campaign_name,
               adset_name, ad_name, error_message, routing_error, lead_payload->>'full_name',
               lead_payload->>'phone_number', mapped_payload->>'fullName', mapped_payload->>'phone',
-              lead_payload::text) ilike '%' || $1 || '%'
+              lead_payload::text) ilike '%' || $2 || '%'
           )
         order by received_at desc
         limit 100
       `,
-      [search],
+      [unitId, search],
     ),
     queryDb<MetaEventRow>(
       `
@@ -1151,24 +1315,28 @@ export async function listMetaState(searchValue = "") {
           payload, lead_payload, mapped_payload
         from app_meta_lead_events
         where status in ('received', 'pending_configuration', 'processing', 'error')
+          and exists (
+            select 1 from app_meta_pages p
+            where p.unit_id = $1 and (p.id = app_meta_lead_events.page_db_id or p.page_id = app_meta_lead_events.page_id)
+          )
           and (
-            $1 = '' or concat_ws(' ', id::text, leadgen_id, form_id, page_id, campaign_name,
+            $2 = '' or concat_ws(' ', id::text, leadgen_id, form_id, page_id, campaign_name,
               adset_name, ad_name, error_message, routing_error, lead_payload->>'full_name',
               lead_payload->>'phone_number', mapped_payload->>'fullName', mapped_payload->>'phone',
-              lead_payload::text) ilike '%' || $1 || '%'
+              lead_payload::text) ilike '%' || $2 || '%'
           )
         order by received_at desc
         limit 100
       `,
-      [search],
+      [unitId, search],
     ),
     queryDb<QueryResultRow>(
       `
         select
-          coalesce((select jsonb_agg(jsonb_build_object('id', id, 'name', name, 'slug', slug) order by name) from app_units where status = 'active'), '[]'::jsonb) as units,
-          coalesce((select jsonb_agg(jsonb_build_object('id', id, 'unitId', unit_id, 'name', name, 'status', status) order by name) from app_courses), '[]'::jsonb) as courses,
-          coalesce((select jsonb_agg(jsonb_build_object('id', id, 'unitId', unit_id, 'name', name, 'status', status) order by name) from app_acquisition_channels), '[]'::jsonb) as channels,
-          coalesce((select jsonb_agg(jsonb_build_object('id', id, 'unitId', primary_unit_id, 'name', name, 'role', role, 'status', status) order by name) from app_users where role in ('CONSULTOR', 'GERENTE', 'DIRETOR')), '[]'::jsonb) as consultants,
+          coalesce((select jsonb_agg(jsonb_build_object('id', id, 'name', name, 'slug', slug) order by name) from app_units where id = $1 and status = 'active'), '[]'::jsonb) as units,
+          coalesce((select jsonb_agg(jsonb_build_object('id', id, 'unitId', unit_id, 'name', name, 'status', status) order by name) from app_courses where unit_id = $1), '[]'::jsonb) as courses,
+          coalesce((select jsonb_agg(jsonb_build_object('id', id, 'unitId', unit_id, 'name', name, 'status', status) order by name) from app_acquisition_channels where unit_id = $1), '[]'::jsonb) as channels,
+          coalesce((select jsonb_agg(jsonb_build_object('id', id, 'unitId', primary_unit_id, 'name', name, 'role', role, 'status', status) order by name) from app_users where role in ('CONSULTOR', 'GERENTE', 'DIRETOR') and (primary_unit_id = $1 or exists (select 1 from app_user_units uu where uu.user_id = app_users.id and uu.unit_id = $1))), '[]'::jsonb) as consultants,
           coalesce((
             select jsonb_agg(jsonb_build_object(
               'id', a.id, 'unitId', a.unit_id, 'courseId', a.course_id,
@@ -1178,8 +1346,10 @@ export async function listMetaState(searchValue = "") {
             ) order by a.class_date, c.name, a.city)
             from app_course_attendances a
             inner join app_courses c on c.id = a.course_id
+            where a.unit_id = $1
           ), '[]'::jsonb) as attendances
       `,
+      [unitId],
     ),
     queryDb<
       QueryResultRow & {
@@ -1198,10 +1368,33 @@ export async function listMetaState(searchValue = "") {
         from app_meta_lead_events
         where routing_source = 'campaign_matrix'
           and routing_error is not null
+          and exists (
+            select 1 from app_meta_pages p
+            where p.unit_id = $1 and (p.id = app_meta_lead_events.page_db_id or p.page_id = app_meta_lead_events.page_id)
+          )
         group by campaign_id, campaign_name, routing_error
         order by max(received_at) desc
         limit 50
       `,
+      [unitId],
+    ),
+    queryDb<{
+      total_events_received: number;
+      total_leads_created: number;
+      total_errors: number;
+    }>(
+      `
+        select
+          count(e.id)::int as total_events_received,
+          count(e.id) filter (where e.lead_id is not null)::int as total_leads_created,
+          count(e.id) filter (where e.status = 'error')::int as total_errors
+        from app_meta_lead_events e
+        where exists (
+          select 1 from app_meta_pages p
+          where p.unit_id = $1 and (p.id = e.page_db_id or p.page_id = e.page_id)
+        )
+      `,
+      [unitId],
     ),
   ]);
 
@@ -1210,6 +1403,7 @@ export async function listMetaState(searchValue = "") {
   return {
     integration: {
       ...safeIntegration,
+      ...metricsResult.rows[0],
       appSecret: appSecret ? "configured" : null,
       verifyToken: verifyToken ? "configured" : null,
     },
@@ -1266,63 +1460,75 @@ export async function upsertMetaIntegration(input: Record<string, unknown>, user
   return result.rows[0];
 }
 
-export async function upsertMetaPage(input: Record<string, unknown>) {
+export async function upsertMetaPage(input: Record<string, unknown>, unitId: string) {
   const integration = await ensureMetaIntegration();
   const pageId = stringOrNull(input.pageId);
   const pageName = stringOrNull(input.pageName) ?? pageId;
 
-  if (!pageId || !pageName) {
+  if (!pageId || !pageName || !isUuid(unitId)) {
     throw new Error("Página inválida.");
   }
 
   const encrypted = encryptPageToken(stringOrNull(input.pageAccessToken) ?? "");
-  const result = await queryDb(
-    `
-      insert into app_meta_pages (
-        integration_id,
-        page_name,
-        page_id,
-        page_access_token_encrypted,
-        status
-      )
-      values ($1, $2, $3, $4, $5)
-      on conflict (page_id) do update
-      set
-        page_name = excluded.page_name,
-        page_access_token_encrypted = coalesce(excluded.page_access_token_encrypted, app_meta_pages.page_access_token_encrypted),
-        token_status = case
-          when excluded.page_access_token_encrypted is not null then 'unknown'
-          else app_meta_pages.token_status
-        end,
-        last_error = case
-          when excluded.page_access_token_encrypted is not null then null
-          else app_meta_pages.last_error
-        end,
-        status = excluded.status,
-        updated_at = now()
-      returning id
-    `,
-    [
-      integration.id,
-      pageName,
-      pageId,
-      encrypted,
-      input.status === "inactive" ? "inactive" : "active",
-    ],
-  );
+  return withTransaction(async (client) => {
+    const existingResult = await client.query<{ id: string; unit_id: string | null }>(
+      `select id, unit_id from app_meta_pages where page_id = $1 limit 1 for update`,
+      [pageId],
+    );
+    const existing = existingResult.rows[0];
 
-  return result.rows[0];
+    resolveMetaPageUnit(existing?.unit_id ?? null, unitId);
+
+    const result = await client.query<{ id: string }>(
+      `
+        insert into app_meta_pages (
+          integration_id,
+          unit_id,
+          page_name,
+          page_id,
+          page_access_token_encrypted,
+          status
+        )
+        values ($1, $2, $3, $4, $5, $6)
+        on conflict (page_id) do update
+        set
+          unit_id = coalesce(app_meta_pages.unit_id, excluded.unit_id),
+          page_name = excluded.page_name,
+          page_access_token_encrypted = coalesce(excluded.page_access_token_encrypted, app_meta_pages.page_access_token_encrypted),
+          token_status = case
+            when excluded.page_access_token_encrypted is not null then 'unknown'
+            else app_meta_pages.token_status
+          end,
+          last_error = case
+            when excluded.page_access_token_encrypted is not null then null
+            else app_meta_pages.last_error
+          end,
+          status = excluded.status,
+          updated_at = now()
+        returning id
+      `,
+      [
+        integration.id,
+        unitId,
+        pageName,
+        pageId,
+        encrypted,
+        input.status === "inactive" ? "inactive" : "active",
+      ],
+    );
+
+    return result.rows[0];
+  });
 }
 
-export async function upsertMetaForm(input: Record<string, unknown>) {
+export async function upsertMetaForm(input: Record<string, unknown>, expectedUnitId: string) {
   const pageDbId = stringOrNull(input.pageDbId);
   const metaFormId = stringOrNull(input.metaFormId);
   const formName = stringOrNull(input.formName) ?? metaFormId;
-  const unitId = stringOrNull(input.unitId);
   const attendanceId = stringOrNull(input.attendanceId);
   const requestedStatus = input.status === "active" ? "active" : "inactive";
 
-  if (!pageDbId || !isUuid(pageDbId) || !metaFormId || !formName) {
+  if (!pageDbId || !isUuid(pageDbId) || !metaFormId || !formName || !isUuid(expectedUnitId)) {
     throw new Error("Formulário inválido.");
   }
 
@@ -1341,6 +1547,16 @@ export async function upsertMetaForm(input: Record<string, unknown>) {
       : "Novo lead";
 
   const form = await withTransaction(async (client) => {
+    const pageResult = await client.query<{ unit_id: string | null }>(
+      `select unit_id from app_meta_pages where id = $1 limit 1 for update`,
+      [pageDbId],
+    );
+    const pageUnitId = pageResult.rows[0]?.unit_id ?? null;
+
+    if (!pageUnitId || pageUnitId !== expectedUnitId) {
+      throw new Error("O formulário não pertence à unidade ativa.");
+    }
+
     const attendanceResult =
       attendanceId && isUuid(attendanceId)
         ? await client.query<{
@@ -1365,14 +1581,12 @@ export async function upsertMetaForm(input: Record<string, unknown>) {
       }
     }
 
-    if (attendance && unitId && attendance.unit_id !== unitId) {
-      throw new Error("A turma não pertence à unidade selecionada.");
+    if (attendance && attendance.unit_id !== pageUnitId) {
+      throw new Error("A turma não pertence à unidade da Página Meta.");
     }
 
-    const resolvedUnitId = attendance?.unit_id ?? (unitId && isUuid(unitId) ? unitId : null);
-    const resolvedCourseId =
-      attendance?.course_id ??
-      (isUuid(String(input.courseId ?? "")) ? String(input.courseId) : null);
+    const resolvedUnitId = pageUnitId;
+    const resolvedCourseId = attendance?.course_id ?? null;
     const acquisitionChannelId = isUuid(String(input.acquisitionChannelId ?? ""))
       ? String(input.acquisitionChannelId)
       : null;
@@ -1452,12 +1666,18 @@ export async function upsertMetaForm(input: Record<string, unknown>) {
   return form;
 }
 
-export async function duplicateMetaForm(input: Record<string, unknown>) {
+export async function duplicateMetaForm(input: Record<string, unknown>, expectedUnitId: string) {
   const sourceFormId = stringOrNull(input.sourceFormId);
   const nextMetaFormId = stringOrNull(input.metaFormId);
   const formName = stringOrNull(input.formName) ?? nextMetaFormId;
 
-  if (!sourceFormId || !isUuid(sourceFormId) || !nextMetaFormId || !formName) {
+  if (
+    !sourceFormId ||
+    !isUuid(sourceFormId) ||
+    !nextMetaFormId ||
+    !formName ||
+    !isUuid(expectedUnitId)
+  ) {
     throw new Error("Dados da duplicação inválidos.");
   }
 
@@ -1499,11 +1719,19 @@ export async function duplicateMetaForm(input: Record<string, unknown>) {
           now()
         from app_meta_forms
         where id = $1
+          and exists (
+            select 1 from app_meta_pages p
+            where p.id = app_meta_forms.page_id and p.unit_id = $4
+          )
         returning id
       `,
-      [sourceFormId, formName, nextMetaFormId],
+      [sourceFormId, formName, nextMetaFormId, expectedUnitId],
     );
     const newForm = result.rows[0];
+
+    if (!newForm) {
+      throw new Error("O formulário não pertence à unidade ativa.");
+    }
 
     await client.query(
       `
@@ -1537,6 +1765,10 @@ export async function syncFormsForPage(pageDbId: string) {
     throw new Error("Página não encontrada.");
   }
 
+  if (!page.unit_id) {
+    throw new Error("A Página Meta ainda não possui unidade configurada.");
+  }
+
   const token = decryptPageToken(page.page_access_token_encrypted);
   if (!token) {
     throw new Error("Token da página ausente.");
@@ -1566,14 +1798,15 @@ export async function syncFormsForPage(pageDbId: string) {
 
     await queryDb(
       `
-        insert into app_meta_forms (page_id, form_name, meta_form_id, synced_at, status)
-        values ($1, $2, $3, now(), 'inactive')
+        insert into app_meta_forms (page_id, unit_id, form_name, meta_form_id, synced_at, status)
+        values ($1, $2, $3, $4, now(), 'inactive')
         on conflict (page_id, meta_form_id) do update
         set form_name = excluded.form_name,
+            unit_id = coalesce(app_meta_forms.unit_id, excluded.unit_id),
             synced_at = now(),
             updated_at = now()
       `,
-      [page.id, form.name ?? form.id, form.id],
+      [page.id, page.unit_id, form.name ?? form.id, form.id],
     );
   }
 
@@ -1727,8 +1960,8 @@ async function unsubscribeMetaPage(page: MetaPageRow, graphApiVersion: string) {
   );
 }
 
-export async function disconnectMetaPage(pageDbId: string) {
-  if (!isUuid(pageDbId)) {
+export async function disconnectMetaPage(pageDbId: string, expectedUnitId: string) {
+  if (!isUuid(pageDbId) || !isUuid(expectedUnitId)) {
     throw new Error("Página inválida.");
   }
 
@@ -1739,11 +1972,11 @@ export async function disconnectMetaPage(pageDbId: string) {
         select p.*, '0'::text as forms_count,
           p.created_at::text, p.updated_at::text, p.last_validated_at::text
         from app_meta_pages p
-        where p.id = $1
+        where p.id = $1 and p.unit_id = $2
         limit 1
         for update
       `,
-      [pageDbId],
+      [pageDbId, expectedUnitId],
     );
     const page = pageResult.rows[0];
 
@@ -1806,22 +2039,27 @@ export async function disconnectMetaPage(pageDbId: string) {
   });
 }
 
-export async function disconnectAllMetaPages() {
+export async function disconnectAllMetaPages(expectedUnitId: string) {
+  if (!isUuid(expectedUnitId)) {
+    throw new Error("Unidade inválida.");
+  }
+
   const integration = await ensureMetaIntegration();
   const pagesResult = await queryDb<{ id: string }>(
     `
       select id
       from app_meta_pages
       where integration_id = $1
+        and unit_id = $2
         and (status = 'active' or page_access_token_encrypted is not null)
       order by created_at asc
     `,
-    [integration.id],
+    [integration.id, expectedUnitId],
   );
   const disconnectedPages = [];
 
   for (const page of pagesResult.rows) {
-    disconnectedPages.push(await disconnectMetaPage(page.id));
+    disconnectedPages.push(await disconnectMetaPage(page.id, expectedUnitId));
   }
 
   const remainingConnectedPages = await withTransaction(async (client) => {
@@ -1834,13 +2072,27 @@ export async function disconnectAllMetaPages() {
           from app_meta_pages p
           where p.id = f.page_id
             and p.integration_id = $1
+            and p.unit_id = $2
             and (p.status <> 'active' or p.page_access_token_encrypted is null)
         )
       `,
-      [integration.id],
+      [integration.id, expectedUnitId],
     );
 
     const remainingResult = await client.query<{ count: string }>(
+      `
+        select count(*)::text as count
+        from app_meta_pages
+        where integration_id = $1
+          and unit_id = $2
+          and status = 'active'
+          and page_access_token_encrypted is not null
+      `,
+      [integration.id, expectedUnitId],
+    );
+    const count = Number(remainingResult.rows[0]?.count ?? 0);
+
+    const globallyConnectedResult = await client.query<{ count: string }>(
       `
         select count(*)::text as count
         from app_meta_pages
@@ -1850,15 +2102,16 @@ export async function disconnectAllMetaPages() {
       `,
       [integration.id],
     );
-    const count = Number(remainingResult.rows[0]?.count ?? 0);
-
     await client.query(
       `
         update app_meta_integrations
         set status = $2, updated_at = now()
         where id = $1
       `,
-      [integration.id, count > 0 ? "active" : "inactive"],
+      [
+        integration.id,
+        Number(globallyConnectedResult.rows[0]?.count ?? 0) > 0 ? "active" : "inactive",
+      ],
     );
 
     return count;
@@ -1873,7 +2126,11 @@ export async function disconnectAllMetaPages() {
   return { disconnected: true, count: disconnectedPages.length, pages: disconnectedPages };
 }
 
-export async function resetMetaConnection() {
+export async function resetMetaConnection(expectedUnitId: string) {
+  if (!isUuid(expectedUnitId)) {
+    throw new Error("Unidade inválida.");
+  }
+
   const integration = await ensureMetaIntegration();
   const pagesResult = await queryDb<MetaPageRow>(
     `
@@ -1881,9 +2138,10 @@ export async function resetMetaConnection() {
         p.created_at::text, p.updated_at::text, p.last_validated_at::text
       from app_meta_pages p
       where p.integration_id = $1
+        and p.unit_id = $2
       order by p.created_at asc
     `,
-    [integration.id],
+    [integration.id, expectedUnitId],
   );
   const unsubscribeFailures: Array<{ pageId: string; name: string }> = [];
 
@@ -1901,14 +2159,38 @@ export async function resetMetaConnection() {
   }
 
   await withTransaction(async (client) => {
-    // Forms and consultant mappings are removed by cascade. Historical events and CRM leads
-    // remain available because their page/form references use ON DELETE SET NULL.
-    await client.query(`delete from app_meta_pages where integration_id = $1`, [integration.id]);
+    await client.query(
+      `
+        update app_meta_forms f
+        set status = 'inactive', updated_at = now()
+        where exists (
+          select 1 from app_meta_pages p
+          where p.id = f.page_id and p.integration_id = $1 and p.unit_id = $2
+        )
+      `,
+      [integration.id, expectedUnitId],
+    );
+    await client.query(
+      `
+        update app_meta_pages
+        set page_access_token_encrypted = null,
+            token_status = 'invalid',
+            subscription_status = 'not_subscribed',
+            status = 'inactive',
+            last_error = null,
+            updated_at = now()
+        where integration_id = $1 and unit_id = $2
+      `,
+      [integration.id, expectedUnitId],
+    );
     await client.query(
       `
         update app_meta_integrations
-        set status = 'inactive',
-            last_communication_at = null,
+        set status = case when exists (
+              select 1 from app_meta_pages
+              where integration_id = $1 and status = 'active'
+                and page_access_token_encrypted is not null
+            ) then 'active' else 'inactive' end,
             updated_at = now()
         where id = $1
       `,
@@ -1918,7 +2200,8 @@ export async function resetMetaConnection() {
 
   return {
     reset: true,
-    removedPages: pagesResult.rows.length,
+    removedPages: 0,
+    disconnectedPages: pagesResult.rows.length,
     unsubscribeFailures,
   };
 }
@@ -1984,6 +2267,7 @@ async function getFormForProcessing(client: PoolClient, pageId: string, formId: 
     `
       select
         f.*,
+        p.unit_id as page_unit_id,
         p.page_name,
         p.page_id as meta_page_id,
         u.name as unit_name,
@@ -2221,12 +2505,26 @@ async function processEventById(eventId: string) {
       return { status: "duplicate", leadId: event.lead_id };
     }
 
+    const pageResult = await client.query<{ unit_id: string | null }>(
+      `
+        select unit_id
+        from app_meta_pages
+        where id = $1 or page_id = $2
+        order by (id = $1) desc
+        limit 1
+        for update
+      `,
+      [event.page_db_id, event.page_id],
+    );
+    const pageUnitId = pageResult.rows[0]?.unit_id ?? null;
     const form = await getFormForProcessing(client, event.page_id, event.form_id);
 
-    if (!form || form.status !== "active" || !form.unit_id) {
-      const configurationReason = form?.attendance_id
-        ? "A turma vinculada ao formulário está inativa ou indisponível."
-        : "Formulário não configurado ou inativo.";
+    const configurationReason = getMetaUnitConfigurationIssue(
+      pageUnitId,
+      form ? { status: form.status, unitId: form.unit_id } : null,
+    );
+
+    if (configurationReason) {
       await client.query(
         `
           update app_meta_lead_events
@@ -2240,6 +2538,10 @@ async function processEventById(eventId: string) {
         [event.id, form?.id ?? null, configurationReason],
       );
       return { status: "pending_configuration", leadId: null };
+    }
+
+    if (!form || !pageUnitId) {
+      throw new Error("Configuração de unidade Meta inconsistente.");
     }
 
     const leadPayload = (event.lead_payload ?? {}) as MetaLeadPayload;
@@ -2290,12 +2592,12 @@ async function processEventById(eventId: string) {
             limit 1
             for update of a
           `,
-          [form.attendance_id, form.unit_id],
+          [form.attendance_id, pageUnitId],
         )
       : null;
     const campaignRouting = form.attendance_id
       ? null
-      : await findCampaignAttendance(client, event.campaign_name);
+      : await findCampaignAttendance(client, event.campaign_name, pageUnitId);
     const attendance = linkedAttendanceResult?.rows[0] ?? campaignRouting?.attendance ?? null;
     const routingSource = form.attendance_id ? "form_turma" : "campaign_matrix";
 
@@ -2335,7 +2637,21 @@ async function processEventById(eventId: string) {
       return { status: "pending_configuration", leadId: null };
     }
 
-    const targetUnitId = attendance.unit_id;
+    if (attendance.unit_id !== pageUnitId) {
+      const routingError = "A turma encontrada não pertence à unidade da Página Meta.";
+      await client.query(
+        `
+          update app_meta_lead_events
+          set status = 'pending_configuration', form_db_id = $2, error_message = $3,
+              routing_source = $4, routing_error = $3, updated_at = now()
+          where id = $1
+        `,
+        [event.id, form.id, routingError, routingSource],
+      );
+      return { status: "pending_configuration", leadId: null };
+    }
+
+    const targetUnitId = pageUnitId;
     const course = await getCourseSnapshot(client, attendance.course_id, attendance.unit_id);
     const channel =
       (await getChannelSnapshot(client, form.acquisition_channel_id, targetUnitId)) ?? null;
@@ -2467,9 +2783,24 @@ async function processEventById(eventId: string) {
   });
 }
 
-export async function reprocessMetaEvent(eventId: string) {
-  if (!isUuid(eventId)) {
+export async function reprocessMetaEvent(eventId: string, expectedUnitId: string) {
+  if (!isUuid(eventId) || !isUuid(expectedUnitId)) {
     throw new Error("Evento inválido.");
+  }
+
+  const eventResult = await queryDb(
+    `
+      select 1
+      from app_meta_lead_events e
+      inner join app_meta_pages p on p.id = e.page_db_id or p.page_id = e.page_id
+      where e.id = $1 and p.unit_id = $2
+      limit 1
+    `,
+    [eventId, expectedUnitId],
+  );
+
+  if (!eventResult.rowCount) {
+    throw new Error("O evento não pertence à unidade ativa.");
   }
 
   await refreshMetaEventLeadPayload(eventId);

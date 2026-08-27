@@ -75,6 +75,8 @@ type MetaIntegration = {
 
 type MetaPage = {
   id: string;
+  unit_id: string;
+  unit_name: string;
   page_name: string;
   page_id: string;
   tokenMasked: string | null;
@@ -260,12 +262,13 @@ function MetaAdsPage() {
   const [formDraft, setFormDraft] = React.useState<FormDraft>(emptyFormDraft);
   const [metaDisconnectTarget, setMetaDisconnectTarget] =
     React.useState<MetaDisconnectTarget | null>(null);
-  const metaOAuthPopupTimerRef = React.useRef<ReturnType<typeof window.setInterval> | null>(null);
+  const metaOAuthPopupTimerRef = React.useRef<number | null>(null);
   const metaOAuthSucceededRef = React.useRef(false);
   const metaConnectionStatusBeforeOAuthRef = React.useRef<MetaConnectionStatus>("disconnected");
   const canManage = session ? canManageMetaAds(session.user.role) : false;
   const canManageMetaConnection =
     session?.user.email.trim().toLocaleLowerCase("pt-BR") === META_CONNECTION_MANAGER_EMAIL;
+  const activeUnitId = session?.activeUnit?.id ?? "";
 
   const stopMetaOAuthPopupMonitor = React.useCallback(() => {
     if (metaOAuthPopupTimerRef.current !== null) {
@@ -278,8 +281,9 @@ function MetaAdsPage() {
     async (query = appliedSearch) => {
       setLoading(true);
       try {
+        const params = new URLSearchParams({ search: query, unitId: activeUnitId });
         const next = await readJson<MetaState>(
-          await fetch(`/api/meta-ads?search=${encodeURIComponent(query)}`, {
+          await fetch(`/api/meta-ads?${params}`, {
             credentials: "same-origin",
             headers: { Accept: "application/json" },
           }),
@@ -292,8 +296,25 @@ function MetaAdsPage() {
         setLoading(false);
       }
     },
-    [appliedSearch],
+    [activeUnitId, appliedSearch],
   );
+
+  const completeMetaConnect = React.useCallback(async () => {
+    try {
+      await readJson(
+        await fetch("/api/meta-ads", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ action: "completeMetaConnect", unitId: activeUnitId }),
+        }),
+      );
+      toast.success("Conexão Meta concluída.");
+      await loadData();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao concluir a conexão Meta.");
+    }
+  }, [activeUnitId, loadData]);
 
   React.useEffect(() => {
     if (session && canViewMetaAds(session.user.role)) void loadData();
@@ -310,13 +331,13 @@ function MetaAdsPage() {
       setMetaConnectionStatus((current) =>
         current === "connecting" ? metaConnectionStatusBeforeOAuthRef.current : current,
       );
-      void loadData();
+      void completeMetaConnect();
     };
 
     window.addEventListener("message", handleMetaOAuthMessage);
 
     return () => window.removeEventListener("message", handleMetaOAuthMessage);
-  }, [loadData, stopMetaOAuthPopupMonitor]);
+  }, [completeMetaConnect, stopMetaOAuthPopupMonitor]);
 
   React.useEffect(
     () => () => {
@@ -340,7 +361,7 @@ function MetaAdsPage() {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({ action, ...payload }),
+          body: JSON.stringify({ action, ...payload, unitId: activeUnitId }),
         }),
       );
       toast.success(success);
@@ -369,7 +390,11 @@ function MetaAdsPage() {
             method: "POST",
             credentials: "same-origin",
             headers: { "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify({ action: "syncForms", pageDbId: page.id }),
+            body: JSON.stringify({
+              action: "syncForms",
+              unitId: activeUnitId,
+              pageDbId: page.id,
+            }),
           }),
         );
       }
@@ -390,8 +415,8 @@ function MetaAdsPage() {
       ? "disconnectMeta"
       : `disconnectPage-${metaDisconnectTarget.page.id}`;
     const body = disconnectingAll
-      ? { action: "resetMeta" }
-      : { action: "disconnectPage", pageId: metaDisconnectTarget.page.id };
+      ? { action: "resetMeta", unitId: activeUnitId }
+      : { action: "disconnectPage", unitId: activeUnitId, pageId: metaDisconnectTarget.page.id };
 
     setWorkingKey(key);
 
@@ -600,9 +625,7 @@ function MetaAdsPage() {
                 </p>
               </div>
               <div className="relative w-full sm:w-64">
-                <Search
-                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={formSearch}
                   onChange={(event) => setFormSearch(event.target.value)}
@@ -638,8 +661,9 @@ function MetaAdsPage() {
                         </TableCell>
                         <TableCell className="max-w-sm whitespace-normal">
                           {form.attendance_id ? (
-                            (data.options.attendances.find((item) => item.id === form.attendance_id)
-                              ?.displayName ??
+                            (data?.options.attendances.find(
+                              (item) => item.id === form.attendance_id,
+                            )?.displayName ??
                             form.course_name ??
                             "Turma indisponível")
                           ) : (
@@ -669,11 +693,12 @@ function MetaAdsPage() {
                   ) : (
                     <EmptyRow
                       columns={6}
-                      text={formSearch.trim()
-                        ? "Nenhum formulário encontrado com esse nome."
-                        : data?.pages.length
-                          ? "Sincronize uma página para trazer os formulários."
-                          : "Conecte a Meta para trazer os formulários."
+                      text={
+                        formSearch.trim()
+                          ? "Nenhum formulário encontrado com esse nome."
+                          : data?.pages.length
+                            ? "Sincronize uma página para trazer os formulários."
+                            : "Conecte a Meta para trazer os formulários."
                       }
                     />
                   )}
@@ -741,17 +766,7 @@ function MetaAdsPage() {
               <Input value={formDraft.formName} disabled />
             </Field>
             <Field label="Unidade">
-              <Select
-                value={formDraft.unitId}
-                onValueChange={(value) =>
-                  setFormDraft((current) => ({
-                    ...current,
-                    unitId: value,
-                    attendanceId: "",
-                    acquisitionChannelId: "",
-                  }))
-                }
-              >
+              <Select value={formDraft.unitId} disabled>
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione a unidade" />
                 </SelectTrigger>
@@ -883,7 +898,7 @@ function MetaAdsPage() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {metaDisconnectTarget?.scope === "all"
-                ? "Páginas, tokens e configurações de formulários da conexão atual serão removidos. Leads e eventos históricos do CRM serão preservados."
+                ? "As páginas e configurações da unidade serão desativadas e os tokens removidos. Leads e eventos históricos do CRM serão preservados."
                 : "A Star deixará de receber novos leads e sincronizar formulários desta página. Os leads que já entraram no CRM serão preservados."}
             </AlertDialogDescription>
           </AlertDialogHeader>

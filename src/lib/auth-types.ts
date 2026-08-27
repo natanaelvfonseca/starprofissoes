@@ -97,7 +97,7 @@ export function canViewStudentSwitcher(role: UserRole) {
 }
 
 export function canSwitchActiveUnit(role: UserRole) {
-  return role === "DEV" || role === "CEO" || role === "CVO";
+  return role === "DEV" || role === "CEO" || role === "CVO" || role === "MARKETING";
 }
 
 export function canViewGrowth(role: UserRole) {
@@ -157,7 +157,7 @@ export function canManageMetaAds(role: UserRole) {
 }
 
 export function canConnectMetaAds(role: UserRole) {
-  return canManageMetaAds(role) || role === "MARKETING";
+  return canManageMetaAds(role);
 }
 
 export function canViewMetaAds(role: UserRole) {

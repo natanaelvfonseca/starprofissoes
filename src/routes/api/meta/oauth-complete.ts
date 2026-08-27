@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   getMetaIntegration,
+  resolveMetaOAuthUnitContext,
   subscribeMetaPage,
   syncFormsForPage,
   upsertMetaIntegration,
@@ -131,13 +132,17 @@ export const Route = createFileRoute("/api/meta/oauth-complete")({
         }
 
         try {
+          const { unitId } = await resolveMetaOAuthUnitContext();
           const integration = await getMetaIntegration();
-          const savedPage = await upsertMetaPage({
-            pageId: page.id,
-            pageName: page.name,
-            pageAccessToken: page.accessToken,
-            status: "active",
-          });
+          const savedPage = await upsertMetaPage(
+            {
+              pageId: page.id,
+              pageName: page.name,
+              pageAccessToken: page.accessToken,
+              status: "active",
+            },
+            unitId,
+          );
 
           await upsertMetaIntegration({
             appId: integration.app_id,
@@ -162,17 +167,14 @@ export const Route = createFileRoute("/api/meta/oauth-complete")({
 
           await syncFormsForPage(savedPage.id);
 
-          return metaResponse(
-            request,
-            {
-              success: true,
-              connected: true,
-              page: {
-                id: page.id,
-                name: page.name,
-              },
+          return metaResponse(request, {
+            success: true,
+            connected: true,
+            page: {
+              id: page.id,
+              name: page.name,
             },
-          );
+          });
         } catch (error) {
           console.error("[Meta Ads] Falha ao concluir OAuth", {
             pageId: page.id,

@@ -1,7 +1,8 @@
-import { createHmac, randomBytes } from "node:crypto";
+import { createHmac } from "node:crypto";
 import { createFileRoute } from "@tanstack/react-router";
 import { canConnectMetaAds } from "@/lib/auth-types";
 import { getSessionFromRequest } from "@/lib/server/auth";
+import { createMetaOAuthUnitContext } from "@/lib/server/meta-leads";
 
 const META_CONNECT_BASE_URL = "https://kogna.online/meta/connect";
 const META_CONNECT_CLIENT = "star";
@@ -20,6 +21,13 @@ export const Route = createFileRoute("/api/meta/connect-url")({
           return Response.json({ error: "Acesso negado." }, { status: 403 });
         }
 
+        if (!session.activeUnit) {
+          return Response.json(
+            { error: "Selecione uma unidade antes de conectar a Meta." },
+            { status: 400 },
+          );
+        }
+
         const secret = process.env.KOGNA_META_CONNECT_SECRET?.trim();
 
         if (!secret) {
@@ -29,8 +37,20 @@ export const Route = createFileRoute("/api/meta/connect-url")({
           );
         }
 
-        const timestamp = Math.floor(Date.now() / 1000);
-        const nonce = randomBytes(24).toString("hex");
+        let context: Awaited<ReturnType<typeof createMetaOAuthUnitContext>>;
+
+        try {
+          context = await createMetaOAuthUnitContext(session.user.id, session.activeUnit.id);
+        } catch (error) {
+          return Response.json(
+            {
+              error: error instanceof Error ? error.message : "Falha ao preparar a conexão Meta.",
+            },
+            { status: 409 },
+          );
+        }
+
+        const { timestamp, nonce } = context;
         const payload = `${META_CONNECT_CLIENT}|${timestamp}|${nonce}`;
         const signature = createHmac("sha256", secret).update(payload).digest("hex");
         const connectUrl = new URL(META_CONNECT_BASE_URL);

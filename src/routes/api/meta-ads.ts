@@ -1,7 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { canManageMetaAds, canViewMetaAds } from "@/lib/auth-types";
 import { getSessionFromRequest } from "@/lib/server/auth";
+import { getUnitFromBody, getUnitFromRequest } from "@/lib/server/commercial-schema";
 import {
+  assertMetaPageInUnit,
+  completeMetaOAuthUnitContext,
   disconnectAllMetaPages,
   disconnectMetaPage,
   duplicateMetaForm,
@@ -30,8 +33,11 @@ export const Route = createFileRoute("/api/meta-ads")({
           return Response.json({ error: "Acesso negado." }, { status: 403 });
         }
 
+        const unit = getUnitFromRequest(session, request);
+        if (!unit) return Response.json({ error: "Unidade inválida." }, { status: 403 });
+
         const search = new URL(request.url).searchParams.get("search") ?? "";
-        return Response.json(await listMetaState(search), {
+        return Response.json(await listMetaState(unit.id, search), {
           headers: { "Cache-Control": "no-store" },
         });
       },
@@ -44,6 +50,8 @@ export const Route = createFileRoute("/api/meta-ads")({
 
         const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
         const action = typeof body?.action === "string" ? body.action : "";
+        const unit = getUnitFromBody(session, body?.unitId);
+        if (!unit) return Response.json({ error: "Unidade inválida." }, { status: 403 });
 
         try {
           if (action === "saveIntegration") {
@@ -52,38 +60,49 @@ export const Route = createFileRoute("/api/meta-ads")({
             });
           }
           if (action === "savePage") {
-            return Response.json({ page: await upsertMetaPage(body ?? {}) });
+            return Response.json({ page: await upsertMetaPage(body ?? {}, unit.id) });
           }
           if (action === "saveForm") {
-            return Response.json({ form: await upsertMetaForm(body ?? {}) });
+            return Response.json({ form: await upsertMetaForm(body ?? {}, unit.id) });
           }
           if (action === "duplicateForm") {
-            return Response.json({ form: await duplicateMetaForm(body ?? {}) });
+            return Response.json({ form: await duplicateMetaForm(body ?? {}, unit.id) });
           }
           if (action === "syncForms") {
-            return Response.json({ result: await syncFormsForPage(String(body?.pageDbId ?? "")) });
+            const pageDbId = String(body?.pageDbId ?? "");
+            await assertMetaPageInUnit(pageDbId, unit.id);
+            return Response.json({ result: await syncFormsForPage(pageDbId) });
           }
           if (action === "validatePage") {
+            const pageDbId = String(body?.pageDbId ?? "");
+            await assertMetaPageInUnit(pageDbId, unit.id);
             return Response.json({
-              result: await validateMetaPageToken(String(body?.pageDbId ?? "")),
+              result: await validateMetaPageToken(pageDbId),
             });
           }
           if (action === "subscribePage") {
-            return Response.json({ result: await subscribeMetaPage(String(body?.pageDbId ?? "")) });
+            const pageDbId = String(body?.pageDbId ?? "");
+            await assertMetaPageInUnit(pageDbId, unit.id);
+            return Response.json({ result: await subscribeMetaPage(pageDbId) });
           }
           if (action === "disconnectPage") {
             return Response.json({
-              result: await disconnectMetaPage(String(body?.pageId ?? "")),
+              result: await disconnectMetaPage(String(body?.pageId ?? ""), unit.id),
             });
           }
           if (action === "disconnectMeta") {
-            return Response.json({ result: await disconnectAllMetaPages() });
+            return Response.json({ result: await disconnectAllMetaPages(unit.id) });
           }
           if (action === "resetMeta") {
-            return Response.json({ result: await resetMetaConnection() });
+            return Response.json({ result: await resetMetaConnection(unit.id) });
+          }
+          if (action === "completeMetaConnect") {
+            return Response.json({ result: await completeMetaOAuthUnitContext(session.user.id) });
           }
           if (action === "reprocessEvent") {
-            return Response.json({ result: await reprocessMetaEvent(String(body?.eventId ?? "")) });
+            return Response.json({
+              result: await reprocessMetaEvent(String(body?.eventId ?? ""), unit.id),
+            });
           }
 
           return Response.json({ error: "Ação inválida." }, { status: 400 });
