@@ -251,6 +251,7 @@ function MetaAdsPage() {
   const [workingKey, setWorkingKey] = React.useState("");
   const [search, setSearch] = React.useState("");
   const [appliedSearch, setAppliedSearch] = React.useState("");
+  const [formSearch, setFormSearch] = React.useState("");
   const [metaConnectionStatus, setMetaConnectionStatus] =
     React.useState<MetaConnectionStatus>("disconnected");
   const [formDialogOpen, setFormDialogOpen] = React.useState(false);
@@ -502,6 +503,18 @@ function MetaAdsPage() {
     (item) => item.unitId === formDraft.unitId && item.status === "active",
   );
   const metrics = data?.integration;
+  const normalizedFormSearch = formSearch
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR");
+  const filteredForms = (data?.forms ?? []).filter((form) =>
+    form.form_name
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase("pt-BR")
+      .includes(normalizedFormSearch),
+  );
   const lastSynchronization = data
     ? mostRecentDate([
         ...data.forms.map((form) => form.synced_at),
@@ -576,12 +589,24 @@ function MetaAdsPage() {
 
         <TabsContent value="forms">
           <Card className="overflow-hidden border-primary/10 shadow-card">
-            <CardHeader className="flex-row items-center justify-between border-b bg-primary/5">
+            <CardHeader className="gap-3 border-b bg-primary/5 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <CardTitle className="text-base">Formulários de leads</CardTitle>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Cada formulário ativo deve apontar para uma turma ativa.
                 </p>
+              </div>
+              <div className="relative w-full sm:w-64">
+                <Search
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                />
+                <Input
+                  value={formSearch}
+                  onChange={(event) => setFormSearch(event.target.value)}
+                  placeholder="Pesquisar formulário"
+                  aria-label="Pesquisar formulário pelo nome"
+                  className="h-9 bg-background pl-9"
+                />
               </div>
             </CardHeader>
             <CardContent className="p-0">
@@ -599,8 +624,8 @@ function MetaAdsPage() {
                 <TableBody>
                   {loading ? (
                     <LoadingRow columns={6} />
-                  ) : data?.forms.length ? (
-                    data.forms.map((form) => (
+                  ) : filteredForms.length ? (
+                    filteredForms.map((form) => (
                       <TableRow key={form.id}>
                         <TableCell className="pl-5">
                           <div className="font-semibold">{form.form_name}</div>
@@ -641,8 +666,9 @@ function MetaAdsPage() {
                   ) : (
                     <EmptyRow
                       columns={6}
-                      text={
-                        data?.pages.length
+                      text={formSearch.trim()
+                        ? "Nenhum formulário encontrado com esse nome."
+                        : data?.pages.length
                           ? "Sincronize uma página para trazer os formulários."
                           : "Conecte a Meta para trazer os formulários."
                       }
