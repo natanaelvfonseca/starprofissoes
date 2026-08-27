@@ -58,7 +58,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuth } from "@/lib/auth";
-import { canConnectMetaAds, canManageMetaAds, canViewMetaAds } from "@/lib/auth-types";
+import { canManageMetaAds, canViewMetaAds } from "@/lib/auth-types";
 
 type MetaIntegration = {
   app_id: string | null;
@@ -193,6 +193,8 @@ const stages = [
   "Recuperação",
 ];
 
+const META_CONNECTION_MANAGER_EMAIL = "natanaelfonseca@gmail.com";
+
 async function readJson<T>(response: Response) {
   const data = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok) throw new Error(data.error ?? "Falha na operação.");
@@ -262,7 +264,8 @@ function MetaAdsPage() {
   const metaOAuthSucceededRef = React.useRef(false);
   const metaConnectionStatusBeforeOAuthRef = React.useRef<MetaConnectionStatus>("disconnected");
   const canManage = session ? canManageMetaAds(session.user.role) : false;
-  const canConnect = session ? canConnectMetaAds(session.user.role) : false;
+  const canManageMetaConnection =
+    session?.user.email.trim().toLocaleLowerCase("pt-BR") === META_CONNECTION_MANAGER_EMAIL;
 
   const stopMetaOAuthPopupMonitor = React.useCallback(() => {
     if (metaOAuthPopupTimerRef.current !== null) {
@@ -576,8 +579,8 @@ function MetaAdsPage() {
             pages={data?.pages ?? []}
             lastSynchronization={lastSynchronization}
             loading={loading}
-            canManage={canManage}
-            canConnect={canConnect}
+            canManage={canManageMetaConnection}
+            canConnect={canManageMetaConnection}
             syncing={workingKey === "syncConnection"}
             disconnecting={workingKey.startsWith("disconnect")}
             onConnect={connectWithMeta}
@@ -986,10 +989,12 @@ function MetaConnectionPanel({
               tela.
             </p>
           </div>
-          <Button onClick={onConnect} disabled={!canConnect}>
-            <ExternalLink />
-            Tentar novamente
-          </Button>
+          {canConnect ? (
+            <Button onClick={onConnect}>
+              <ExternalLink />
+              Tentar novamente
+            </Button>
+          ) : null}
         </CardContent>
       </Card>
     );
@@ -1013,10 +1018,12 @@ function MetaConnectionPanel({
               de anúncios, formulários instantâneos e leads.
             </p>
           </div>
-          <Button size="lg" onClick={onConnect} disabled={!canConnect}>
-            <ExternalLink />
-            Conectar com a Meta
-          </Button>
+          {canConnect ? (
+            <Button size="lg" onClick={onConnect}>
+              <ExternalLink />
+              Conectar com a Meta
+            </Button>
+          ) : null}
           <p className="relative max-w-xl text-xs leading-5 text-muted-foreground">
             A conexão é realizada diretamente pela Meta. Sua senha do Facebook não é compartilhada
             com a plataforma.
@@ -1070,25 +1077,27 @@ function MetaConnectionPanel({
             />
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={onSync} disabled={!canManage || syncing || !connectedPages.length}>
-              {syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-              Sincronizar agora
-            </Button>
-            <Button variant="outline" onClick={onConnect} disabled={!canConnect || disconnecting}>
-              <Settings2 />
-              Gerenciar conexão
-            </Button>
-            <Button
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={onDisconnectAll}
-              disabled={!canManage || !connectedPages.length || disconnecting}
-            >
-              <Unplug />
-              Limpar conexão Meta
-            </Button>
-          </div>
+          {canManage || canConnect ? (
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={onSync} disabled={syncing || !connectedPages.length}>
+                {syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                Sincronizar agora
+              </Button>
+              <Button variant="outline" onClick={onConnect} disabled={disconnecting}>
+                <Settings2 />
+                Gerenciar conexão
+              </Button>
+              <Button
+                variant="ghost"
+                className="text-destructive hover:text-destructive"
+                onClick={onDisconnectAll}
+                disabled={!connectedPages.length || disconnecting}
+              >
+                <Unplug />
+                Limpar conexão Meta
+              </Button>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -1119,16 +1128,18 @@ function MetaConnectionPanel({
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <Badge className="bg-emerald-100 text-emerald-700">Conectado</Badge>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="text-destructive hover:text-destructive"
-                  onClick={() => onDisconnectPage(page)}
-                  disabled={!canManage || disconnecting}
-                >
-                  <Unplug />
-                  Desconectar página
-                </Button>
+                {canManage ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => onDisconnectPage(page)}
+                    disabled={disconnecting}
+                  >
+                    <Unplug />
+                    Desconectar página
+                  </Button>
+                ) : null}
               </div>
             </div>
           ))}
