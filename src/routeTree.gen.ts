@@ -46,7 +46,14 @@ import { Route as ApiCrmImportRouteImport } from './routes/api/crm/import'
 import { Route as ApiCrmLeadsRouteImport } from './routes/api/crm/leads'
 import { Route as ApiCrmTasksRouteImport } from './routes/api/crm/tasks'
 import { Route as ApiCrmTransferRouteImport } from './routes/api/crm/transfer'
+import { Route as ApiCronFinanceiroCaezSyncRouteImport } from './routes/api/cron.financeiro-caez-sync'
 import { Route as ApiCronWhatsappAnalysisRouteImport } from './routes/api/cron.whatsapp-analysis'
+import { Route as ApiFinanceiroCollectionActionsRouteImport } from './routes/api/financeiro/collection-actions'
+import { Route as ApiFinanceiroDashboardRouteImport } from './routes/api/financeiro/dashboard'
+import { Route as ApiFinanceiroIntegrationRouteImport } from './routes/api/financeiro/integration'
+import { Route as ApiFinanceiroPromisesRouteImport } from './routes/api/financeiro/promises'
+import { Route as ApiFinanceiroStudentsRouteImport } from './routes/api/financeiro/students'
+import { Route as ApiFinanceiroSyncRouteImport } from './routes/api/financeiro/sync'
 import { Route as ApiGestaoAttendancesRouteImport } from './routes/api/gestao/attendances'
 import { Route as ApiGestaoChannelsRouteImport } from './routes/api/gestao/channels'
 import { Route as ApiGestaoCoursesRouteImport } from './routes/api/gestao/courses'
@@ -65,6 +72,8 @@ import { Route as ApiWhatsappSupervisionAccessRouteImport } from './routes/api/w
 import { Route as ApiWhatsappSupervisionNotificationsRouteImport } from './routes/api/whatsapp-supervision.notifications'
 import { Route as FinanceiroAlunoStudentIdRouteImport } from './routes/financeiro.aluno.$studentId'
 import { Route as ApiCrmLeadsIdRouteImport } from './routes/api/crm/leads.$id'
+import { Route as ApiFinanceiroCollectionsTodayRouteImport } from './routes/api/financeiro/collections/today'
+import { Route as ApiFinanceiroStudentsStudentIdRouteImport } from './routes/api/financeiro/students.$studentId'
 import { Route as ApiGestaoChannelsIdRouteImport } from './routes/api/gestao/channels.$id'
 import { Route as ApiGestaoCoursesIdRouteImport } from './routes/api/gestao/courses.$id'
 import { Route as ApiWhatsappSupervisionConversationsIdRouteImport } from './routes/api/whatsapp-supervision.conversations.$id'
@@ -254,9 +263,47 @@ const ApiCrmTransferRoute = ApiCrmTransferRouteImport.update({
   path: '/api/crm/transfer',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCronFinanceiroCaezSyncRoute =
+  ApiCronFinanceiroCaezSyncRouteImport.update({
+    id: '/api/cron/financeiro-caez-sync',
+    path: '/api/cron/financeiro-caez-sync',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiCronWhatsappAnalysisRoute = ApiCronWhatsappAnalysisRouteImport.update({
   id: '/api/cron/whatsapp-analysis',
   path: '/api/cron/whatsapp-analysis',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiFinanceiroCollectionActionsRoute =
+  ApiFinanceiroCollectionActionsRouteImport.update({
+    id: '/api/financeiro/collection-actions',
+    path: '/api/financeiro/collection-actions',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiFinanceiroDashboardRoute = ApiFinanceiroDashboardRouteImport.update({
+  id: '/api/financeiro/dashboard',
+  path: '/api/financeiro/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiFinanceiroIntegrationRoute =
+  ApiFinanceiroIntegrationRouteImport.update({
+    id: '/api/financeiro/integration',
+    path: '/api/financeiro/integration',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiFinanceiroPromisesRoute = ApiFinanceiroPromisesRouteImport.update({
+  id: '/api/financeiro/promises',
+  path: '/api/financeiro/promises',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiFinanceiroStudentsRoute = ApiFinanceiroStudentsRouteImport.update({
+  id: '/api/financeiro/students',
+  path: '/api/financeiro/students',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiFinanceiroSyncRoute = ApiFinanceiroSyncRouteImport.update({
+  id: '/api/financeiro/sync',
+  path: '/api/financeiro/sync',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiGestaoAttendancesRoute = ApiGestaoAttendancesRouteImport.update({
@@ -355,6 +402,18 @@ const ApiCrmLeadsIdRoute = ApiCrmLeadsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => ApiCrmLeadsRoute,
 } as any)
+const ApiFinanceiroCollectionsTodayRoute =
+  ApiFinanceiroCollectionsTodayRouteImport.update({
+    id: '/api/financeiro/collections/today',
+    path: '/api/financeiro/collections/today',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiFinanceiroStudentsStudentIdRoute =
+  ApiFinanceiroStudentsStudentIdRouteImport.update({
+    id: '/$studentId',
+    path: '/$studentId',
+    getParentRoute: () => ApiFinanceiroStudentsRoute,
+  } as any)
 const ApiGestaoChannelsIdRoute = ApiGestaoChannelsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -410,7 +469,14 @@ export interface FileRoutesByFullPath {
   '/api/crm/leads': typeof ApiCrmLeadsRouteWithChildren
   '/api/crm/tasks': typeof ApiCrmTasksRoute
   '/api/crm/transfer': typeof ApiCrmTransferRoute
+  '/api/cron/financeiro-caez-sync': typeof ApiCronFinanceiroCaezSyncRoute
   '/api/cron/whatsapp-analysis': typeof ApiCronWhatsappAnalysisRoute
+  '/api/financeiro/collection-actions': typeof ApiFinanceiroCollectionActionsRoute
+  '/api/financeiro/dashboard': typeof ApiFinanceiroDashboardRoute
+  '/api/financeiro/integration': typeof ApiFinanceiroIntegrationRoute
+  '/api/financeiro/promises': typeof ApiFinanceiroPromisesRoute
+  '/api/financeiro/students': typeof ApiFinanceiroStudentsRouteWithChildren
+  '/api/financeiro/sync': typeof ApiFinanceiroSyncRoute
   '/api/gestao/attendances': typeof ApiGestaoAttendancesRoute
   '/api/gestao/channels': typeof ApiGestaoChannelsRouteWithChildren
   '/api/gestao/courses': typeof ApiGestaoCoursesRouteWithChildren
@@ -429,6 +495,8 @@ export interface FileRoutesByFullPath {
   '/api/whatsapp-supervision/notifications': typeof ApiWhatsappSupervisionNotificationsRoute
   '/financeiro/aluno/$studentId': typeof FinanceiroAlunoStudentIdRoute
   '/api/crm/leads/$id': typeof ApiCrmLeadsIdRoute
+  '/api/financeiro/collections/today': typeof ApiFinanceiroCollectionsTodayRoute
+  '/api/financeiro/students/$studentId': typeof ApiFinanceiroStudentsStudentIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
   '/api/whatsapp-supervision/conversations/$id': typeof ApiWhatsappSupervisionConversationsIdRoute
@@ -471,7 +539,14 @@ export interface FileRoutesByTo {
   '/api/crm/leads': typeof ApiCrmLeadsRouteWithChildren
   '/api/crm/tasks': typeof ApiCrmTasksRoute
   '/api/crm/transfer': typeof ApiCrmTransferRoute
+  '/api/cron/financeiro-caez-sync': typeof ApiCronFinanceiroCaezSyncRoute
   '/api/cron/whatsapp-analysis': typeof ApiCronWhatsappAnalysisRoute
+  '/api/financeiro/collection-actions': typeof ApiFinanceiroCollectionActionsRoute
+  '/api/financeiro/dashboard': typeof ApiFinanceiroDashboardRoute
+  '/api/financeiro/integration': typeof ApiFinanceiroIntegrationRoute
+  '/api/financeiro/promises': typeof ApiFinanceiroPromisesRoute
+  '/api/financeiro/students': typeof ApiFinanceiroStudentsRouteWithChildren
+  '/api/financeiro/sync': typeof ApiFinanceiroSyncRoute
   '/api/gestao/attendances': typeof ApiGestaoAttendancesRoute
   '/api/gestao/channels': typeof ApiGestaoChannelsRouteWithChildren
   '/api/gestao/courses': typeof ApiGestaoCoursesRouteWithChildren
@@ -490,6 +565,8 @@ export interface FileRoutesByTo {
   '/api/whatsapp-supervision/notifications': typeof ApiWhatsappSupervisionNotificationsRoute
   '/financeiro/aluno/$studentId': typeof FinanceiroAlunoStudentIdRoute
   '/api/crm/leads/$id': typeof ApiCrmLeadsIdRoute
+  '/api/financeiro/collections/today': typeof ApiFinanceiroCollectionsTodayRoute
+  '/api/financeiro/students/$studentId': typeof ApiFinanceiroStudentsStudentIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
   '/api/whatsapp-supervision/conversations/$id': typeof ApiWhatsappSupervisionConversationsIdRoute
@@ -533,7 +610,14 @@ export interface FileRoutesById {
   '/api/crm/leads': typeof ApiCrmLeadsRouteWithChildren
   '/api/crm/tasks': typeof ApiCrmTasksRoute
   '/api/crm/transfer': typeof ApiCrmTransferRoute
+  '/api/cron/financeiro-caez-sync': typeof ApiCronFinanceiroCaezSyncRoute
   '/api/cron/whatsapp-analysis': typeof ApiCronWhatsappAnalysisRoute
+  '/api/financeiro/collection-actions': typeof ApiFinanceiroCollectionActionsRoute
+  '/api/financeiro/dashboard': typeof ApiFinanceiroDashboardRoute
+  '/api/financeiro/integration': typeof ApiFinanceiroIntegrationRoute
+  '/api/financeiro/promises': typeof ApiFinanceiroPromisesRoute
+  '/api/financeiro/students': typeof ApiFinanceiroStudentsRouteWithChildren
+  '/api/financeiro/sync': typeof ApiFinanceiroSyncRoute
   '/api/gestao/attendances': typeof ApiGestaoAttendancesRoute
   '/api/gestao/channels': typeof ApiGestaoChannelsRouteWithChildren
   '/api/gestao/courses': typeof ApiGestaoCoursesRouteWithChildren
@@ -552,6 +636,8 @@ export interface FileRoutesById {
   '/api/whatsapp-supervision/notifications': typeof ApiWhatsappSupervisionNotificationsRoute
   '/financeiro/aluno/$studentId': typeof FinanceiroAlunoStudentIdRoute
   '/api/crm/leads/$id': typeof ApiCrmLeadsIdRoute
+  '/api/financeiro/collections/today': typeof ApiFinanceiroCollectionsTodayRoute
+  '/api/financeiro/students/$studentId': typeof ApiFinanceiroStudentsStudentIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
   '/api/whatsapp-supervision/conversations/$id': typeof ApiWhatsappSupervisionConversationsIdRoute
@@ -596,7 +682,14 @@ export interface FileRouteTypes {
     | '/api/crm/leads'
     | '/api/crm/tasks'
     | '/api/crm/transfer'
+    | '/api/cron/financeiro-caez-sync'
     | '/api/cron/whatsapp-analysis'
+    | '/api/financeiro/collection-actions'
+    | '/api/financeiro/dashboard'
+    | '/api/financeiro/integration'
+    | '/api/financeiro/promises'
+    | '/api/financeiro/students'
+    | '/api/financeiro/sync'
     | '/api/gestao/attendances'
     | '/api/gestao/channels'
     | '/api/gestao/courses'
@@ -615,6 +708,8 @@ export interface FileRouteTypes {
     | '/api/whatsapp-supervision/notifications'
     | '/financeiro/aluno/$studentId'
     | '/api/crm/leads/$id'
+    | '/api/financeiro/collections/today'
+    | '/api/financeiro/students/$studentId'
     | '/api/gestao/channels/$id'
     | '/api/gestao/courses/$id'
     | '/api/whatsapp-supervision/conversations/$id'
@@ -657,7 +752,14 @@ export interface FileRouteTypes {
     | '/api/crm/leads'
     | '/api/crm/tasks'
     | '/api/crm/transfer'
+    | '/api/cron/financeiro-caez-sync'
     | '/api/cron/whatsapp-analysis'
+    | '/api/financeiro/collection-actions'
+    | '/api/financeiro/dashboard'
+    | '/api/financeiro/integration'
+    | '/api/financeiro/promises'
+    | '/api/financeiro/students'
+    | '/api/financeiro/sync'
     | '/api/gestao/attendances'
     | '/api/gestao/channels'
     | '/api/gestao/courses'
@@ -676,6 +778,8 @@ export interface FileRouteTypes {
     | '/api/whatsapp-supervision/notifications'
     | '/financeiro/aluno/$studentId'
     | '/api/crm/leads/$id'
+    | '/api/financeiro/collections/today'
+    | '/api/financeiro/students/$studentId'
     | '/api/gestao/channels/$id'
     | '/api/gestao/courses/$id'
     | '/api/whatsapp-supervision/conversations/$id'
@@ -718,7 +822,14 @@ export interface FileRouteTypes {
     | '/api/crm/leads'
     | '/api/crm/tasks'
     | '/api/crm/transfer'
+    | '/api/cron/financeiro-caez-sync'
     | '/api/cron/whatsapp-analysis'
+    | '/api/financeiro/collection-actions'
+    | '/api/financeiro/dashboard'
+    | '/api/financeiro/integration'
+    | '/api/financeiro/promises'
+    | '/api/financeiro/students'
+    | '/api/financeiro/sync'
     | '/api/gestao/attendances'
     | '/api/gestao/channels'
     | '/api/gestao/courses'
@@ -737,6 +848,8 @@ export interface FileRouteTypes {
     | '/api/whatsapp-supervision/notifications'
     | '/financeiro/aluno/$studentId'
     | '/api/crm/leads/$id'
+    | '/api/financeiro/collections/today'
+    | '/api/financeiro/students/$studentId'
     | '/api/gestao/channels/$id'
     | '/api/gestao/courses/$id'
     | '/api/whatsapp-supervision/conversations/$id'
@@ -778,7 +891,14 @@ export interface RootRouteChildren {
   ApiCrmLeadsRoute: typeof ApiCrmLeadsRouteWithChildren
   ApiCrmTasksRoute: typeof ApiCrmTasksRoute
   ApiCrmTransferRoute: typeof ApiCrmTransferRoute
+  ApiCronFinanceiroCaezSyncRoute: typeof ApiCronFinanceiroCaezSyncRoute
   ApiCronWhatsappAnalysisRoute: typeof ApiCronWhatsappAnalysisRoute
+  ApiFinanceiroCollectionActionsRoute: typeof ApiFinanceiroCollectionActionsRoute
+  ApiFinanceiroDashboardRoute: typeof ApiFinanceiroDashboardRoute
+  ApiFinanceiroIntegrationRoute: typeof ApiFinanceiroIntegrationRoute
+  ApiFinanceiroPromisesRoute: typeof ApiFinanceiroPromisesRoute
+  ApiFinanceiroStudentsRoute: typeof ApiFinanceiroStudentsRouteWithChildren
+  ApiFinanceiroSyncRoute: typeof ApiFinanceiroSyncRoute
   ApiGestaoAttendancesRoute: typeof ApiGestaoAttendancesRoute
   ApiGestaoChannelsRoute: typeof ApiGestaoChannelsRouteWithChildren
   ApiGestaoCoursesRoute: typeof ApiGestaoCoursesRouteWithChildren
@@ -790,6 +910,7 @@ export interface RootRouteChildren {
   ApiWebhooksEvolutionRoute: typeof ApiWebhooksEvolutionRoute
   ApiWebhooksKognaMetaLeadsRoute: typeof ApiWebhooksKognaMetaLeadsRoute
   ApiWebhooksMetaLeadsRoute: typeof ApiWebhooksMetaLeadsRoute
+  ApiFinanceiroCollectionsTodayRoute: typeof ApiFinanceiroCollectionsTodayRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1053,11 +1174,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCrmTransferRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/cron/financeiro-caez-sync': {
+      id: '/api/cron/financeiro-caez-sync'
+      path: '/api/cron/financeiro-caez-sync'
+      fullPath: '/api/cron/financeiro-caez-sync'
+      preLoaderRoute: typeof ApiCronFinanceiroCaezSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/cron/whatsapp-analysis': {
       id: '/api/cron/whatsapp-analysis'
       path: '/api/cron/whatsapp-analysis'
       fullPath: '/api/cron/whatsapp-analysis'
       preLoaderRoute: typeof ApiCronWhatsappAnalysisRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/financeiro/collection-actions': {
+      id: '/api/financeiro/collection-actions'
+      path: '/api/financeiro/collection-actions'
+      fullPath: '/api/financeiro/collection-actions'
+      preLoaderRoute: typeof ApiFinanceiroCollectionActionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/financeiro/dashboard': {
+      id: '/api/financeiro/dashboard'
+      path: '/api/financeiro/dashboard'
+      fullPath: '/api/financeiro/dashboard'
+      preLoaderRoute: typeof ApiFinanceiroDashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/financeiro/integration': {
+      id: '/api/financeiro/integration'
+      path: '/api/financeiro/integration'
+      fullPath: '/api/financeiro/integration'
+      preLoaderRoute: typeof ApiFinanceiroIntegrationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/financeiro/promises': {
+      id: '/api/financeiro/promises'
+      path: '/api/financeiro/promises'
+      fullPath: '/api/financeiro/promises'
+      preLoaderRoute: typeof ApiFinanceiroPromisesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/financeiro/students': {
+      id: '/api/financeiro/students'
+      path: '/api/financeiro/students'
+      fullPath: '/api/financeiro/students'
+      preLoaderRoute: typeof ApiFinanceiroStudentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/financeiro/sync': {
+      id: '/api/financeiro/sync'
+      path: '/api/financeiro/sync'
+      fullPath: '/api/financeiro/sync'
+      preLoaderRoute: typeof ApiFinanceiroSyncRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/gestao/attendances': {
@@ -1186,6 +1356,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCrmLeadsIdRouteImport
       parentRoute: typeof ApiCrmLeadsRoute
     }
+    '/api/financeiro/collections/today': {
+      id: '/api/financeiro/collections/today'
+      path: '/api/financeiro/collections/today'
+      fullPath: '/api/financeiro/collections/today'
+      preLoaderRoute: typeof ApiFinanceiroCollectionsTodayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/financeiro/students/$studentId': {
+      id: '/api/financeiro/students/$studentId'
+      path: '/$studentId'
+      fullPath: '/api/financeiro/students/$studentId'
+      preLoaderRoute: typeof ApiFinanceiroStudentsStudentIdRouteImport
+      parentRoute: typeof ApiFinanceiroStudentsRoute
+    }
     '/api/gestao/channels/$id': {
       id: '/api/gestao/channels/$id'
       path: '/$id'
@@ -1292,6 +1476,19 @@ const ApiCrmLeadsRouteWithChildren = ApiCrmLeadsRoute._addFileChildren(
   ApiCrmLeadsRouteChildren,
 )
 
+interface ApiFinanceiroStudentsRouteChildren {
+  ApiFinanceiroStudentsStudentIdRoute: typeof ApiFinanceiroStudentsStudentIdRoute
+}
+
+const ApiFinanceiroStudentsRouteChildren: ApiFinanceiroStudentsRouteChildren = {
+  ApiFinanceiroStudentsStudentIdRoute: ApiFinanceiroStudentsStudentIdRoute,
+}
+
+const ApiFinanceiroStudentsRouteWithChildren =
+  ApiFinanceiroStudentsRoute._addFileChildren(
+    ApiFinanceiroStudentsRouteChildren,
+  )
+
 interface ApiGestaoChannelsRouteChildren {
   ApiGestaoChannelsIdRoute: typeof ApiGestaoChannelsIdRoute
 }
@@ -1350,7 +1547,14 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCrmLeadsRoute: ApiCrmLeadsRouteWithChildren,
   ApiCrmTasksRoute: ApiCrmTasksRoute,
   ApiCrmTransferRoute: ApiCrmTransferRoute,
+  ApiCronFinanceiroCaezSyncRoute: ApiCronFinanceiroCaezSyncRoute,
   ApiCronWhatsappAnalysisRoute: ApiCronWhatsappAnalysisRoute,
+  ApiFinanceiroCollectionActionsRoute: ApiFinanceiroCollectionActionsRoute,
+  ApiFinanceiroDashboardRoute: ApiFinanceiroDashboardRoute,
+  ApiFinanceiroIntegrationRoute: ApiFinanceiroIntegrationRoute,
+  ApiFinanceiroPromisesRoute: ApiFinanceiroPromisesRoute,
+  ApiFinanceiroStudentsRoute: ApiFinanceiroStudentsRouteWithChildren,
+  ApiFinanceiroSyncRoute: ApiFinanceiroSyncRoute,
   ApiGestaoAttendancesRoute: ApiGestaoAttendancesRoute,
   ApiGestaoChannelsRoute: ApiGestaoChannelsRouteWithChildren,
   ApiGestaoCoursesRoute: ApiGestaoCoursesRouteWithChildren,
@@ -1362,6 +1566,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiWebhooksEvolutionRoute: ApiWebhooksEvolutionRoute,
   ApiWebhooksKognaMetaLeadsRoute: ApiWebhooksKognaMetaLeadsRoute,
   ApiWebhooksMetaLeadsRoute: ApiWebhooksMetaLeadsRoute,
+  ApiFinanceiroCollectionsTodayRoute: ApiFinanceiroCollectionsTodayRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

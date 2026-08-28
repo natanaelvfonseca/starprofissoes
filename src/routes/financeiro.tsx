@@ -2,149 +2,135 @@ import * as React from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
-  ArrowRight,
-  Banknote,
   CalendarClock,
-  CheckCircle2,
   CircleDollarSign,
   Clock3,
-  FileBarChart,
-  Gauge,
   LayoutDashboard,
   ListChecks,
-  MapPin,
-  MessageCircle,
-  PhoneCall,
-  ReceiptText,
-  Send,
+  Loader2,
+  RefreshCw,
+  Search,
+  Settings,
   ShieldCheck,
-  TrendingUp,
   Users,
   WalletCards,
-  X,
 } from "lucide-react";
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatCard } from "@/components/layout/StatCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
-type FinancialPage =
-  | "dashboard"
-  | "central"
-  | "turmas"
-  | "alunos"
-  | "cobranca"
-  | "whatsapp"
-  | "score"
-  | "relatorios";
-type ClassStatus = "Saudável" | "Atenção" | "Risco" | "Crítico";
-
-type ClassRecord = {
-  id: string;
-  course: string;
-  city: string;
-  date: string;
-  students: number;
-  expected: number;
-  received: number;
-  status: ClassStatus;
+type FinancialPage = "dashboard" | "central" | "students" | "settings";
+type DashboardData = {
+  total_students: number;
+  total_enrollments: number;
+  total_open_amount: number;
+  overdue_amount: number;
+  overdue_count: number;
+  due_today_amount: number;
+  due_today_count: number;
+  upcoming_amount: number;
+  upcoming_count: number;
+  students_overdue: number;
+  promises_today: number;
+  broken_promises: number;
+  not_found_financial_count: number;
+  not_returned_count: number;
+  aging: Array<{ bucket: string; count: number; amount: number }>;
 };
-
-type Student = {
-  id: string;
-  name: string;
-  whatsapp: string;
-  course: string;
-  city: string;
-  classDate: string;
-  total: number;
-  paid: number;
+type CollectionRow = {
+  installment_id: string;
+  student_id: string;
+  full_name: string;
+  phone: string | null;
+  responsible_name: string | null;
+  responsible_phone: string | null;
+  course_name: string | null;
+  class_name: string | null;
+  due_date: string;
+  days_overdue: number;
+  original_amount: number;
+  total_amount: number;
   status: string;
-  risk: number;
-  nextAction: string;
-  promise: string;
+  last_contact_at: string | null;
+  promised_date: string | null;
+  promised_amount: number | null;
+  score: number;
+};
+type StudentRow = {
+  id: string;
+  full_name: string;
+  phone: string | null;
+  course_name: string | null;
+  class_name: string | null;
+  external_enrollment_id: string | null;
+  financial_lookup_status: string | null;
+  overdue_amount: number;
+  overdue_count: number;
+  max_overdue_days: number;
+};
+type StudentsData = {
+  students: Array<StudentRow>;
+  total: number;
+  page: number;
+  pageSize: number;
+  filters: { courses: Array<string>; classes: Array<string> };
+};
+type IntegrationState = {
+  configured: boolean;
+  active: boolean;
+  syncPastDays: number;
+  syncFutureDays: number;
+  lastSyncAt?: string | null;
+  lastSuccessfulSyncAt?: string | null;
+  lastError?: string | null;
+  studentsCount: number;
+  installmentsCount: number;
+};
+type SyncRun = {
+  id: string;
+  status: string;
+  created_at: string;
+  classes_processed: number;
+  students_processed: number;
+  installments_found: number;
+  errors_count: number;
 };
 
-const classes: Array<ClassRecord> = [
-  { id: "bh-maquinas", course: "Operador de Máquinas Pesadas", city: "Belo Horizonte/MG", date: "2026-08-15", students: 31, expected: 74200, received: 46004, status: "Atenção" },
-  { id: "juina-bovinos", course: "Inseminação Artificial em Bovinos", city: "Juína/MT", date: "2026-08-02", students: 24, expected: 57528, received: 50112, status: "Saudável" },
-  { id: "querencia-colheitadeira", course: "Operador de Colheitadeira", city: "Querência/MT", date: "2026-07-25", students: 19, expected: 45543, received: 23682, status: "Risco" },
-  { id: "goiania-nr", course: "NR Segurança no Trabalho", city: "Goiânia/GO", date: "2026-07-18", students: 28, expected: 39144, received: 17615, status: "Crítico" },
+const tabs = [
+  { id: "dashboard" as const, label: "Dashboard", icon: LayoutDashboard },
+  { id: "central" as const, label: "Central do dia", icon: ListChecks },
+  { id: "students" as const, label: "Alunos e recebíveis", icon: Users },
+  { id: "settings" as const, label: "Configurações", icon: Settings },
 ];
-
-const students: Array<Student> = [
-  { id: "ana", name: "Ana Paula Ribeiro", whatsapp: "(31) 99843-2210", course: "Operador de Máquinas Pesadas", city: "Belo Horizonte/MG", classDate: "2026-08-15", total: 2397, paid: 1200, status: "Plano ativo", risk: 34, nextAction: "Enviar segunda parcela do plano sugerido", promise: "Prometeu pagar R$ 300 amanhã" },
-  { id: "joao", name: "João Batista Martins", whatsapp: "(62) 99120-0081", course: "NR Segurança no Trabalho", city: "Goiânia/GO", classDate: "2026-07-18", total: 1398, paid: 200, status: "Atrasado crítico", risk: 88, nextAction: "Ligar agora e renegociar entrada", promise: "Promessa quebrada há 2 dias" },
-  { id: "priscila", name: "Priscila Moraes", whatsapp: "(66) 98441-5542", course: "Operador de Colheitadeira", city: "Querência/MT", classDate: "2026-07-25", total: 2397, paid: 0, status: "Risco de desistência", risk: 92, nextAction: "Encaminhar para financeiro", promise: "Não respondeu WhatsApp" },
-  { id: "carlos", name: "Carlos Henrique Lima", whatsapp: "(66) 99904-7122", course: "Inseminação Artificial em Bovinos", city: "Juína/MT", classDate: "2026-08-02", total: 2397, paid: 2397, status: "Quitado", risk: 8, nextAction: "Enviar confirmação pré-turma", promise: "Pagamento confirmado" },
-  { id: "marta", name: "Marta Fernanda Souza", whatsapp: "(31) 98720-1011", course: "Operador de Máquinas Pesadas", city: "Belo Horizonte/MG", classDate: "2026-08-15", total: 2397, paid: 700, status: "Em dia", risk: 28, nextAction: "Lembrete amigável em 48h", promise: "Plano em andamento" },
-  { id: "edson", name: "Edson Pereira Alves", whatsapp: "(62) 98554-9021", course: "NR Segurança no Trabalho", city: "Goiânia/GO", classDate: "2026-07-18", total: 1398, paid: 650, status: "Atrasado leve", risk: 61, nextAction: "Enviar vencimento de hoje", promise: "Atendeu ligação e pediu retorno" },
-];
-
-const cashFlow = [
-  { label: "Hoje", recebido: 18400, previsto: 27000 },
-  { label: "D+3", recebido: 24700, previsto: 38000 },
-  { label: "D+7", recebido: 41100, previsto: 62000 },
-  { label: "D+15", recebido: 68300, previsto: 101000 },
-  { label: "D+30", recebido: 96000, previsto: 167000 },
-];
-
-const receivingEvolution = [
-  { day: "D-30", recebido: 18 },
-  { day: "D-21", recebido: 29 },
-  { day: "D-15", recebido: 43 },
-  { day: "D-10", recebido: 58 },
-  { day: "D-7", recebido: 71 },
-  { day: "D-2", recebido: 90 },
-];
-
-const tabs: Array<{ id: FinancialPage; label: string; icon: typeof LayoutDashboard }> = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "central", label: "Central do dia", icon: ListChecks },
-  { id: "turmas", label: "Turmas", icon: CalendarClock },
-  { id: "alunos", label: "Alunos e recebíveis", icon: Users },
-  { id: "cobranca", label: "Cobrança", icon: PhoneCall },
-  { id: "whatsapp", label: "WhatsApp", icon: MessageCircle },
-  { id: "score", label: "Score", icon: Gauge },
-  { id: "relatorios", label: "Relatórios", icon: FileBarChart },
-];
-
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-const percent = (received: number, expected: number) => Math.round((received / expected) * 100);
-const formatDate = (date: string) =>
-  new Intl.DateTimeFormat("pt-BR").format(new Date(`${date}T12:00:00`));
-const financialTotals = {
-  expected: 572_415,
-  received: 216_982,
-  open: 572_415 - 216_982,
-  inGoodStanding: 87,
-  risk: 75,
-};
+const formatDate = (value?: string | null) =>
+  value
+    ? new Intl.DateTimeFormat("pt-BR", {
+        dateStyle: "short",
+        ...(value.includes("T") ? { timeStyle: "short" as const } : {}),
+      }).format(new Date(value.includes("T") ? value : `${value}T12:00:00`))
+    : "—";
+async function readJson<T>(response: Response) {
+  const data = (await response.json().catch(() => ({}))) as T & { error?: string };
+  if (!response.ok) throw new Error(data.error ?? "Falha na requisição.");
+  return data;
+}
 
 export const Route = createFileRoute("/financeiro")({
   head: () => ({ meta: [{ title: "Star Financeiro · Star Profissões" }] }),
@@ -152,17 +138,48 @@ export const Route = createFileRoute("/financeiro")({
 });
 
 function FinancialPageRoute() {
+  const { session } = useAuth();
+  const unitId = session?.activeUnit?.id ?? "";
   const [page, setPage] = React.useState<FinancialPage>("dashboard");
-  const [selectedClass, setSelectedClass] = React.useState(classes[0]);
-  const [selectedStudent, setSelectedStudent] = React.useState<Student | null>(null);
-
+  const [dashboard, setDashboard] = React.useState<DashboardData | null>(null);
+  const [collections, setCollections] = React.useState<Array<CollectionRow>>([]);
+  const [loading, setLoading] = React.useState(false);
+  const load = React.useCallback(async () => {
+    if (!unitId) return;
+    setLoading(true);
+    try {
+      const q = `unit_id=${encodeURIComponent(unitId)}`;
+      const [d, c] = await Promise.all([
+        readJson<{ dashboard: DashboardData }>(
+          await fetch(`/api/financeiro/dashboard?${q}`, { credentials: "same-origin" }),
+        ),
+        readJson<{ collections: Array<CollectionRow> }>(
+          await fetch(`/api/financeiro/collections/today?${q}`, { credentials: "same-origin" }),
+        ),
+      ]);
+      setDashboard(d.dashboard);
+      setCollections(c.collections);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao carregar o Financeiro.");
+    } finally {
+      setLoading(false);
+    }
+  }, [unitId]);
+  React.useEffect(() => {
+    void load();
+  }, [load]);
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Star Financeiro"
-        title="Plataforma de Cobrança Inteligente"
+        title="Operação de cobrança CAEZ"
+        description={`Fonte financeira: CAEZ · Unidade: ${session?.activeUnit?.name ?? "não selecionada"}`}
+        actions={
+          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+            {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}Atualizar
+          </Button>
+        }
       />
-
       <div className="overflow-x-auto rounded-xl border bg-card p-1.5 shadow-card">
         <div className="flex min-w-max gap-1">
           {tabs.map((tab) => {
@@ -170,7 +187,6 @@ function FinancialPageRoute() {
             return (
               <Button
                 key={tab.id}
-                type="button"
                 size="sm"
                 variant={page === tab.id ? "default" : "ghost"}
                 className={cn("rounded-lg", page === tab.id && "bg-gradient-primary")}
@@ -183,428 +199,686 @@ function FinancialPageRoute() {
           })}
         </div>
       </div>
-
-      {page === "dashboard" ? <Dashboard totals={financialTotals} /> : null}
-      {page === "central" ? <DailyCollectionPage /> : null}
-      {page === "turmas" ? (
-        <ClassesPage selected={selectedClass} onSelect={setSelectedClass} />
-      ) : null}
-      {page === "alunos" ? <StudentsPage onSelect={setSelectedStudent} /> : null}
-      {page === "cobranca" ? <CollectionPage /> : null}
-      {page === "whatsapp" ? <WhatsappPage /> : null}
-      {page === "score" ? <ScorePage /> : null}
-      {page === "relatorios" ? <ReportsPage /> : null}
-
-      {selectedStudent ? (
-        <StudentDrawer student={selectedStudent} onClose={() => setSelectedStudent(null)} />
-      ) : null}
+      {page === "dashboard" ? <Dashboard data={dashboard} collections={collections} /> : null}
+      {page === "central" ? <DailyCollection rows={collections} /> : null}
+      {page === "students" ? <Students unitId={unitId} /> : null}
+      {page === "settings" ? <IntegrationSettings unitId={unitId} onSync={load} /> : null}
     </div>
   );
 }
-
-function Dashboard({ totals }: { totals: typeof financialTotals }) {
+function Empty({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+function Dashboard({
+  data,
+  collections,
+}: {
+  data: DashboardData | null;
+  collections: Array<CollectionRow>;
+}) {
+  if (!data) return <Empty>Configure a integração CAEZ e execute a primeira sincronização.</Empty>;
+  const order = ["1-7", "8-15", "16-30", "31-60", "61-90", "90+"];
+  const aging = order.map((bucket) => ({
+    bucket,
+    amount: data.aging.find((i) => i.bucket === bucket)?.amount ?? 0,
+  }));
   return (
     <div className="space-y-6">
       <section className="overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#16006C_0%,#07154C_100%)] p-6 text-white shadow-card md:p-8">
-        <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-          <div className="max-w-3xl">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-gold">Estratégia financeira</p>
-            <h2 className="mt-2 text-2xl font-extrabold text-white md:text-3xl">
-              Saúde financeira da operação
-            </h2>
-            <p className="mt-3 text-sm leading-6 text-white/70">
-              Monitore matrículas, priorize cobranças e reduza o risco financeiro da operação.
-            </p>
-          </div>
-          <div className="grid h-36 w-36 shrink-0 place-items-center rounded-full border border-emerald-300/50 bg-emerald-500/20 text-center shadow-[0_0_40px_rgba(52,211,153,0.18)]">
-            <div><strong className="block text-4xl text-emerald-300">{totals.inGoodStanding}%</strong><span className="block max-w-24 text-xs font-semibold leading-4 text-emerald-100">dos alunos em dia</span></div>
-          </div>
-        </div>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-gold">
+          Carteira financeira real
+        </p>
+        <h2 className="mt-2 text-2xl font-extrabold text-white md:text-3xl">
+          Saúde financeira da operação
+        </h2>
+        <p className="mt-3 text-sm text-white/70">
+          {data.total_students} alunos · {data.total_enrollments} matrículas sincronizadas
+          exclusivamente do CAEZ.
+        </p>
       </section>
-
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Receita prevista" value={money.format(totals.expected)} icon={WalletCards} hint="Turmas ativas" />
-        <StatCard label="Receita recebida" value={money.format(totals.received)} icon={Banknote} accent="success" hint="Caixa confirmado" />
-        <StatCard label="Saldo em aberto" value={money.format(totals.open)} icon={ReceiptText} accent="gold" hint="Valor ainda a receber" />
-        <StatCard label="Alunos em risco" value={totals.risk} icon={AlertTriangle} accent="warning" hint="Prioridade de cobrança" />
+        <StatCard
+          label="Saldo aberto"
+          value={money.format(data.total_open_amount)}
+          icon={WalletCards}
+          hint="Títulos retornados pelo CAEZ"
+        />
+        <StatCard
+          label="Valor vencido"
+          value={money.format(data.overdue_amount)}
+          icon={AlertTriangle}
+          accent="warning"
+          hint={`${data.overdue_count} parcelas`}
+        />
+        <StatCard
+          label="Vence hoje"
+          value={money.format(data.due_today_amount)}
+          icon={Clock3}
+          accent="gold"
+          hint={`${data.due_today_count} parcelas`}
+        />
+        <StatCard
+          label="Valor futuro"
+          value={money.format(data.upcoming_amount)}
+          icon={CalendarClock}
+          accent="success"
+          hint={`${data.upcoming_count} parcelas`}
+        />
       </section>
-
-      <section className="grid gap-4 xl:grid-cols-2">
-        <ChartCard title="Previsão de caixa" description="Recebido e previsto para os próximos 30 dias">
-          <ResponsiveContainer width="100%" height={260}>
-            <AreaChart data={cashFlow}>
-              <defs>
-                <linearGradient id="finance-gold" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="#F4B728" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="#F4B728" stopOpacity={0.03} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E7ECF3" />
-              <XAxis dataKey="label" axisLine={false} tickLine={false} />
-              <YAxis hide />
-              <Tooltip formatter={(value) => money.format(Number(value))} />
-              <Area dataKey="previsto" stroke="#224C99" fill="transparent" strokeWidth={2} />
-              <Area dataKey="recebido" stroke="#F4B728" fill="url(#finance-gold)" strokeWidth={3} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </ChartCard>
-        <ChartCard title="Evolução até a turma" description="Percentual médio recebido antes da realização">
-          <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={receivingEvolution}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E7ECF3" />
-              <XAxis dataKey="day" axisLine={false} tickLine={false} />
-              <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} axisLine={false} tickLine={false} />
-              <Tooltip formatter={(value) => `${value}% recebido`} />
-              <Line dataKey="recebido" stroke="#F4B728" strokeWidth={3} dot={{ fill: "#224C99" }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartCard>
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-2">
+      <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <Card>
-          <CardHeader><CardTitle className="text-base">Metas de antecipação</CardTitle></CardHeader>
-          <CardContent className="space-y-5">
-            {[["D-15", 40], ["D-7", 70], ["D-2", 90]].map(([label, value]) => (
-              <div key={label}>
-                <div className="mb-2 flex justify-between text-sm font-semibold"><span>{label}</span><span>{value}% recebido</span></div>
-                <Progress value={Number(value)} className="h-2.5" />
-              </div>
-            ))}
+          <CardHeader>
+            <CardTitle className="text-base">Aging da inadimplência</CardTitle>
+            <CardDescription>Valores vencidos por faixa de atraso</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={aging}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E7ECF3" />
+                <XAxis dataKey="bucket" />
+                <YAxis hide />
+                <Tooltip formatter={(value) => money.format(Number(value))} />
+                <Bar dataKey="amount" fill="#F4B728" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle className="text-base">Fila de ações prioritárias</CardTitle></CardHeader>
-          <CardContent className="divide-y">
-            {students.filter((student) => student.risk >= 60).map((student) => (
-              <div key={student.id} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
-                <div><div className="text-sm font-semibold">{student.name}</div><p className="mt-1 text-xs text-muted-foreground">{student.nextAction}</p></div>
-                <RiskBadge value={student.risk} />
-              </div>
-            ))}
+          <CardHeader>
+            <CardTitle className="text-base">Alertas operacionais</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Indicator label="Alunos inadimplentes" value={data.students_overdue} />
+            <Indicator label="Promessas para hoje" value={data.promises_today} />
+            <Indicator label="Promessas quebradas" value={data.broken_promises} danger />
+            <Indicator label="Financeiro não encontrado" value={data.not_found_financial_count} />
+            <Indicator label="Títulos não retornados" value={data.not_returned_count} />
           </CardContent>
         </Card>
       </section>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Maiores prioridades agora</CardTitle>
+        </CardHeader>
+        <CardContent className="divide-y">
+          {collections.slice(0, 5).map((row) => (
+            <div key={row.installment_id} className="flex items-center justify-between gap-4 py-3">
+              <div>
+                <Link
+                  to="/financeiro/aluno/$studentId"
+                  params={{ studentId: row.student_id }}
+                  className="font-semibold hover:text-primary"
+                >
+                  {row.full_name}
+                </Link>
+                <p className="text-xs text-muted-foreground">
+                  {row.days_overdue > 0 ? `${row.days_overdue} dias de atraso` : "Vence hoje"} ·{" "}
+                  {money.format(row.total_amount)}
+                </p>
+              </div>
+              <Badge variant="outline">Score {row.score}</Badge>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
     </div>
   );
 }
-
-const dailyCollectionRows = [
-  {
-    id: "joao-silva",
-    student: "João Silva",
-    className: "Máquinas Agrícolas",
-    situation: "Parcela atrasada",
-    value: 300,
-    commitment: "Sem acordo",
-    action: "Iniciar negociação",
-    tone: "critical",
-  },
-  {
-    id: "maria-souza",
-    student: "Maria Souza",
-    className: "Bombeiro Civil",
-    situation: "Promessa vence hoje",
-    value: 150,
-    commitment: "Pagar até 17h",
-    action: "Enviar lembrete",
-    tone: "attention",
-  },
-  {
-    id: "carlos-lima",
-    student: "Carlos Lima",
-    className: "Inseminação Artificial",
-    situation: "Acordo quebrado",
-    value: 200,
-    commitment: "R$ 50 semanal",
-    action: "Reorganizar plano",
-    tone: "critical",
-  },
-  {
-    id: "ana-santos",
-    student: "Ana Santos",
-    className: "Máquinas Pesadas",
-    situation: "Aguardando Pix",
-    value: 250,
-    commitment: "Pagar hoje",
-    action: "Confirmar recebimento",
-    tone: "waiting",
-  },
-] as const;
-
-function DailyCollectionPage() {
-  const indicators = [
-    { value: "R$ 8.750", label: "prometidos para hoje", icon: CircleDollarSign, tone: "text-primary bg-primary/10" },
-    { value: "R$ 3.200", label: "recebidos hoje", icon: CheckCircle2, tone: "text-emerald-700 bg-emerald-50" },
-    { value: "18", label: "compromissos vencendo", icon: Clock3, tone: "text-amber-700 bg-amber-50" },
-    { value: "7", label: "promessas quebradas", icon: AlertTriangle, tone: "text-red-700 bg-red-50" },
-    { value: "12", label: "negociações aguardando resposta", icon: MessageCircle, tone: "text-violet-700 bg-violet-50" },
-  ];
-
+function Indicator({ label, value, danger }: { label: string; value: number; danger?: boolean }) {
+  return (
+    <div className="flex items-center justify-between rounded-lg border p-3 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <strong className={danger && value ? "text-destructive" : ""}>{value}</strong>
+    </div>
+  );
+}
+function DailyCollection({ rows }: { rows: Array<CollectionRow> }) {
   return (
     <div className="space-y-6">
       <div>
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-gold">
           Central de cobrança do dia
         </p>
-        <h2 className="mt-2 text-2xl font-bold tracking-tight">Prioridades de cobrança</h2>
-        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-          Tudo o que a equipe precisa acompanhar hoje para recuperar pagamentos e cumprir
-          promessas.
+        <h2 className="mt-2 text-2xl font-bold">Prioridades reais</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Score determinístico por promessa, atraso, valor e suspensão.
         </p>
       </div>
-
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        {indicators.map((indicator) => {
-          const Icon = indicator.icon;
-          return (
-            <Card key={indicator.label} className="overflow-hidden">
-              <CardContent className="p-5">
-                <div className={cn("grid h-10 w-10 place-items-center rounded-xl", indicator.tone)}>
-                  <Icon className="h-5 w-5" />
-                </div>
-                <strong className="mt-4 block text-2xl tracking-tight">{indicator.value}</strong>
-                <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                  {indicator.label}
-                </span>
-              </CardContent>
-            </Card>
-          );
-        })}
+      <section className="grid gap-4 sm:grid-cols-3">
+        <StatCard label="Ações prioritárias" value={rows.length} icon={ListChecks} />
+        <StatCard
+          label="Promessas quebradas"
+          value={
+            rows.filter(
+              (r) => r.promised_date && r.promised_date < new Date().toISOString().slice(0, 10),
+            ).length
+          }
+          icon={AlertTriangle}
+          accent="warning"
+        />
+        <StatCard
+          label="Valor na fila"
+          value={money.format(rows.reduce((sum, r) => sum + r.total_amount, 0))}
+          icon={CircleDollarSign}
+          accent="gold"
+        />
       </section>
-
       <Card className="overflow-hidden">
-        <CardHeader className="border-b bg-muted/20">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <CardTitle className="text-base">Fila operacional de hoje</CardTitle>
-              <CardDescription className="mt-1">
-                Ordenada por urgência, compromisso e risco de recebimento.
-              </CardDescription>
-            </div>
-            <Badge variant="outline" className="w-fit bg-background">
-              4 ações prioritárias
-            </Badge>
-          </div>
-        </CardHeader>
         <CardContent className="overflow-x-auto p-0">
-          <table className="w-full min-w-[960px] text-sm">
-            <thead className="border-b bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                {["Aluno", "Turma", "Situação", "Valor", "Compromisso", "Próxima ação"].map(
-                  (heading) => (
-                    <th key={heading} className="px-5 py-3 font-semibold">
-                      {heading}
+          {rows.length ? (
+            <table className="w-full min-w-[1150px] text-sm">
+              <thead className="border-b bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  {[
+                    "Aluno",
+                    "Responsável",
+                    "Curso / turma",
+                    "Vencimento",
+                    "Atraso",
+                    "Valor",
+                    "Último contato",
+                    "Promessa",
+                    "Score",
+                    "Ação",
+                  ].map((h) => (
+                    <th key={h} className="px-4 py-3">
+                      {h}
                     </th>
-                  ),
-                )}
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {dailyCollectionRows.map((row) => (
-                <tr key={row.id} className="transition hover:bg-muted/30">
-                  <td className="px-5 py-4">
-                    <Link
-                      to="/financeiro/aluno/$studentId"
-                      params={{ studentId: row.id }}
-                      className="font-semibold text-foreground hover:text-primary"
-                    >
-                      {row.student}
-                    </Link>
-                  </td>
-                  <td className="px-5 py-4 text-muted-foreground">{row.className}</td>
-                  <td className="px-5 py-4">
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        row.tone === "critical" && "border-red-200 bg-red-50 text-red-800",
-                        row.tone === "attention" && "border-amber-200 bg-amber-50 text-amber-800",
-                        row.tone === "waiting" && "border-blue-200 bg-blue-50 text-blue-800",
-                      )}
-                    >
-                      {row.situation}
-                    </Badge>
-                  </td>
-                  <td className="px-5 py-4 font-bold">{money.format(row.value)}</td>
-                  <td className="px-5 py-4 text-muted-foreground">{row.commitment}</td>
-                  <td className="px-5 py-4">
-                    <Button asChild size="sm" variant="outline" className="justify-between">
-                      <Link to="/financeiro/aluno/$studentId" params={{ studentId: row.id }}>
-                        {row.action}
-                        <ArrowRight className="h-3.5 w-3.5" />
-                      </Link>
-                    </Button>
-                  </td>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y">
+                {rows.map((row) => (
+                  <tr key={row.installment_id} className="hover:bg-muted/30">
+                    <td className="px-4 py-4">
+                      <div className="font-semibold">{row.full_name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {row.phone || "Sem telefone"}
+                      </div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div>{row.responsible_name || "Próprio aluno"}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {row.responsible_phone || "—"}
+                      </div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div>{row.course_name || "—"}</div>
+                      <div className="text-xs text-muted-foreground">{row.class_name || "—"}</div>
+                    </td>
+                    <td className="px-4 py-4">{formatDate(row.due_date)}</td>
+                    <td className="px-4 py-4 font-semibold text-destructive">
+                      {row.days_overdue || "Hoje"}
+                    </td>
+                    <td className="px-4 py-4 font-bold">{money.format(row.total_amount)}</td>
+                    <td className="px-4 py-4">{formatDate(row.last_contact_at)}</td>
+                    <td className="px-4 py-4">
+                      {row.promised_date
+                        ? `${formatDate(row.promised_date)} · ${money.format(row.promised_amount ?? 0)}`
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-4">
+                      <Badge variant="outline">{row.score}</Badge>
+                    </td>
+                    <td className="px-4 py-4">
+                      <Button asChild size="sm" variant="outline">
+                        <Link
+                          to="/financeiro/aluno/$studentId"
+                          params={{ studentId: row.student_id }}
+                        >
+                          Abrir perfil
+                        </Link>
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <Empty>Nenhuma cobrança vencida ou com vencimento hoje.</Empty>
+          )}
         </CardContent>
       </Card>
     </div>
   );
 }
-
-function ClassesPage({ selected, onSelect }: { selected: ClassRecord; onSelect: (item: ClassRecord) => void }) {
+function Filter({
+  value,
+  onChange,
+  placeholder,
+  items,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  items: Array<Array<string>>;
+}) {
   return (
-    <div className="grid gap-4 xl:grid-cols-[1.5fr_0.8fr]">
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger>
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {items.map(([v, l]) => (
+          <SelectItem key={v} value={v}>
+            {l}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+function LookupBadge({ status }: { status: string | null }) {
+  const labels: Record<string, string> = {
+    FOUND: "Encontrado",
+    NOT_FOUND: "Não encontrado",
+    NO_DOCUMENT: "Sem documento",
+    ERROR: "Erro",
+  };
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        status === "FOUND" && "border-emerald-200 bg-emerald-50 text-emerald-800",
+        status === "ERROR" && "border-red-200 bg-red-50 text-red-800",
+      )}
+    >
+      {labels[status ?? ""] ?? "Pendente"}
+    </Badge>
+  );
+}
+function Students({ unitId }: { unitId: string }) {
+  const [data, setData] = React.useState<StudentsData | null>(null);
+  const [loading, setLoading] = React.useState(false);
+  const [search, setSearch] = React.useState("");
+  const [status, setStatus] = React.useState("all");
+  const [course, setCourse] = React.useState("all");
+  const [className, setClassName] = React.useState("all");
+  const [page, setPage] = React.useState(1);
+  const load = React.useCallback(async () => {
+    if (!unitId) return;
+    setLoading(true);
+    try {
+      const q = new URLSearchParams({
+        unit_id: unitId,
+        page: String(page),
+        pageSize: "25",
+        search,
+      });
+      if (status !== "all") q.set("status", status);
+      if (course !== "all") q.set("course", course);
+      if (className !== "all") q.set("class", className);
+      setData(
+        await readJson<StudentsData>(
+          await fetch(`/api/financeiro/students?${q}`, { credentials: "same-origin" }),
+        ),
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao listar alunos.");
+    } finally {
+      setLoading(false);
+    }
+  }, [unitId, page, search, status, course, className]);
+  React.useEffect(() => {
+    void load();
+  }, [load]);
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Alunos e recebíveis</CardTitle>
+          <CardDescription>Carteira acadêmica e financeira sincronizada do CAEZ.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Input
+              className="pl-9"
+              placeholder="Nome, telefone, matrícula..."
+              value={search}
+              onChange={(e) => {
+                setPage(1);
+                setSearch(e.target.value);
+              }}
+            />
+          </div>
+          <Filter
+            value={status}
+            onChange={(v) => {
+              setPage(1);
+              setStatus(v);
+            }}
+            placeholder="Status"
+            items={[
+              ["all", "Todos os status"],
+              ["FOUND", "Encontrado"],
+              ["NOT_FOUND", "Não encontrado"],
+              ["NO_DOCUMENT", "Sem documento"],
+              ["ERROR", "Erro"],
+            ]}
+          />
+          <Filter
+            value={course}
+            onChange={(v) => {
+              setPage(1);
+              setCourse(v);
+            }}
+            placeholder="Curso"
+            items={[
+              ["all", "Todos os cursos"],
+              ...(data?.filters.courses ?? []).map((v) => [v, v]),
+            ]}
+          />
+          <Filter
+            value={className}
+            onChange={(v) => {
+              setPage(1);
+              setClassName(v);
+            }}
+            placeholder="Turma"
+            items={[
+              ["all", "Todas as turmas"],
+              ...(data?.filters.classes ?? []).map((v) => [v, v]),
+            ]}
+          />
+        </CardContent>
+      </Card>
       <Card className="overflow-hidden">
-        <CardHeader><CardTitle>Turmas itinerantes</CardTitle><CardDescription>Selecione uma turma para consultar a antecipação.</CardDescription></CardHeader>
         <CardContent className="overflow-x-auto p-0">
-          <table className="w-full min-w-[820px] text-sm">
-            <thead className="border-y bg-muted/45 text-left text-xs uppercase text-muted-foreground"><tr>{["Curso", "Cidade", "Data", "Alunos", "Previsto", "Recebido", "Antecipado", "Status"].map((item) => <th key={item} className="px-4 py-3 font-semibold">{item}</th>)}</tr></thead>
-            <tbody className="divide-y">
-              {classes.map((item) => (
-                <tr key={item.id} className={cn("cursor-pointer transition hover:bg-muted/40", selected.id === item.id && "bg-accent/45")} onClick={() => onSelect(item)}>
-                  <td className="px-4 py-4 font-semibold">{item.course}</td><td className="px-4 py-4">{item.city}</td><td className="px-4 py-4">{formatDate(item.date)}</td><td className="px-4 py-4">{item.students}</td><td className="px-4 py-4">{money.format(item.expected)}</td><td className="px-4 py-4">{money.format(item.received)}</td><td className="px-4 py-4 font-bold">{percent(item.received, item.expected)}%</td><td className="px-4 py-4"><StatusBadge status={item.status} /></td>
+          {loading && !data ? (
+            <Empty>Carregando...</Empty>
+          ) : data?.students.length ? (
+            <table className="w-full min-w-[1000px] text-sm">
+              <thead className="border-b bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  {[
+                    "Aluno",
+                    "Curso",
+                    "Turma",
+                    "Matrícula",
+                    "Vencido",
+                    "Parcelas",
+                    "Maior atraso",
+                    "Status",
+                    "",
+                  ].map((h) => (
+                    <th key={h} className="px-4 py-3">
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y">
+                {data.students.map((s) => (
+                  <tr key={`${s.id}-${s.external_enrollment_id}`}>
+                    <td className="px-4 py-4">
+                      <div className="font-semibold">{s.full_name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {s.phone || "Sem telefone"}
+                      </div>
+                    </td>
+                    <td className="px-4 py-4">{s.course_name || "—"}</td>
+                    <td className="px-4 py-4">{s.class_name || "—"}</td>
+                    <td className="px-4 py-4">{s.external_enrollment_id || "—"}</td>
+                    <td className="px-4 py-4 font-bold">{money.format(s.overdue_amount)}</td>
+                    <td className="px-4 py-4">{s.overdue_count}</td>
+                    <td className="px-4 py-4">{s.max_overdue_days} dias</td>
+                    <td className="px-4 py-4">
+                      <LookupBadge status={s.financial_lookup_status} />
+                    </td>
+                    <td className="px-4 py-4">
+                      <Button asChild size="sm" variant="outline">
+                        <Link to="/financeiro/aluno/$studentId" params={{ studentId: s.id }}>
+                          Abrir
+                        </Link>
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <Empty>Nenhum aluno encontrado. Execute uma sincronização CAEZ.</Empty>
+          )}
+        </CardContent>
+      </Card>
+      {data ? (
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>{data.total} registros</span>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+            >
+              Anterior
+            </Button>
+            <Badge variant="outline">Página {page}</Badge>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page * data.pageSize >= data.total}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Próxima
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+function IntegrationSettings({ unitId, onSync }: { unitId: string; onSync: () => Promise<void> }) {
+  const [state, setState] = React.useState<IntegrationState | null>(null);
+  const [runs, setRuns] = React.useState<Array<SyncRun>>([]);
+  const [token, setToken] = React.useState("");
+  const [past, setPast] = React.useState(730);
+  const [future, setFuture] = React.useState(365);
+  const [active, setActive] = React.useState(true);
+  const [busy, setBusy] = React.useState("");
+  const load = React.useCallback(async () => {
+    if (!unitId) return;
+    const q = `unit_id=${encodeURIComponent(unitId)}`;
+    const [i, r] = await Promise.all([
+      readJson<{ integration: IntegrationState }>(
+        await fetch(`/api/financeiro/integration?${q}`, { credentials: "same-origin" }),
+      ),
+      readJson<{ runs: Array<SyncRun> }>(
+        await fetch(`/api/financeiro/sync?${q}`, { credentials: "same-origin" }),
+      ),
+    ]);
+    setState(i.integration);
+    setPast(i.integration.syncPastDays);
+    setFuture(i.integration.syncFutureDays);
+    setActive(i.integration.active);
+    setRuns(r.runs);
+  }, [unitId]);
+  React.useEffect(() => {
+    void load().catch((e) =>
+      toast.error(e instanceof Error ? e.message : "Falha ao carregar integração."),
+    );
+  }, [load]);
+  async function action(kind: "save" | "test" | "sync") {
+    setBusy(kind);
+    try {
+      if (kind === "save") {
+        const result = await readJson<{ integration: IntegrationState }>(
+          await fetch("/api/financeiro/integration", {
+            method: "PUT",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              unit_id: unitId,
+              token,
+              syncPastDays: past,
+              syncFutureDays: future,
+              active,
+            }),
+          }),
+        );
+        setState(result.integration);
+        setToken("");
+        toast.success("Integração CAEZ salva com segurança.");
+      } else if (kind === "test") {
+        const result = await readJson<{ result: { classesCount: number } }>(
+          await fetch("/api/financeiro/integration", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ unit_id: unitId, token: token || undefined }),
+          }),
+        );
+        toast.success(`Conexão válida: ${result.result.classesCount} turmas retornadas.`);
+      } else {
+        await readJson(
+          await fetch("/api/financeiro/sync", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ unit_id: unitId }),
+          }),
+        );
+        toast.success("Sincronização enfileirada.");
+        await onSync();
+      }
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha na operação CAEZ.");
+    } finally {
+      setBusy("");
+    }
+  }
+  return (
+    <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <ShieldCheck className="text-primary" />
+            <div>
+              <CardTitle>Integração CAEZ</CardTitle>
+              <CardDescription>Token criptografado e específico desta unidade.</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="flex items-center justify-between rounded-xl border p-4">
+            <div>
+              <strong className="text-sm">Integração ativa</strong>
+              <p className="text-xs text-muted-foreground">
+                {state?.configured ? "Token armazenado" : "Token ainda não configurado"}
+              </p>
+            </div>
+            <Switch checked={active} onCheckedChange={setActive} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="caez-token">Token integração</Label>
+            <Input
+              id="caez-token"
+              type="password"
+              autoComplete="new-password"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder={
+                state?.configured ? "Deixe vazio para manter o token salvo" : "Cole o token do CAEZ"
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              O token salvo nunca retorna ao navegador.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Dias retroativos</Label>
+              <Input
+                type="number"
+                min={1}
+                max={3650}
+                value={past}
+                onChange={(e) => setPast(Number(e.target.value))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Dias futuros</Label>
+              <Input
+                type="number"
+                min={1}
+                max={3650}
+                value={future}
+                onChange={(e) => setFuture(Number(e.target.value))}
+              />
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <Button onClick={() => void action("save")} disabled={!!busy}>
+              {busy === "save" ? <Loader2 className="animate-spin" /> : null}Salvar
+            </Button>
+            <Button variant="outline" onClick={() => void action("test")} disabled={!!busy}>
+              Testar conexão
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => void action("sync")}
+              disabled={!!busy || !state?.configured}
+            >
+              Sincronizar agora
+            </Button>
+          </div>
         </CardContent>
       </Card>
       <Card>
-        <CardHeader><CardTitle>{selected.city}</CardTitle><CardDescription>{selected.course}</CardDescription></CardHeader>
-        <CardContent className="space-y-5">
-          <Summary label="Receita prevista" value={money.format(selected.expected)} />
-          <Summary label="Receita recebida" value={money.format(selected.received)} />
-          <Summary label="Saldo aberto" value={money.format(selected.expected - selected.received)} />
-          <div><div className="mb-2 flex justify-between text-sm font-semibold"><span>Antecipação</span><span>{percent(selected.received, selected.expected)}%</span></div><Progress value={percent(selected.received, selected.expected)} /></div>
+        <CardHeader>
+          <CardTitle>Status operacional</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <Mini label="Alunos" value={state?.studentsCount ?? 0} />
+            <Mini label="Parcelas" value={state?.installmentsCount ?? 0} />
+            <Mini label="Última tentativa" value={formatDate(state?.lastSyncAt)} />
+            <Mini label="Último sucesso" value={formatDate(state?.lastSuccessfulSyncAt)} />
+          </div>
+          {state?.lastError ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+              {state.lastError}
+            </div>
+          ) : null}
+          <div>
+            <h3 className="mb-2 text-sm font-semibold">Execuções recentes</h3>
+            {runs.length ? (
+              <div className="divide-y rounded-xl border">
+                {runs.map((run) => (
+                  <div key={run.id} className="flex items-center justify-between gap-3 p-3 text-sm">
+                    <div>
+                      <Badge variant="outline">{run.status}</Badge>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {run.classes_processed} turmas · {run.students_processed} alunos ·{" "}
+                        {run.installments_found} parcelas
+                      </p>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDate(run.created_at)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Empty>Nenhuma sincronização executada.</Empty>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>
   );
 }
-
-function StudentsPage({ onSelect }: { onSelect: (student: Student) => void }) {
+function Mini({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <Card className="overflow-hidden">
-      <CardHeader><CardTitle>Alunos e recebíveis</CardTitle><CardDescription>Clique em um aluno para abrir o plano automático de antecipação.</CardDescription></CardHeader>
-      <CardContent className="overflow-x-auto p-0">
-        <table className="w-full min-w-[1050px] text-sm">
-          <thead className="border-y bg-muted/45 text-left text-xs uppercase text-muted-foreground"><tr>{["Aluno", "Curso / cidade", "Turma", "Total", "Pago", "Saldo", "%", "Status", "Score"].map((item) => <th key={item} className="px-4 py-3 font-semibold">{item}</th>)}</tr></thead>
-          <tbody className="divide-y">
-            {students.map((student) => (
-              <tr key={student.id} className="cursor-pointer transition hover:bg-muted/40" onClick={() => onSelect(student)}>
-                <td className="px-4 py-4"><div className="font-semibold">{student.name}</div><div className="text-xs text-muted-foreground">{student.whatsapp}</div></td><td className="px-4 py-4"><div>{student.course}</div><div className="text-xs text-muted-foreground">{student.city}</div></td><td className="px-4 py-4">{formatDate(student.classDate)}</td><td className="px-4 py-4">{money.format(student.total)}</td><td className="px-4 py-4 text-emerald-700">{money.format(student.paid)}</td><td className="px-4 py-4 font-semibold">{money.format(student.total - student.paid)}</td><td className="px-4 py-4">{percent(student.paid, student.total)}%</td><td className="px-4 py-4"><Badge variant="outline">{student.status}</Badge></td><td className="px-4 py-4"><RiskBadge value={student.risk} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </CardContent>
-    </Card>
-  );
-}
-
-function CollectionPage() {
-  const columns = ["Lembrete automático", "Atraso leve", "Atraso crítico", "Ligar agora", "Promessa quebrada", "Resolvido"];
-  return (
-    <div className="grid gap-3 overflow-x-auto pb-2" style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(240px, 1fr))` }}>
-      {columns.map((column, index) => (
-        <Card key={column} className="bg-muted/30 shadow-none">
-          <CardHeader className="p-4"><CardTitle className="text-sm">{column}</CardTitle></CardHeader>
-          <CardContent className="space-y-3 p-3 pt-0">
-            {students.filter((_, studentIndex) => studentIndex % columns.length === index || (index === 3 && students[studentIndex].risk > 80)).map((student) => (
-              <div key={`${column}-${student.id}`} className="rounded-xl border bg-card p-3 shadow-sm">
-                <div className="flex items-start justify-between gap-2"><strong className="text-sm">{student.name}</strong><RiskBadge value={student.risk} /></div>
-                <p className="mt-2 text-xs text-muted-foreground">{student.course}</p>
-                <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground"><MapPin className="h-3.5 w-3.5" />{student.city}</div>
-                <div className="mt-3 border-t pt-3 text-sm font-bold">{money.format(student.total - student.paid)} em aberto</div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      ))}
+    <div className="rounded-xl border p-4">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <strong className="mt-1 block text-sm">{value}</strong>
     </div>
   );
-}
-
-function WhatsappPage() {
-  const messages = [
-    ["Boas-vindas", "Sua matrícula foi registrada. Vamos organizar seu pagamento até a data da turma."],
-    ["Plano sugerido", "Posso dividir o saldo em parcelas menores antes da turma para facilitar sua organização."],
-    ["Vencimento hoje", "Hoje é o melhor dia para avançar no seu plano Star Financeiro. Posso enviar o link?"],
-    ["Pré-turma", "Sua turma está chegando. Vamos deixar sua confirmação financeira pronta."],
-  ];
-  return (
-    <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
-      <Card><CardHeader><CardTitle>Régua automática</CardTitle><CardDescription>Sequência sugerida de contatos.</CardDescription></CardHeader><CardContent className="space-y-2">{["Boas-vindas", "Plano sugerido", "Lembrete leve", "Vencimento hoje", "Atraso leve", "Atraso crítico", "Pré-turma", "Confirmação", "Atendimento humano"].map((item, index) => <div key={item} className="flex items-center gap-3 rounded-lg border p-3"><span className="grid h-7 w-7 place-items-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{index + 1}</span><span className="text-sm font-semibold">{item}</span></div>)}</CardContent></Card>
-      <Card><CardHeader><CardTitle>Exemplos de mensagens</CardTitle></CardHeader><CardContent className="space-y-3">{messages.map(([title, text]) => <div key={title} className="max-w-[90%] rounded-2xl rounded-tl-sm bg-emerald-50 p-4"><strong className="text-sm text-emerald-900">{title}</strong><p className="mt-1 text-sm leading-6 text-emerald-900/75">{text}</p></div>)}</CardContent></Card>
-    </div>
-  );
-}
-
-function ScorePage() {
-  const rules = [["Não pagou entrada", "+30"], ["Não respondeu WhatsApp", "+20"], ["Atrasou parcela", "+20"], ["Turma em menos de 7 dias", "+30"], ["Saldo acima de 50% em aberto", "+25"], ["Quebrou promessa", "+35"], ["Pagou parte do valor", "-20"], ["Confirmou presença", "-10"]];
-  return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Card><CardHeader><CardTitle>Como o score é calculado</CardTitle></CardHeader><CardContent className="divide-y">{rules.map(([label, points]) => <div key={label} className="flex justify-between py-3 text-sm"><span>{label}</span><strong className={points.startsWith("+") ? "text-destructive" : "text-emerald-700"}>{points}</strong></div>)}</CardContent></Card>
-      <Card><CardHeader><CardTitle>Classificação de risco</CardTitle></CardHeader><CardContent className="space-y-3"><RiskLevel label="Baixo risco" range="0 a 30" className="bg-emerald-50 text-emerald-800" /><RiskLevel label="Médio risco" range="31 a 60" className="bg-amber-50 text-amber-800" /><RiskLevel label="Alto risco" range="61 a 80" className="bg-orange-50 text-orange-800" /><RiskLevel label="Crítico" range="81 a 100" className="bg-red-50 text-red-800" /><p className="rounded-xl bg-muted p-4 text-sm text-muted-foreground">O score combina comportamento, proximidade da turma e saldo em aberto para ordenar a cobrança.</p></CardContent></Card>
-    </div>
-  );
-}
-
-function ReportsPage() {
-  const byCity = classes.map((item) => ({ city: item.city.split("/")[0], recebido: item.received, aberto: item.expected - item.received }));
-  const pie = [{ name: "Recebido", value: 137413, color: "#F4B728" }, { name: "Em aberto", value: 79002, color: "#224C99" }];
-  return (
-    <div className="space-y-4">
-      <div className="grid gap-4 xl:grid-cols-2">
-        <ChartCard title="Recebimento por cidade"><ResponsiveContainer width="100%" height={280}><BarChart data={byCity}><CartesianGrid strokeDasharray="3 3" stroke="#E7ECF3" /><XAxis dataKey="city" axisLine={false} tickLine={false} /><YAxis hide /><Tooltip formatter={(value) => money.format(Number(value))} /><Bar dataKey="recebido" fill="#F4B728" radius={[8, 8, 0, 0]} /><Bar dataKey="aberto" fill="#224C99" radius={[8, 8, 0, 0]} /></BarChart></ResponsiveContainer></ChartCard>
-        <ChartCard title="Previsão de caixa"><ResponsiveContainer width="100%" height={280}><PieChart><Pie data={pie} dataKey="value" innerRadius={70} outerRadius={105} paddingAngle={4}>{pie.map((item) => <Cell key={item.name} fill={item.color} />)}</Pie><Tooltip formatter={(value) => money.format(Number(value))} /></PieChart></ResponsiveContainer></ChartCard>
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">{["Recebimento por curso", "Recebimento por consultor", "Maior antecipação", "Turmas em risco", "Inadimplência"].map((item) => <Card key={item}><CardContent className="p-5"><FileBarChart className="h-5 w-5 text-primary" /><strong className="mt-4 block text-sm">{item}</strong><p className="mt-2 text-xs text-muted-foreground">Relatório executivo demonstrativo.</p></CardContent></Card>)}</div>
-    </div>
-  );
-}
-
-function StudentDrawer({ student, onClose }: { student: Student; onClose: () => void }) {
-  const open = student.total - student.paid;
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/35 backdrop-blur-sm" onClick={onClose}>
-      <aside className="h-full w-full max-w-lg overflow-y-auto bg-background p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-        <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-widest text-primary">Plano automático de antecipação</p><h2 className="mt-2 text-2xl font-bold">{student.name}</h2><p className="mt-1 text-sm text-muted-foreground">{student.course} · {student.city}</p></div><Button type="button" variant="ghost" size="icon" onClick={onClose}><X /></Button></div>
-        <div className="mt-6 grid grid-cols-2 gap-3"><SummaryBox label="Valor do curso" value={money.format(student.total)} icon={CircleDollarSign} /><SummaryBox label="Valor pago" value={money.format(student.paid)} icon={CheckCircle2} /><SummaryBox label="Saldo restante" value={money.format(open)} icon={ReceiptText} /><SummaryBox label="Score de risco" value={String(student.risk)} icon={Gauge} /></div>
-        <div className="mt-6 rounded-xl border p-4"><div className="mb-3 flex justify-between text-sm font-semibold"><span>Progresso do pagamento</span><span>{percent(student.paid, student.total)}%</span></div><Progress value={percent(student.paid, student.total)} /></div>
-        <Card className="mt-6"><CardHeader><CardTitle className="text-base">Plano sugerido</CardTitle><CardDescription>{student.promise}</CardDescription></CardHeader><CardContent className="space-y-2">{[0, 7, 14, 25].map((days, index) => <div key={days} className="flex justify-between rounded-lg bg-muted px-3 py-2 text-sm"><span>Parcela {index + 1}</span><strong>{money.format(Math.ceil(open / 4))} {index === 0 ? "hoje" : `em ${days} dias`}</strong></div>)}</CardContent></Card>
-        <div className="mt-6 grid grid-cols-2 gap-3">
-          <Button asChild className="col-span-2 bg-gradient-primary">
-            <Link to="/financeiro/aluno/$studentId" params={{ studentId: student.id }}>
-              Abrir perfil financeiro completo
-              <ArrowRight />
-            </Link>
-          </Button>
-          <Button><Send />Enviar link</Button>
-          <Button variant="outline"><Banknote />Registrar pagamento</Button>
-          <Button variant="outline"><ReceiptText />Registrar promessa</Button>
-          <Button variant="outline"><MessageCircle />WhatsApp</Button>
-        </div>
-      </aside>
-    </div>
-  );
-}
-
-function ChartCard({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
-  return <Card><CardHeader><CardTitle className="text-base">{title}</CardTitle>{description ? <CardDescription>{description}</CardDescription> : null}</CardHeader><CardContent>{children}</CardContent></Card>;
-}
-
-function StatusBadge({ status }: { status: ClassStatus }) {
-  const classesByStatus: Record<ClassStatus, string> = { "Saudável": "bg-emerald-50 text-emerald-800 border-emerald-200", "Atenção": "bg-amber-50 text-amber-800 border-amber-200", "Risco": "bg-orange-50 text-orange-800 border-orange-200", "Crítico": "bg-red-50 text-red-800 border-red-200" };
-  return <Badge variant="outline" className={classesByStatus[status]}>{status}</Badge>;
-}
-
-function RiskBadge({ value }: { value: number }) {
-  return <Badge variant="outline" className={cn(value >= 81 ? "border-red-200 bg-red-50 text-red-800" : value >= 61 ? "border-orange-200 bg-orange-50 text-orange-800" : value >= 31 ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800")}>{value}</Badge>;
-}
-
-function Summary({ label, value }: { label: string; value: string }) {
-  return <div className="flex items-center justify-between border-b pb-3 text-sm last:border-0 last:pb-0"><span className="text-muted-foreground">{label}</span><strong>{value}</strong></div>;
-}
-
-function SummaryBox({ label, value, icon: Icon }: { label: string; value: string; icon: typeof Banknote }) {
-  return <div className="rounded-xl border p-4"><Icon className="h-5 w-5 text-primary" /><span className="mt-3 block text-xs text-muted-foreground">{label}</span><strong className="mt-1 block">{value}</strong></div>;
-}
-
-function RiskLevel({ label, range, className }: { label: string; range: string; className: string }) {
-  return <div className={cn("flex items-center justify-between rounded-xl px-4 py-3 text-sm font-semibold", className)}><span>{label}</span><span>{range}</span></div>;
 }

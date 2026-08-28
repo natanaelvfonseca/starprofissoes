@@ -1,52 +1,102 @@
+import * as React from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
 import {
   ArrowLeft,
   CalendarDays,
   CheckCircle2,
   Clock3,
-  CreditCard,
   History,
-  RefreshCw,
+  Loader2,
+  MessageCircle,
+  PhoneCall,
   ReceiptText,
+  RefreshCw,
   UserRound,
 } from "lucide-react";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/lib/auth";
 
-const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-
-const profiles: Record<string, { name: string; course: string }> = {
-  "joao-silva": { name: "João Silva", course: "Máquinas Agrícolas" },
-  "maria-souza": { name: "Maria Souza", course: "Bombeiro Civil" },
-  "carlos-lima": { name: "Carlos Lima", course: "Inseminação Artificial" },
-  "ana-santos": { name: "Ana Santos", course: "Máquinas Pesadas" },
-  joao: { name: "João Batista Martins", course: "NR Segurança no Trabalho" },
-  ana: { name: "Ana Paula Ribeiro", course: "Operador de Máquinas Pesadas" },
-  priscila: { name: "Priscila Moraes", course: "Operador de Colheitadeira" },
-  carlos: { name: "Carlos Henrique Lima", course: "Inseminação Artificial em Bovinos" },
-  marta: { name: "Marta Fernanda Souza", course: "Operador de Máquinas Pesadas" },
-  edson: { name: "Edson Pereira Alves", course: "NR Segurança no Trabalho" },
+type Profile = {
+  student: {
+    id: string;
+    full_name: string;
+    phone: string | null;
+    phone2: string | null;
+    email: string | null;
+    enrollment_id: string | null;
+    external_enrollment_id: string | null;
+    course_name: string | null;
+    class_name: string | null;
+    enrollment_date: string | null;
+    start_date: string | null;
+    end_date: string | null;
+    financial_lookup_status: string | null;
+    overdue_amount: number;
+    upcoming_amount: number;
+    overdue_count: number;
+    max_overdue_days: number;
+    responsible_name: string | null;
+    responsible_phone: string | null;
+    responsible_email: string | null;
+  };
+  installments: Array<{
+    id: string;
+    due_date: string;
+    original_amount: number;
+    penalty_amount: number;
+    interest_amount: number;
+    total_amount: number;
+    days_overdue: number;
+    status: string;
+    boleto_url: string | null;
+    course_suspended: boolean;
+    restriction_type: string | null;
+  }>;
+  actions: Array<{
+    id: string;
+    type: string;
+    status: string;
+    notes: string | null;
+    performed_at: string;
+    performed_by_name: string | null;
+  }>;
+  promises: Array<{
+    id: string;
+    installment_id: string | null;
+    promised_date: string;
+    promised_amount: number;
+    status: string;
+    notes: string | null;
+    created_at: string;
+  }>;
 };
-
-const timeline = [
-  { date: "02/07", title: "Matrícula realizada", detail: "Contrato financeiro criado", kind: "neutral" },
-  { date: "02/07", title: "Entrada de R$ 200 recebida", detail: "Pagamento confirmado via Pix", kind: "success" },
-  { date: "10/07", title: "Parcela de R$ 300 vencida", detail: "Compromisso não identificado", kind: "danger" },
-  { date: "12/07", title: "Aluno informou dificuldade financeira", detail: "Atendimento registrado pela equipe", kind: "attention" },
-  { date: "12/07", title: "Novo plano criado: R$ 75 por semana", detail: "Renegociação aceita pelo aluno", kind: "neutral" },
-  { date: "19/07", title: "Primeiro pagamento recebido", detail: "R$ 75 confirmado", kind: "success" },
-  { date: "26/07", title: "Segundo pagamento recebido", detail: "R$ 75 confirmado", kind: "success" },
-  { date: "02/08", title: "Próximo compromisso", detail: "R$ 75 aguardando pagamento", kind: "upcoming" },
-] as const;
+const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+const date = (value?: string | null) =>
+  value
+    ? new Intl.DateTimeFormat("pt-BR", {
+        dateStyle: "short",
+        ...(value.includes("T") ? { timeStyle: "short" as const } : {}),
+      }).format(new Date(value.includes("T") ? value : `${value}T12:00:00`))
+    : "—";
+async function readJson<T>(response: Response) {
+  const data = (await response.json().catch(() => ({}))) as T & { error?: string };
+  if (!response.ok) throw new Error(data.error ?? "Falha na requisição.");
+  return data;
+}
 
 export const Route = createFileRoute("/financeiro/aluno/$studentId")({
   head: () => ({ meta: [{ title: "Perfil financeiro do aluno · Star Profissões" }] }),
@@ -55,164 +105,479 @@ export const Route = createFileRoute("/financeiro/aluno/$studentId")({
 
 function StudentFinancialProfile() {
   const { studentId } = Route.useParams();
-  const profile = profiles[studentId] ?? profiles["joao-silva"];
-  const total = 1_400;
-  const received = 350;
-  const balance = total - received;
-  const progress = Math.round((received / total) * 100);
-
+  const { session } = useAuth();
+  const unitId = session?.activeUnit?.id ?? "";
+  const [profile, setProfile] = React.useState<Profile | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [mode, setMode] = React.useState<"contact" | "promise" | null>(null);
+  const load = React.useCallback(async () => {
+    if (!unitId) return;
+    setLoading(true);
+    try {
+      setProfile(
+        await readJson<Profile>(
+          await fetch(
+            `/api/financeiro/students/${encodeURIComponent(studentId)}?unit_id=${encodeURIComponent(unitId)}`,
+            { credentials: "same-origin" },
+          ),
+        ),
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao carregar o aluno.");
+    } finally {
+      setLoading(false);
+    }
+  }, [studentId, unitId]);
+  React.useEffect(() => {
+    void load();
+  }, [load]);
+  if (loading && !profile)
+    return (
+      <div className="grid min-h-64 place-items-center">
+        <Loader2 className="animate-spin text-primary" />
+      </div>
+    );
+  if (!profile)
+    return (
+      <div className="space-y-4">
+        <PageHeader eyebrow="Financeiro" title="Aluno não encontrado" />
+        <Button asChild variant="outline">
+          <Link to="/financeiro">
+            <ArrowLeft />
+            Voltar
+          </Link>
+        </Button>
+      </div>
+    );
+  const s = profile.student;
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Perfil financeiro do aluno"
-        title={profile.name}
-        description="Histórico completo do compromisso, recebimentos e negociações."
+        title={s.full_name}
+        description="Dados financeiros sincronizados do CAEZ e histórico operacional da Star."
         actions={
-          <Button asChild variant="outline">
-            <Link to="/financeiro">
-              <ArrowLeft className="h-4 w-4" />
-              Voltar ao Financeiro
-            </Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => void load()}>
+              <RefreshCw />
+              Atualizar
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="/financeiro">
+                <ArrowLeft />
+                Voltar
+              </Link>
+            </Button>
+          </div>
         }
       />
-
       <section className="grid gap-4 lg:grid-cols-[1.45fr_0.55fr]">
         <Card>
           <CardHeader className="border-b">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <CardTitle>Resumo do compromisso</CardTitle>
-                <CardDescription className="mt-1">
-                  {profile.course} · Turma de 15/08/2026
-                </CardDescription>
-              </div>
-              <Badge className="w-fit border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-50">
-                Plano renegociado
-              </Badge>
-            </div>
+            <CardTitle>Aluno e matrícula</CardTitle>
+            <CardDescription>
+              {s.course_name || "Curso não informado"} · {s.class_name || "Turma não informada"}
+            </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-x-8 gap-y-5 p-6 sm:grid-cols-2">
-            <DataPoint label="Curso e turma" value={`${profile.course} · 15/08/2026`} />
-            <DataPoint label="Valor total contratado" value={money.format(total)} />
-            <DataPoint label="Valor já recebido" value={money.format(received)} valueClass="text-emerald-700" />
-            <DataPoint label="Saldo restante" value={money.format(balance)} />
-            <DataPoint label="Plano original" value="Entrada de R$ 200 + 4x de R$ 300" />
-            <DataPoint label="Próxima parcela" value="R$ 75 em 02/08" />
-            <DataPoint label="Dias de atraso" value="18 dias" valueClass="text-destructive" />
-            <DataPoint label="Realização da turma" value="15 de agosto de 2026" />
+            <Data label="Matrícula CAEZ" value={s.external_enrollment_id || "—"} />
+            <Data label="Status da consulta" value={s.financial_lookup_status || "—"} />
+            <Data label="Telefone" value={s.phone || "—"} />
+            <Data label="E-mail" value={s.email || "—"} />
+            <Data
+              label="Responsável financeiro"
+              value={s.responsible_name || "Próprio aluno / não informado"}
+            />
+            <Data
+              label="Contato do responsável"
+              value={s.responsible_phone || s.responsible_email || "—"}
+            />
+            <Data label="Data da matrícula" value={date(s.enrollment_date)} />
+            <Data label="Período da turma" value={`${date(s.start_date)} a ${date(s.end_date)}`} />
           </CardContent>
         </Card>
-
         <Card className="overflow-hidden">
           <CardHeader className="bg-[linear-gradient(135deg,#16006C_0%,#07154C_100%)] text-white">
-            <CardTitle className="text-white">Situação atual</CardTitle>
+            <CardTitle className="text-white">Resumo da carteira</CardTitle>
             <CardDescription className="text-white/65">
-              Leitura rápida da saúde financeira
+              Somente títulos retornados pelo CAEZ
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5 p-6">
-            <div>
-              <div className="mb-2 flex justify-between text-sm font-semibold">
-                <span>Plano concluído</span>
-                <span>{progress}%</span>
-              </div>
-              <Progress value={progress} className="h-2.5" />
-            </div>
-            <StatusLine icon={ReceiptText} label="Saldo em aberto" value={money.format(balance)} />
-            <StatusLine icon={Clock3} label="Próximo compromisso" value="02/08 · R$ 75" />
-            <StatusLine icon={RefreshCw} label="Plano atual" value="Semanal" />
-            <StatusLine icon={CalendarDays} label="Turma" value="Em 18 dias" />
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-              <strong className="block">Acompanhamento necessário</strong>
-              <span className="mt-1 block text-xs leading-5 text-amber-800">
-                Confirmar o próximo compromisso antes das 17h de 02/08.
-              </span>
-            </div>
+            <StatusLine
+              icon={ReceiptText}
+              label="Valor vencido"
+              value={money.format(s.overdue_amount)}
+            />
+            <StatusLine
+              icon={CalendarDays}
+              label="Valor futuro"
+              value={money.format(s.upcoming_amount)}
+            />
+            <StatusLine icon={Clock3} label="Parcelas vencidas" value={String(s.overdue_count)} />
+            <StatusLine
+              icon={RefreshCw}
+              label="Maior atraso"
+              value={`${s.max_overdue_days} dias`}
+            />
           </CardContent>
         </Card>
       </section>
-
       <Card>
-        <CardHeader className="border-b">
-          <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 text-primary">
-              <History className="h-5 w-5" />
-            </div>
-            <div>
-              <CardTitle>Linha do tempo financeira</CardTitle>
-              <CardDescription className="mt-1">
-                Tudo o que aconteceu desde a matrícula.
-              </CardDescription>
-            </div>
-          </div>
+        <CardHeader>
+          <CardTitle>Parcelas CAEZ</CardTitle>
+          <CardDescription>Nenhuma baixa ou alteração é enviada ao ERP.</CardDescription>
         </CardHeader>
-        <CardContent className="p-6">
-          <div className="relative">
-            <div className="absolute bottom-4 left-[51px] top-4 w-px bg-border" />
-            <div className="space-y-1">
-              {timeline.map((event) => (
-                <div key={`${event.date}-${event.title}`} className="relative grid grid-cols-[74px_1fr] gap-4 py-3">
-                  <div className="text-xs font-bold text-muted-foreground">{event.date}</div>
-                  <div className="relative rounded-xl border bg-card p-4 shadow-sm">
-                    <span
-                      className={`absolute -left-[29px] top-5 h-3 w-3 rounded-full border-2 border-background ${
-                        event.kind === "success"
-                          ? "bg-emerald-500"
-                          : event.kind === "danger"
-                            ? "bg-red-500"
-                            : event.kind === "attention"
-                              ? "bg-amber-500"
-                              : event.kind === "upcoming"
-                                ? "bg-primary"
-                                : "bg-muted-foreground"
-                      }`}
-                    />
-                    <div className="text-sm font-semibold">{event.title}</div>
-                    <p className="mt-1 text-xs text-muted-foreground">{event.detail}</p>
-                  </div>
-                </div>
-              ))}
+        <CardContent className="overflow-x-auto p-0">
+          {profile.installments.length ? (
+            <table className="w-full min-w-[900px] text-sm">
+              <thead className="border-y bg-muted/40 text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  {[
+                    "Vencimento",
+                    "Original",
+                    "Multa",
+                    "Juros",
+                    "Atualizado",
+                    "Atraso",
+                    "Status",
+                    "Boleto",
+                  ].map((h) => (
+                    <th key={h} className="px-4 py-3">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {profile.installments.map((i) => (
+                  <tr key={i.id}>
+                    <td className="px-4 py-4">{date(i.due_date)}</td>
+                    <td className="px-4 py-4">{money.format(i.original_amount)}</td>
+                    <td className="px-4 py-4">{money.format(i.penalty_amount)}</td>
+                    <td className="px-4 py-4">{money.format(i.interest_amount)}</td>
+                    <td className="px-4 py-4 font-bold">{money.format(i.total_amount)}</td>
+                    <td className="px-4 py-4">{i.days_overdue} dias</td>
+                    <td className="px-4 py-4">
+                      <StatusBadge status={i.status} />
+                    </td>
+                    <td className="px-4 py-4">
+                      {i.boleto_url ? (
+                        <Button asChild size="sm" variant="outline">
+                          <a href={i.boleto_url} target="_blank" rel="noreferrer">
+                            Abrir boleto
+                          </a>
+                        </Button>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="p-8 text-center text-sm text-muted-foreground">
+              Nenhuma parcela retornada pelo CAEZ.
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
-
-      <section className="grid gap-4 sm:grid-cols-3">
-        <Button className="h-11 bg-gradient-primary">
-          <CreditCard />
-          Registrar pagamento
-        </Button>
-        <Button variant="outline" className="h-11">
-          <RefreshCw />
-          Reorganizar plano
-        </Button>
-        <Button variant="outline" className="h-11">
+      <section className="grid gap-3 sm:grid-cols-2">
+        <Button className="h-11 bg-gradient-primary" onClick={() => setMode("contact")}>
           <UserRound />
           Registrar contato
         </Button>
+        <Button variant="outline" className="h-11" onClick={() => setMode("promise")}>
+          <ReceiptText />
+          Registrar promessa
+        </Button>
+      </section>
+      {mode === "contact" ? (
+        <ContactForm
+          unitId={unitId}
+          studentId={studentId}
+          enrollmentId={s.enrollment_id}
+          onDone={async () => {
+            setMode(null);
+            await load();
+          }}
+          onCancel={() => setMode(null)}
+        />
+      ) : null}
+      {mode === "promise" ? (
+        <PromiseForm
+          unitId={unitId}
+          studentId={studentId}
+          installments={profile.installments}
+          onDone={async () => {
+            setMode(null);
+            await load();
+          }}
+          onCancel={() => setMode(null)}
+        />
+      ) : null}
+      <section className="grid gap-4 xl:grid-cols-2">
+        <Timeline title="Contatos de cobrança" icon={History}>
+          {profile.actions.length ? (
+            profile.actions.map((a) => (
+              <Event
+                key={a.id}
+                dateValue={a.performed_at}
+                title={`${actionLabel(a.type)} · ${resultLabel(a.status)}`}
+                detail={
+                  [a.notes, a.performed_by_name].filter(Boolean).join(" · ") || "Sem observações"
+                }
+              />
+            ))
+          ) : (
+            <p className="text-sm text-muted-foreground">Nenhum contato registrado.</p>
+          )}
+        </Timeline>
+        <Timeline title="Promessas de pagamento" icon={CheckCircle2}>
+          {profile.promises.length ? (
+            profile.promises.map((p) => (
+              <Event
+                key={p.id}
+                dateValue={p.created_at}
+                title={`${money.format(p.promised_amount)} para ${date(p.promised_date)}`}
+                detail={`${promiseLabel(p.status)}${p.notes ? ` · ${p.notes}` : ""}`}
+              />
+            ))
+          ) : (
+            <p className="text-sm text-muted-foreground">Nenhuma promessa registrada.</p>
+          )}
+        </Timeline>
       </section>
     </div>
   );
 }
 
-function DataPoint({
-  label,
-  value,
-  valueClass,
+function ContactForm({
+  unitId,
+  studentId,
+  enrollmentId,
+  onDone,
+  onCancel,
 }: {
-  label: string;
-  value: string;
-  valueClass?: string;
+  unitId: string;
+  studentId: string;
+  enrollmentId: string | null;
+  onDone: () => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [type, setType] = React.useState("manual_contact");
+  const [status, setStatus] = React.useState("attempted");
+  const [notes, setNotes] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  async function save() {
+    setSaving(true);
+    try {
+      await readJson(
+        await fetch("/api/financeiro/collection-actions", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ unit_id: unitId, studentId, enrollmentId, type, status, notes }),
+        }),
+      );
+      toast.success("Contato registrado.");
+      await onDone();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao registrar contato.");
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <Editor title="Registrar contato" onCancel={onCancel}>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Tipo">
+          <Choice
+            value={type}
+            onChange={setType}
+            items={[
+              ["whatsapp", "WhatsApp"],
+              ["call", "Ligação"],
+              ["manual_contact", "Contato manual"],
+              ["note", "Observação"],
+            ]}
+          />
+        </Field>
+        <Field label="Resultado">
+          <Choice
+            value={status}
+            onChange={setStatus}
+            items={[
+              ["attempted", "Tentativa"],
+              ["answered", "Atendeu"],
+              ["no_answer", "Não respondeu"],
+              ["negotiating", "Negociando"],
+              ["resolved", "Resolvido"],
+            ]}
+          />
+        </Field>
+      </div>
+      <Field label="Observações">
+        <Textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Registre apenas informações necessárias para a cobrança."
+        />
+      </Field>
+      <Button onClick={() => void save()} disabled={saving}>
+        {saving ? <Loader2 className="animate-spin" /> : null}Salvar contato
+      </Button>
+    </Editor>
+  );
+}
+function PromiseForm({
+  unitId,
+  studentId,
+  installments,
+  onDone,
+  onCancel,
+}: {
+  unitId: string;
+  studentId: string;
+  installments: Profile["installments"];
+  onDone: () => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [installmentId, setInstallmentId] = React.useState("none");
+  const [promisedDate, setPromisedDate] = React.useState("");
+  const [promisedAmount, setPromisedAmount] = React.useState("");
+  const [notes, setNotes] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  async function save() {
+    setSaving(true);
+    try {
+      await readJson(
+        await fetch("/api/financeiro/promises", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            unit_id: unitId,
+            studentId,
+            installmentId: installmentId === "none" ? null : installmentId,
+            promisedDate,
+            promisedAmount: Number(promisedAmount),
+            notes,
+          }),
+        }),
+      );
+      toast.success("Promessa registrada.");
+      await onDone();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao registrar promessa.");
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <Editor title="Registrar promessa" onCancel={onCancel}>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Field label="Parcela">
+          <Choice
+            value={installmentId}
+            onChange={setInstallmentId}
+            items={[
+              ["none", "Sem parcela específica"],
+              ...installments.map((i) => [
+                i.id,
+                `${date(i.due_date)} · ${money.format(i.total_amount)}`,
+              ]),
+            ]}
+          />
+        </Field>
+        <Field label="Data prometida">
+          <Input
+            type="date"
+            value={promisedDate}
+            onChange={(e) => setPromisedDate(e.target.value)}
+          />
+        </Field>
+        <Field label="Valor">
+          <Input
+            type="number"
+            min="0.01"
+            step="0.01"
+            value={promisedAmount}
+            onChange={(e) => setPromisedAmount(e.target.value)}
+          />
+        </Field>
+      </div>
+      <Field label="Notas">
+        <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+      </Field>
+      <Button onClick={() => void save()} disabled={saving}>
+        {saving ? <Loader2 className="animate-spin" /> : null}Salvar promessa
+      </Button>
+    </Editor>
+  );
+}
+function Editor({
+  title,
+  onCancel,
+  children,
+}: {
+  title: string;
+  onCancel: () => void;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="border-b pb-4">
-      <span className="block text-xs text-muted-foreground">{label}</span>
-      <strong className={`mt-1 block text-sm ${valueClass ?? ""}`}>{value}</strong>
+    <Card className="border-primary/30">
+      <CardHeader className="flex-row items-center justify-between">
+        <CardTitle className="text-base">{title}</CardTitle>
+        <Button variant="ghost" size="sm" onClick={onCancel}>
+          Cancelar
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-4">{children}</CardContent>
+    </Card>
+  );
+}
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      {children}
     </div>
   );
 }
-
+function Choice({
+  value,
+  onChange,
+  items,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  items: Array<Array<string>>;
+}) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {items.map(([v, l]) => (
+          <SelectItem key={v} value={v}>
+            {l}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+function Data({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border-b pb-4">
+      <span className="block text-xs text-muted-foreground">{label}</span>
+      <strong className="mt-1 block text-sm">{value}</strong>
+    </div>
+  );
+}
 function StatusLine({
   icon: Icon,
   label,
@@ -224,13 +589,98 @@ function StatusLine({
 }) {
   return (
     <div className="flex items-center gap-3">
-      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-muted text-primary">
+      <div className="grid h-9 w-9 place-items-center rounded-lg bg-muted text-primary">
         <Icon className="h-4 w-4" />
       </div>
-      <div className="min-w-0">
+      <div>
         <span className="block text-xs text-muted-foreground">{label}</span>
-        <strong className="block truncate text-sm">{value}</strong>
+        <strong className="text-sm">{value}</strong>
       </div>
     </div>
+  );
+}
+function StatusBadge({ status }: { status: string }) {
+  const labels: Record<string, string> = {
+    upcoming: "Futura",
+    due_today: "Vence hoje",
+    overdue: "Vencida",
+    not_returned: "Não retornada",
+  };
+  return (
+    <Badge
+      variant="outline"
+      className={status === "overdue" ? "border-red-200 bg-red-50 text-red-800" : ""}
+    >
+      {labels[status] ?? status}
+    </Badge>
+  );
+}
+function Timeline({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  icon: typeof History;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-3">
+          <Icon className="text-primary" />
+          <CardTitle className="text-base">{title}</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">{children}</CardContent>
+    </Card>
+  );
+}
+function Event({ dateValue, title, detail }: { dateValue: string; title: string; detail: string }) {
+  return (
+    <div className="rounded-xl border p-4">
+      <div className="flex justify-between gap-3">
+        <strong className="text-sm">{title}</strong>
+        <span className="text-xs text-muted-foreground">{date(dateValue)}</span>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
+function actionLabel(value: string) {
+  return (
+    (
+      {
+        whatsapp: "WhatsApp",
+        call: "Ligação",
+        manual_contact: "Contato manual",
+        note: "Observação",
+      } as Record<string, string>
+    )[value] ?? value
+  );
+}
+function resultLabel(value: string) {
+  return (
+    (
+      {
+        attempted: "Tentativa",
+        answered: "Atendeu",
+        no_answer: "Não respondeu",
+        negotiating: "Negociando",
+        resolved: "Resolvido",
+      } as Record<string, string>
+    )[value] ?? value
+  );
+}
+function promiseLabel(value: string) {
+  return (
+    (
+      {
+        open: "Aberta",
+        fulfilled: "Cumprida",
+        broken: "Quebrada",
+        cancelled: "Cancelada",
+      } as Record<string, string>
+    )[value] ?? value
   );
 }

@@ -92,6 +92,14 @@ export function canViewCrmFinancialSwitcher(role: UserRole) {
   return role === "DEV" || role === "CEO";
 }
 
+export function canViewFinancial(role: UserRole) {
+  return role === "DEV" || role === "CEO";
+}
+
+export function canManageFinancialIntegration(role: UserRole) {
+  return role === "DEV" || role === "CEO";
+}
+
 export function canViewStudentSwitcher(role: UserRole) {
   return role === "DEV";
 }
