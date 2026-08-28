@@ -1,5 +1,11 @@
 import type { PoolClient } from "pg";
 import {
+  buildFinancialFilterSql,
+  financialOrderSql,
+  financialUnitSql,
+  parseFinancialFilters,
+} from "@/lib/financial-filters";
+import {
   createCaezClient,
   formatCaezDate,
   parseCaezDate,
@@ -491,12 +497,15 @@ async function finishSyncRun(runId: string, unitId: string) {
   return { processed: true, completed: true, status: partial ? "partial" : "completed", runId };
 }
 
-export async function getFinancialDashboard(unitId: string) {
+export async function getFinancialDashboard(unitId: string, params = new URLSearchParams()) {
   await ensureFinancialSchema();
+  const filters = parseFinancialFilters(params);
+  const filter = buildFinancialFilterSql(filters, 2);
   const result = await queryDb(
     `select
-      (select count(*)::int from app_financial_students where unit_id=$1) total_students,
-      (select count(*)::int from app_financial_enrollments where unit_id=$1) total_enrollments,
+      count(distinct i.student_id)::int total_students,
+      count(distinct i.enrollment_id)::int total_enrollments,
+      count(i.id)::int installments_count,
       coalesce(sum(total_amount) filter(where status<>'not_returned'),0)::float total_open_amount,
       coalesce(sum(total_amount) filter(where status='overdue'),0)::float overdue_amount,
       count(*) filter(where status='overdue')::int overdue_count,
@@ -504,10 +513,13 @@ export async function getFinancialDashboard(unitId: string) {
       count(*) filter(where status='due_today')::int due_today_count,
       coalesce(sum(total_amount) filter(where status='upcoming'),0)::float upcoming_amount,
       count(*) filter(where status='upcoming')::int upcoming_count,
-      count(distinct student_id) filter(where status='overdue')::int students_overdue,
-      count(*) filter(where status='not_returned')::int not_returned_count
-     from app_financial_installments where unit_id=$1`,
-    [unitId],
+      count(distinct i.student_id) filter(where i.status='overdue')::int students_overdue,
+      count(*) filter(where i.status='not_returned')::int not_returned_count
+     from app_financial_installments i
+     join app_financial_students s on s.id=i.student_id and s.unit_id=$1
+     left join app_financial_enrollments e on e.id=i.enrollment_id and e.unit_id=$1
+     where ${financialUnitSql()}${filter.sql}`,
+    [unitId, ...filter.values],
   );
   const extra = await queryDb<{
     promises_today: number;
@@ -522,20 +534,28 @@ export async function getFinancialDashboard(unitId: string) {
   );
   const aging = await queryDb<{ bucket: string; count: number; amount: number }>(
     `select bucket,count(*)::int,coalesce(sum(total_amount),0)::float amount from (
-      select total_amount,case when days_overdue between 1 and 7 then '1-7' when days_overdue between 8 and 15 then '8-15'
-      when days_overdue between 16 and 30 then '16-30' when days_overdue between 31 and 60 then '31-60'
-      when days_overdue between 61 and 90 then '61-90' else '90+' end bucket
-      from app_financial_installments where unit_id=$1 and status='overdue') x group by bucket`,
-    [unitId],
+      select i.total_amount,case when i.days_overdue between 1 and 7 then '1-7' when i.days_overdue between 8 and 15 then '8-15'
+      when i.days_overdue between 16 and 30 then '16-30' when i.days_overdue between 31 and 60 then '31-60'
+      when i.days_overdue between 61 and 90 then '61-90' else '90+' end bucket
+      from app_financial_installments i
+      join app_financial_students s on s.id=i.student_id and s.unit_id=$1
+      left join app_financial_enrollments e on e.id=i.enrollment_id and e.unit_id=$1
+      where ${financialUnitSql()} and i.status='overdue'${filter.sql}) x group by bucket`,
+    [unitId, ...filter.values],
   );
   return { ...(result.rows[0] ?? {}), ...(extra.rows[0] ?? {}), aging: aging.rows };
 }
 
-export async function listTodayCollections(unitId: string) {
+export async function listTodayCollections(unitId: string, params = new URLSearchParams()) {
   await ensureFinancialSchema();
+  const filters = parseFinancialFilters(params);
+  const filter = buildFinancialFilterSql(filters, 2);
+  const defaultScope =
+    !filters.hasPeriod && !filters.status ? " and i.status in ('overdue','due_today')" : "";
   const result = await queryDb(
     `select i.id installment_id,s.id student_id,s.full_name,s.phone,e.course_name,e.class_name,e.external_enrollment_id,
-      i.responsible_name,i.responsible_phone,i.due_date::text,i.days_overdue,i.original_amount::float,i.total_amount::float,
+      i.responsible_name,i.responsible_phone,i.due_date::text,i.days_overdue,i.original_amount::float,
+      i.penalty_amount::float,i.interest_amount::float,i.total_amount::float,
       i.status,i.course_suspended,a.performed_at::text last_contact_at,
       p.promised_date::text,p.promised_amount::float,
       ((case when p.status='open' and p.promised_date<current_date then 100 when i.days_overdue>90 then 90
@@ -548,32 +568,32 @@ export async function listTodayCollections(unitId: string) {
      left join app_financial_enrollments e on e.id=i.enrollment_id
      left join lateral(select performed_at from app_financial_collection_actions where unit_id=$1 and student_id=s.id order by performed_at desc limit 1)a on true
      left join lateral(select promised_date,promised_amount,status from app_financial_promises where unit_id=$1 and student_id=s.id and status='open' order by promised_date asc limit 1)p on true
-     where i.unit_id=$1 and i.status in ('overdue','due_today') order by score desc,i.days_overdue desc,i.total_amount desc limit 300`,
-    [unitId],
+     where ${financialUnitSql()}${defaultScope}${filter.sql}
+     order by ${financialOrderSql(filters)},score desc limit 500`,
+    [unitId, ...filter.values],
   );
   return result.rows;
 }
 
 export async function listFinancialStudents(unitId: string, params: URLSearchParams) {
   await ensureFinancialSchema();
+  const financialFilters = parseFinancialFilters(params);
+  const filter = buildFinancialFilterSql(financialFilters, 2);
   const page = Math.max(1, Number(params.get("page") ?? 1) || 1);
   const pageSize = Math.min(100, Math.max(10, Number(params.get("pageSize") ?? 25) || 25));
-  const search = params.get("search")?.trim() ?? "";
-  const status = params.get("status")?.trim() ?? "";
-  const course = params.get("course")?.trim() ?? "";
-  const className = params.get("class")?.trim() ?? "";
+  const limitParameter = 2 + filter.values.length;
+  const offsetParameter = limitParameter + 1;
   const result = await queryDb(
     `with rows as(select s.id,s.full_name,s.phone,e.external_enrollment_id,e.course_name,e.class_name,e.financial_lookup_status,
        coalesce(sum(i.total_amount) filter(where i.status='overdue'),0)::float overdue_amount,
        count(i.id) filter(where i.status='overdue')::int overdue_count,
        coalesce(max(i.days_overdue) filter(where i.status='overdue'),0)::int max_overdue_days
      from app_financial_students s left join app_financial_enrollments e on e.student_id=s.id and e.unit_id=$1
-     left join app_financial_installments i on i.enrollment_id=e.id and i.status<>'not_returned'
-     where s.unit_id=$1 and ($2='' or concat_ws(' ',s.full_name,s.phone,e.course_name,e.class_name,e.external_enrollment_id) ilike '%'||$2||'%')
-       and ($3='' or e.financial_lookup_status=$3) and ($4='' or e.course_name=$4) and ($5='' or e.class_name=$5)
+     left join app_financial_installments i on i.enrollment_id=e.id and i.unit_id=$1
+     where ${financialUnitSql("s")}${filter.sql}
      group by s.id,s.full_name,s.phone,e.external_enrollment_id,e.course_name,e.class_name,e.financial_lookup_status)
-     select *,count(*) over()::int total_count from rows order by max_overdue_days desc,full_name asc limit $6 offset $7`,
-    [unitId, search, status, course, className, pageSize, (page - 1) * pageSize],
+     select *,count(*) over()::int total_count from rows order by max_overdue_days desc,full_name asc limit $${limitParameter} offset $${offsetParameter}`,
+    [unitId, ...filter.values, pageSize, (page - 1) * pageSize],
   );
   const filters = await queryDb<{ courses: Array<string>; classes: Array<string> }>(
     `select array_remove(array_agg(distinct course_name order by course_name),null) courses,

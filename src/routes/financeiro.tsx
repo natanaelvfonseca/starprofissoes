@@ -2,6 +2,7 @@ import * as React from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
+  ArrowUpDown,
   CalendarClock,
   CircleDollarSign,
   Clock3,
@@ -14,6 +15,7 @@ import {
   ShieldCheck,
   Users,
   WalletCards,
+  X,
 } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
@@ -40,6 +42,7 @@ type FinancialPage = "dashboard" | "central" | "students" | "settings";
 type DashboardData = {
   total_students: number;
   total_enrollments: number;
+  installments_count: number;
   total_open_amount: number;
   overdue_amount: number;
   overdue_count: number;
@@ -66,6 +69,8 @@ type CollectionRow = {
   due_date: string;
   days_overdue: number;
   original_amount: number;
+  penalty_amount: number;
+  interest_amount: number;
   total_amount: number;
   status: string;
   last_contact_at: string | null;
@@ -112,11 +117,22 @@ type SyncRun = {
   installments_found: number;
   errors_count: number;
 };
+type FinanceSearch = {
+  start_date?: string;
+  end_date?: string;
+  status?: string;
+  course?: string;
+  class?: string;
+  search?: string;
+  sort?: string;
+  direction?: string;
+};
+type FilterOptions = { courses: Array<string>; classes: Array<string> };
 
 const tabs = [
   { id: "dashboard" as const, label: "Dashboard", icon: LayoutDashboard },
-  { id: "central" as const, label: "Central do dia", icon: ListChecks },
-  { id: "students" as const, label: "Alunos e recebíveis", icon: Users },
+  { id: "central" as const, label: "Central de Cobrança", icon: ListChecks },
+  { id: "students" as const, label: "Alunos", icon: Users },
   { id: "settings" as const, label: "Configurações", icon: Settings },
 ];
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -127,38 +143,69 @@ async function readJson<T>(response: Response) {
 }
 
 export const Route = createFileRoute("/financeiro")({
+  validateSearch: (search: Record<string, unknown>): FinanceSearch => {
+    const value = (key: keyof FinanceSearch) =>
+      typeof search[key] === "string" && search[key] ? String(search[key]) : undefined;
+    return {
+      start_date: value("start_date"),
+      end_date: value("end_date"),
+      status: value("status"),
+      course: value("course"),
+      class: value("class"),
+      search: value("search"),
+      sort: value("sort"),
+      direction: value("direction"),
+    };
+  },
   head: () => ({ meta: [{ title: "Star Financeiro · Star Profissões" }] }),
   component: FinancialPageRoute,
 });
 
 function FinancialPageRoute() {
   const { session } = useAuth();
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
   const unitId = session?.activeUnit?.id ?? "";
   const [page, setPage] = React.useState<FinancialPage>("dashboard");
   const [dashboard, setDashboard] = React.useState<DashboardData | null>(null);
   const [collections, setCollections] = React.useState<Array<CollectionRow>>([]);
+  const [filterOptions, setFilterOptions] = React.useState<FilterOptions>({
+    courses: [],
+    classes: [],
+  });
   const [loading, setLoading] = React.useState(false);
+  const filterQuery = React.useMemo(() => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(search)) if (value) query.set(key, value);
+    return query.toString();
+  }, [search]);
   const load = React.useCallback(async () => {
     if (!unitId) return;
     setLoading(true);
     try {
-      const q = `unit_id=${encodeURIComponent(unitId)}`;
-      const [d, c] = await Promise.all([
+      const q = new URLSearchParams(filterQuery);
+      q.set("unit_id", unitId);
+      q.set("pageSize", "10");
+      const [d, c, students] = await Promise.all([
         readJson<{ dashboard: DashboardData }>(
           await fetch(`/api/financeiro/dashboard?${q}`, { credentials: "same-origin" }),
         ),
         readJson<{ collections: Array<CollectionRow> }>(
           await fetch(`/api/financeiro/collections/today?${q}`, { credentials: "same-origin" }),
         ),
+        readJson<StudentsData>(
+          await fetch(`/api/financeiro/students?${q}`, { credentials: "same-origin" }),
+        ),
       ]);
       setDashboard(d.dashboard);
       setCollections(c.collections);
+      setFilterOptions(students.filters);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao carregar o Financeiro.");
     } finally {
       setLoading(false);
     }
-  }, [unitId]);
+  }, [filterQuery, unitId]);
   React.useEffect(() => {
     void load();
   }, [load]);
@@ -166,12 +213,26 @@ function FinancialPageRoute() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Star Financeiro"
-        title="Operação de cobrança CAEZ"
-        description={`Fonte financeira: CAEZ · Unidade: ${session?.activeUnit?.name ?? "não selecionada"}`}
+        title="Gestão financeira"
+        description={`Cobranças e recebíveis · Unidade: ${session?.activeUnit?.name ?? "não selecionada"}`}
         actions={
           <Button variant="outline" onClick={() => void load()} disabled={loading}>
             {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}Atualizar
           </Button>
+        }
+      />
+      <FinancialFilterBar
+        value={search}
+        options={filterOptions}
+        onApply={(next) => void navigate({ search: next })}
+        onSort={(sort) =>
+          void navigate({
+            search: {
+              ...search,
+              sort,
+              direction: search.sort === sort && search.direction !== "asc" ? "asc" : "desc",
+            },
+          })
         }
       />
       <div className="overflow-x-auto rounded-xl border bg-card p-1.5 shadow-card">
@@ -194,12 +255,230 @@ function FinancialPageRoute() {
         </div>
       </div>
       {page === "dashboard" ? <Dashboard data={dashboard} collections={collections} /> : null}
-      {page === "central" ? <DailyCollection rows={collections} /> : null}
-      {page === "students" ? <Students unitId={unitId} /> : null}
+      {page === "central" ? (
+        <DailyCollection
+          rows={collections}
+          search={search}
+          onSort={(sort) => {
+            void navigate({
+              search: {
+                ...search,
+                sort,
+                direction: search.sort === sort && search.direction !== "asc" ? "asc" : "desc",
+              },
+            });
+          }}
+        />
+      ) : null}
+      {page === "students" ? <Students unitId={unitId} filterQuery={filterQuery} /> : null}
       {page === "settings" ? <IntegrationSettings unitId={unitId} onSync={load} /> : null}
     </div>
   );
 }
+
+function localDate(value = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(value);
+}
+
+function moveDate(value: string, days: number) {
+  const date = new Date(`${value}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  return localDate(date);
+}
+
+function monthRange(value: string, offset: number) {
+  const current = new Date(`${value}T12:00:00`);
+  const start = new Date(current.getFullYear(), current.getMonth() + offset, 1, 12);
+  const end = new Date(current.getFullYear(), current.getMonth() + offset + 1, 0, 12);
+  return [localDate(start), localDate(end)] as const;
+}
+
+function FinancialFilterBar({
+  value,
+  options,
+  onApply,
+  onSort,
+}: {
+  value: FinanceSearch;
+  options: FilterOptions;
+  onApply: (value: FinanceSearch) => void;
+  onSort: (sort: string) => void;
+}) {
+  const [draft, setDraft] = React.useState<FinanceSearch>(value);
+  React.useEffect(() => setDraft(value), [value]);
+  const update = (key: keyof FinanceSearch, next?: string) =>
+    setDraft((current) => ({ ...current, [key]: next || undefined }));
+  const apply = (next = draft) => {
+    if (next.start_date && next.end_date && next.start_date > next.end_date) {
+      toast.error("A data inicial não pode ser posterior à data final.");
+      return;
+    }
+    onApply(next);
+  };
+  const setPeriod = (start?: string, end?: string) => {
+    const next = { ...draft, start_date: start, end_date: end };
+    setDraft(next);
+    apply(next);
+  };
+  const today = localDate();
+  const [thisMonthStart, thisMonthEnd] = monthRange(today, 0);
+  const [lastMonthStart, lastMonthEnd] = monthRange(today, -1);
+  const statusLabels: Record<string, string> = {
+    overdue: "Em atraso",
+    due_today: "Vence hoje",
+    upcoming: "A vencer",
+    not_found: "Dados não localizados",
+    not_returned: "Não retornado",
+  };
+  const active = Object.values(value).some(Boolean);
+  return (
+    <Card>
+      <CardContent className="space-y-3 p-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
+          <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+            <div className="space-y-1.5">
+              <Label htmlFor="financial-start">De</Label>
+              <Input
+                id="financial-start"
+                type="date"
+                value={draft.start_date ?? ""}
+                onChange={(event) => update("start_date", event.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="financial-end">Até</Label>
+              <Input
+                id="financial-end"
+                type="date"
+                value={draft.end_date ?? ""}
+                onChange={(event) => update("end_date", event.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Situação</Label>
+              <Filter
+                value={draft.status ?? "all"}
+                onChange={(next) => update("status", next === "all" ? undefined : next)}
+                placeholder="Todas"
+                items={[["all", "Todas"], ...Object.entries(statusLabels)]}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Curso</Label>
+              <Filter
+                value={draft.course ?? "all"}
+                onChange={(next) => update("course", next === "all" ? undefined : next)}
+                placeholder="Todos"
+                items={[["all", "Todos"], ...options.courses.map((item) => [item, item])]}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Turma</Label>
+              <Filter
+                value={draft.class ?? "all"}
+                onChange={(next) => update("class", next === "all" ? undefined : next)}
+                placeholder="Todas"
+                items={[["all", "Todas"], ...options.classes.map((item) => [item, item])]}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="financial-search">Busca</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="financial-search"
+                  className="pl-9"
+                  placeholder="Nome, CPF, telefone, matrícula..."
+                  value={draft.search ?? ""}
+                  onChange={(event) => update("search", event.target.value)}
+                  onKeyDown={(event) => event.key === "Enter" && apply()}
+                />
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={() => apply()}>Aplicar</Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDraft({});
+                onApply({});
+              }}
+            >
+              <X /> Limpar
+            </Button>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setPeriod(today, today)}>
+            Hoje
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setPeriod(moveDate(today, 1), moveDate(today, 1))}
+          >
+            Amanhã
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setPeriod(today, moveDate(today, 6))}>
+            Próximos 7 dias
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setPeriod(moveDate(today, -6), today)}>
+            Últimos 7 dias
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setPeriod(moveDate(today, -29), today)}>
+            Últimos 30 dias
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setPeriod(thisMonthStart, thisMonthEnd)}>
+            Este mês
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setPeriod(lastMonthStart, lastMonthEnd)}>
+            Mês passado
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setPeriod()}>
+            Todos
+          </Button>
+          <span className="mx-1 hidden h-7 border-l sm:block" />
+          <Button size="sm" variant="ghost" onClick={() => onSort("due_date")}>
+            <ArrowUpDown /> Vencimento
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => onSort("days_overdue")}>
+            <ArrowUpDown /> Atraso
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => onSort("amount")}>
+            <ArrowUpDown /> Valor
+          </Button>
+        </div>
+        {active ? (
+          <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-xs text-muted-foreground">
+            {value.start_date || value.end_date ? (
+              <Badge variant="outline">
+                Período: {formatFinancialDate(value.start_date)} –{" "}
+                {formatFinancialDate(value.end_date)}
+              </Badge>
+            ) : null}
+            {value.status ? (
+              <Badge variant="outline">{statusLabels[value.status] ?? value.status}</Badge>
+            ) : null}
+            {value.course ? <Badge variant="outline">{value.course}</Badge> : null}
+            {value.class ? <Badge variant="outline">{value.class}</Badge> : null}
+            {value.search ? <Badge variant="outline">Busca: {value.search}</Badge> : null}
+            <button
+              className="font-semibold text-primary hover:underline"
+              onClick={() => {
+                setDraft({});
+                onApply({});
+              }}
+            >
+              Limpar filtros
+            </button>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
 function Empty({ children }: { children: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
@@ -214,7 +493,7 @@ function Dashboard({
   data: DashboardData | null;
   collections: Array<CollectionRow>;
 }) {
-  if (!data) return <Empty>Configure a integração CAEZ e execute a primeira sincronização.</Empty>;
+  if (!data) return <Empty>Os dados financeiros ainda não estão disponíveis.</Empty>;
   const order = ["1-7", "8-15", "16-30", "31-60", "61-90", "90+"];
   const aging = order.map((bucket) => ({
     bucket,
@@ -223,23 +502,21 @@ function Dashboard({
   return (
     <div className="space-y-6">
       <section className="overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#16006C_0%,#07154C_100%)] p-6 text-white shadow-card md:p-8">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-gold">
-          Carteira financeira real
-        </p>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-gold">Visão financeira</p>
         <h2 className="mt-2 text-2xl font-extrabold text-white md:text-3xl">
           Saúde financeira da operação
         </h2>
         <p className="mt-3 text-sm text-white/70">
-          {data.total_students} alunos · {data.total_enrollments} matrículas sincronizadas
-          exclusivamente do CAEZ.
+          {data.installments_count} parcelas · {data.total_students} alunos com movimentação no
+          período.
         </p>
       </section>
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          label="Saldo aberto"
+          label="Valor no período"
           value={money.format(data.total_open_amount)}
           icon={WalletCards}
-          hint="Títulos retornados pelo CAEZ"
+          hint={`${data.installments_count} parcelas encontradas`}
         />
         <StatCard
           label="Valor vencido"
@@ -289,8 +566,11 @@ function Dashboard({
             <Indicator label="Alunos inadimplentes" value={data.students_overdue} />
             <Indicator label="Promessas para hoje" value={data.promises_today} />
             <Indicator label="Promessas quebradas" value={data.broken_promises} danger />
-            <Indicator label="Financeiro não encontrado" value={data.not_found_financial_count} />
-            <Indicator label="Títulos não retornados" value={data.not_returned_count} />
+            <Indicator
+              label="Dados financeiros não localizados"
+              value={data.not_found_financial_count}
+            />
+            <Indicator label="Parcelas não retornadas" value={data.not_returned_count} />
           </CardContent>
         </Card>
       </section>
@@ -330,14 +610,39 @@ function Indicator({ label, value, danger }: { label: string; value: number; dan
     </div>
   );
 }
-function DailyCollection({ rows }: { rows: Array<CollectionRow> }) {
+const installmentStatusLabel: Record<string, string> = {
+  overdue: "Em atraso",
+  due_today: "Vence hoje",
+  upcoming: "A vencer",
+  not_returned: "Não retornado",
+};
+
+function DailyCollection({
+  rows,
+  search,
+  onSort,
+}: {
+  rows: Array<CollectionRow>;
+  search: FinanceSearch;
+  onSort: (sort: string) => void;
+}) {
+  const sortHeader = (label: string, sort: string) => (
+    <button
+      className="inline-flex items-center gap-1 hover:text-foreground"
+      onClick={() => onSort(sort)}
+    >
+      {label} <ArrowUpDown className="h-3.5 w-3.5" />
+    </button>
+  );
   return (
     <div className="space-y-6">
       <div>
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-gold">
-          Central de cobrança do dia
+          Central de Cobrança
         </p>
-        <h2 className="mt-2 text-2xl font-bold">Prioridades reais</h2>
+        <h2 className="mt-2 text-2xl font-bold">
+          {search.start_date || search.end_date ? "Recebíveis do período" : "Prioridades do dia"}
+        </h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Score determinístico por promessa, atraso, valor e suspensão.
         </p>
@@ -364,25 +669,24 @@ function DailyCollection({ rows }: { rows: Array<CollectionRow> }) {
       <Card className="overflow-hidden">
         <CardContent className="overflow-x-auto p-0">
           {rows.length ? (
-            <table className="w-full min-w-[1150px] text-sm">
+            <table className="w-full min-w-[1650px] text-sm">
               <thead className="border-b bg-muted/40 text-left text-xs uppercase text-muted-foreground">
                 <tr>
-                  {[
-                    "Aluno",
-                    "Responsável",
-                    "Curso / turma",
-                    "Vencimento",
-                    "Atraso",
-                    "Valor",
-                    "Último contato",
-                    "Promessa",
-                    "Score",
-                    "Ação",
-                  ].map((h) => (
-                    <th key={h} className="px-4 py-3">
-                      {h}
-                    </th>
-                  ))}
+                  <th className="px-4 py-3">Aluno</th>
+                  <th className="px-4 py-3">Responsável</th>
+                  <th className="px-4 py-3">Telefone</th>
+                  <th className="px-4 py-3">Curso</th>
+                  <th className="px-4 py-3">Turma</th>
+                  <th className="px-4 py-3">{sortHeader("Vencimento", "due_date")}</th>
+                  <th className="px-4 py-3">{sortHeader("Dias de atraso", "days_overdue")}</th>
+                  <th className="px-4 py-3">Valor original</th>
+                  <th className="px-4 py-3">Juros/Multa</th>
+                  <th className="px-4 py-3">{sortHeader("Valor atual", "amount")}</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Último contato</th>
+                  <th className="px-4 py-3">Promessa</th>
+                  <th className="px-4 py-3">Prioridade</th>
+                  <th className="px-4 py-3">Ação</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -390,25 +694,27 @@ function DailyCollection({ rows }: { rows: Array<CollectionRow> }) {
                   <tr key={row.installment_id} className="hover:bg-muted/30">
                     <td className="px-4 py-4">
                       <div className="font-semibold">{row.full_name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {row.phone || "Sem telefone"}
-                      </div>
                     </td>
                     <td className="px-4 py-4">
                       <div>{row.responsible_name || "Próprio aluno"}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {row.responsible_phone || "—"}
-                      </div>
                     </td>
-                    <td className="px-4 py-4">
-                      <div>{row.course_name || "—"}</div>
-                      <div className="text-xs text-muted-foreground">{row.class_name || "—"}</div>
-                    </td>
+                    <td className="px-4 py-4">{row.responsible_phone || row.phone || "—"}</td>
+                    <td className="px-4 py-4">{row.course_name || "—"}</td>
+                    <td className="px-4 py-4">{row.class_name || "—"}</td>
                     <td className="px-4 py-4">{formatFinancialDate(row.due_date)}</td>
                     <td className="px-4 py-4 font-semibold text-destructive">
-                      {row.days_overdue || "Hoje"}
+                      {row.days_overdue > 0 ? row.days_overdue : "—"}
+                    </td>
+                    <td className="px-4 py-4">{money.format(row.original_amount)}</td>
+                    <td className="px-4 py-4">
+                      {money.format(row.penalty_amount + row.interest_amount)}
                     </td>
                     <td className="px-4 py-4 font-bold">{money.format(row.total_amount)}</td>
+                    <td className="px-4 py-4">
+                      <Badge variant="outline">
+                        {installmentStatusLabel[row.status] ?? row.status}
+                      </Badge>
+                    </td>
                     <td className="px-4 py-4">{formatFinancialDate(row.last_contact_at)}</td>
                     <td className="px-4 py-4">
                       {row.promised_date
@@ -433,7 +739,7 @@ function DailyCollection({ rows }: { rows: Array<CollectionRow> }) {
               </tbody>
             </table>
           ) : (
-            <Empty>Nenhuma cobrança vencida ou com vencimento hoje.</Empty>
+            <Empty>Nenhuma parcela encontrada para os filtros selecionados.</Empty>
           )}
         </CardContent>
       </Card>
@@ -469,7 +775,7 @@ function Filter({
 function LookupBadge({ status }: { status: string | null }) {
   const labels: Record<string, string> = {
     FOUND: "Encontrado",
-    NOT_FOUND: "Não encontrado",
+    NOT_FOUND: "Dados não localizados",
     NO_DOCUMENT: "Sem documento",
     ERROR: "Erro",
   };
@@ -485,27 +791,19 @@ function LookupBadge({ status }: { status: string | null }) {
     </Badge>
   );
 }
-function Students({ unitId }: { unitId: string }) {
+function Students({ unitId, filterQuery }: { unitId: string; filterQuery: string }) {
   const [data, setData] = React.useState<StudentsData | null>(null);
   const [loading, setLoading] = React.useState(false);
-  const [search, setSearch] = React.useState("");
-  const [status, setStatus] = React.useState("all");
-  const [course, setCourse] = React.useState("all");
-  const [className, setClassName] = React.useState("all");
   const [page, setPage] = React.useState(1);
+  React.useEffect(() => setPage(1), [filterQuery]);
   const load = React.useCallback(async () => {
     if (!unitId) return;
     setLoading(true);
     try {
-      const q = new URLSearchParams({
-        unit_id: unitId,
-        page: String(page),
-        pageSize: "25",
-        search,
-      });
-      if (status !== "all") q.set("status", status);
-      if (course !== "all") q.set("course", course);
-      if (className !== "all") q.set("class", className);
+      const q = new URLSearchParams(filterQuery);
+      q.set("unit_id", unitId);
+      q.set("page", String(page));
+      q.set("pageSize", "25");
       setData(
         await readJson<StudentsData>(
           await fetch(`/api/financeiro/students?${q}`, { credentials: "same-origin" }),
@@ -516,7 +814,7 @@ function Students({ unitId }: { unitId: string }) {
     } finally {
       setLoading(false);
     }
-  }, [unitId, page, search, status, course, className]);
+  }, [filterQuery, unitId, page]);
   React.useEffect(() => {
     void load();
   }, [load]);
@@ -524,62 +822,11 @@ function Students({ unitId }: { unitId: string }) {
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle>Alunos e recebíveis</CardTitle>
-          <CardDescription>Carteira acadêmica e financeira sincronizada do CAEZ.</CardDescription>
+          <CardTitle>Alunos e situação financeira</CardTitle>
+          <CardDescription>
+            Visão consolidada conforme os filtros aplicados no topo.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-            <Input
-              className="pl-9"
-              placeholder="Nome, telefone, matrícula..."
-              value={search}
-              onChange={(e) => {
-                setPage(1);
-                setSearch(e.target.value);
-              }}
-            />
-          </div>
-          <Filter
-            value={status}
-            onChange={(v) => {
-              setPage(1);
-              setStatus(v);
-            }}
-            placeholder="Status"
-            items={[
-              ["all", "Todos os status"],
-              ["FOUND", "Encontrado"],
-              ["NOT_FOUND", "Não encontrado"],
-              ["NO_DOCUMENT", "Sem documento"],
-              ["ERROR", "Erro"],
-            ]}
-          />
-          <Filter
-            value={course}
-            onChange={(v) => {
-              setPage(1);
-              setCourse(v);
-            }}
-            placeholder="Curso"
-            items={[
-              ["all", "Todos os cursos"],
-              ...(data?.filters.courses ?? []).map((v) => [v, v]),
-            ]}
-          />
-          <Filter
-            value={className}
-            onChange={(v) => {
-              setPage(1);
-              setClassName(v);
-            }}
-            placeholder="Turma"
-            items={[
-              ["all", "Todas as turmas"],
-              ...(data?.filters.classes ?? []).map((v) => [v, v]),
-            ]}
-          />
-        </CardContent>
       </Card>
       <Card className="overflow-hidden">
         <CardContent className="overflow-x-auto p-0">
@@ -636,7 +883,7 @@ function Students({ unitId }: { unitId: string }) {
               </tbody>
             </table>
           ) : (
-            <Empty>Nenhum aluno encontrado. Execute uma sincronização CAEZ.</Empty>
+            <Empty>Nenhum aluno encontrado para os filtros selecionados.</Empty>
           )}
         </CardContent>
       </Card>

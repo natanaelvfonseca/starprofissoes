@@ -150,7 +150,7 @@ function StudentFinancialProfile() {
       <PageHeader
         eyebrow="Perfil financeiro do aluno"
         title={s.full_name}
-        description="Dados financeiros sincronizados do CAEZ e histórico operacional da Star."
+        description="Situação financeira e histórico de cobrança."
         actions={
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => void load()}>
@@ -175,7 +175,7 @@ function StudentFinancialProfile() {
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-x-8 gap-y-5 p-6 sm:grid-cols-2">
-            <Data label="Matrícula CAEZ" value={s.external_enrollment_id || "—"} />
+            <Data label="Matrícula" value={s.external_enrollment_id || "—"} />
             <Data label="Status da consulta" value={s.financial_lookup_status || "—"} />
             <Data label="Telefone" value={s.phone || "—"} />
             <Data label="E-mail" value={s.email || "—"} />
@@ -195,7 +195,7 @@ function StudentFinancialProfile() {
           <CardHeader className="bg-[linear-gradient(135deg,#16006C_0%,#07154C_100%)] text-white">
             <CardTitle className="text-white">Resumo da carteira</CardTitle>
             <CardDescription className="text-white/65">
-              Somente títulos retornados pelo CAEZ
+              Parcelas financeiras disponíveis
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5 p-6">
@@ -220,8 +220,8 @@ function StudentFinancialProfile() {
       </section>
       <Card>
         <CardHeader>
-          <CardTitle>Parcelas CAEZ</CardTitle>
-          <CardDescription>Nenhuma baixa ou alteração é enviada ao ERP.</CardDescription>
+          <CardTitle>Parcelas</CardTitle>
+          <CardDescription>Visualização financeira somente para consulta.</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto p-0">
           {profile.installments.length ? (
@@ -273,7 +273,7 @@ function StudentFinancialProfile() {
             </table>
           ) : (
             <div className="p-8 text-center text-sm text-muted-foreground">
-              Nenhuma parcela retornada pelo CAEZ.
+              Nenhuma parcela encontrada.
             </div>
           )}
         </CardContent>
