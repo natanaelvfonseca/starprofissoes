@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/lib/auth";
+import { formatFinancialDate } from "@/lib/financial-date";
 
 type Profile = {
   student: {
@@ -85,13 +86,7 @@ type Profile = {
   }>;
 };
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-const date = (value?: string | null) =>
-  value
-    ? new Intl.DateTimeFormat("pt-BR", {
-        dateStyle: "short",
-        ...(value.includes("T") ? { timeStyle: "short" as const } : {}),
-      }).format(new Date(value.includes("T") ? value : `${value}T12:00:00`))
-    : "—";
+const date = formatFinancialDate;
 async function readJson<T>(response: Response) {
   const data = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok) throw new Error(data.error ?? "Falha na requisição.");

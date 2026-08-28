@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/lib/auth";
+import { formatFinancialDate } from "@/lib/financial-date";
 import { cn } from "@/lib/utils";
 
 type FinancialPage = "dashboard" | "central" | "students" | "settings";
@@ -119,13 +120,6 @@ const tabs = [
   { id: "settings" as const, label: "Configurações", icon: Settings },
 ];
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-const formatDate = (value?: string | null) =>
-  value
-    ? new Intl.DateTimeFormat("pt-BR", {
-        dateStyle: "short",
-        ...(value.includes("T") ? { timeStyle: "short" as const } : {}),
-      }).format(new Date(value.includes("T") ? value : `${value}T12:00:00`))
-    : "—";
 async function readJson<T>(response: Response) {
   const data = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok) throw new Error(data.error ?? "Falha na requisição.");
@@ -410,15 +404,15 @@ function DailyCollection({ rows }: { rows: Array<CollectionRow> }) {
                       <div>{row.course_name || "—"}</div>
                       <div className="text-xs text-muted-foreground">{row.class_name || "—"}</div>
                     </td>
-                    <td className="px-4 py-4">{formatDate(row.due_date)}</td>
+                    <td className="px-4 py-4">{formatFinancialDate(row.due_date)}</td>
                     <td className="px-4 py-4 font-semibold text-destructive">
                       {row.days_overdue || "Hoje"}
                     </td>
                     <td className="px-4 py-4 font-bold">{money.format(row.total_amount)}</td>
-                    <td className="px-4 py-4">{formatDate(row.last_contact_at)}</td>
+                    <td className="px-4 py-4">{formatFinancialDate(row.last_contact_at)}</td>
                     <td className="px-4 py-4">
                       {row.promised_date
-                        ? `${formatDate(row.promised_date)} · ${money.format(row.promised_amount ?? 0)}`
+                        ? `${formatFinancialDate(row.promised_date)} · ${money.format(row.promised_amount ?? 0)}`
                         : "—"}
                     </td>
                     <td className="px-4 py-4">
@@ -703,6 +697,17 @@ function IntegrationSettings({ unitId, onSync }: { unitId: string; onSync: () =>
       toast.error(e instanceof Error ? e.message : "Falha ao carregar integração."),
     );
   }, [load]);
+  const hasActiveRun = runs.some((run) => run.status === "queued" || run.status === "running");
+  React.useEffect(() => {
+    if (!hasActiveRun) return;
+    const timer = window.setInterval(() => {
+      void load().catch((e) =>
+        toast.error(e instanceof Error ? e.message : "Falha ao atualizar sincronização."),
+      );
+      void onSync();
+    }, 5_000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveRun, load, onSync]);
   async function action(kind: "save" | "test" | "sync") {
     setBusy(kind);
     try {
@@ -735,7 +740,7 @@ function IntegrationSettings({ unitId, onSync }: { unitId: string; onSync: () =>
         );
         toast.success(`Conexão válida: ${result.result.classesCount} turmas retornadas.`);
       } else {
-        await readJson(
+        const result = await readJson<{ run?: SyncRun }>(
           await fetch("/api/financeiro/sync", {
             method: "POST",
             credentials: "same-origin",
@@ -743,7 +748,9 @@ function IntegrationSettings({ unitId, onSync }: { unitId: string; onSync: () =>
             body: JSON.stringify({ unit_id: unitId }),
           }),
         );
-        toast.success("Sincronização enfileirada.");
+        if (!result.run) throw new Error("Não foi possível identificar a sincronização iniciada.");
+        setRuns((current) => [result.run!, ...current.filter((run) => run.id !== result.run!.id)]);
+        toast.success("Sincronização iniciada.");
         await onSync();
       }
       await load();
@@ -838,8 +845,8 @@ function IntegrationSettings({ unitId, onSync }: { unitId: string; onSync: () =>
           <div className="grid grid-cols-2 gap-3">
             <Mini label="Alunos" value={state?.studentsCount ?? 0} />
             <Mini label="Parcelas" value={state?.installmentsCount ?? 0} />
-            <Mini label="Última tentativa" value={formatDate(state?.lastSyncAt)} />
-            <Mini label="Último sucesso" value={formatDate(state?.lastSuccessfulSyncAt)} />
+            <Mini label="Última tentativa" value={formatFinancialDate(state?.lastSyncAt)} />
+            <Mini label="Último sucesso" value={formatFinancialDate(state?.lastSuccessfulSyncAt)} />
           </div>
           {state?.lastError ? (
             <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
@@ -860,7 +867,7 @@ function IntegrationSettings({ unitId, onSync }: { unitId: string; onSync: () =>
                       </p>
                     </div>
                     <span className="text-xs text-muted-foreground">
-                      {formatDate(run.created_at)}
+                      {formatFinancialDate(run.created_at)}
                     </span>
                   </div>
                 ))}
