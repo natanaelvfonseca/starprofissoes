@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { canManageFinancialIntegration, canViewFinancial } from "@/lib/auth-types";
+import { FinancialIntegrationStateError } from "@/lib/financial-unit-state";
 import { getSessionFromRequest } from "@/lib/server/auth";
 import { enqueueFinancialSync, listFinancialSyncRuns } from "@/lib/server/financial";
 import {
@@ -34,7 +35,10 @@ export const Route = createFileRoute("/api/financeiro/sync")({
         try {
           return Response.json({ run: await enqueueFinancialSync(unit.id) }, { status: 202 });
         } catch (error) {
-          return Response.json({ error: financialError(error) }, { status: 400 });
+          return Response.json(
+            { error: financialError(error) },
+            { status: error instanceof FinancialIntegrationStateError ? error.status : 400 },
+          );
         }
       },
     },

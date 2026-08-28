@@ -101,6 +101,18 @@ export function financialUnitSql(alias = "i") {
   return `${alias}.unit_id=$1`;
 }
 
+export function normalizeFinancialFilterOptions(
+  value: {
+    courses?: Array<string> | null;
+    classes?: Array<string> | null;
+  } | null,
+) {
+  return {
+    courses: Array.isArray(value?.courses) ? value.courses : [],
+    classes: Array.isArray(value?.classes) ? value.classes : [],
+  };
+}
+
 export function financialOrderSql(filters: FinancialFilters) {
   const column = {
     due_date: "i.due_date",

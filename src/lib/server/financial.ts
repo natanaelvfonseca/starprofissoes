@@ -3,8 +3,10 @@ import {
   buildFinancialFilterSql,
   financialOrderSql,
   financialUnitSql,
+  normalizeFinancialFilterOptions,
   parseFinancialFilters,
 } from "@/lib/financial-filters";
+import { assertFinancialSyncReady } from "@/lib/financial-unit-state";
 import {
   createCaezClient,
   formatCaezDate,
@@ -157,8 +159,7 @@ export async function testFinancialIntegration(unitId: string, suppliedToken?: s
 
 export async function enqueueFinancialSync(unitId: string) {
   const integration = await integrationForUnit(unitId);
-  if (!integration?.active)
-    throw new Error("Ative e configure a integração CAEZ antes de sincronizar.");
+  assertFinancialSyncReady(integration);
   const result = await queryDb<{ id: string; status: string; created_at: string }>(
     `insert into app_financial_sync_runs(unit_id,provider,status) values($1,$2,'queued')
      on conflict(unit_id,provider) where status in ('queued','running') do nothing
@@ -605,7 +606,7 @@ export async function listFinancialStudents(unitId: string, params: URLSearchPar
     total: Number(result.rows[0]?.total_count ?? 0),
     page,
     pageSize,
-    filters: filters.rows[0] ?? { courses: [], classes: [] },
+    filters: normalizeFinancialFilterOptions(filters.rows[0] ?? null),
   };
 }
 

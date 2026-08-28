@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { canManageFinancialIntegration, canViewFinancial } from "@/lib/auth-types";
+import { financialIntegrationResponse } from "@/lib/financial-unit-state";
 import { getSessionFromRequest } from "@/lib/server/auth";
 import {
   financialError,
@@ -22,10 +23,10 @@ export const Route = createFileRoute("/api/financeiro/integration")({
           return Response.json({ error: "Acesso negado." }, { status: 403 });
         const unit = financialUnitFromRequest(session, request);
         if (!unit) return Response.json({ error: "Unidade inválida." }, { status: 403 });
-        return Response.json(
-          { integration: await getFinancialIntegrationState(unit.id) },
-          { headers: { "Cache-Control": "no-store" } },
-        );
+        const state = await getFinancialIntegrationState(unit.id);
+        return Response.json(financialIntegrationResponse(state), {
+          headers: { "Cache-Control": "no-store" },
+        });
       },
       PUT: async ({ request }) => {
         const session = await getSessionFromRequest(request);

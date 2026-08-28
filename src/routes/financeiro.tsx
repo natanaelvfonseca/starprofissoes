@@ -34,8 +34,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { canManageFinancialIntegration } from "@/lib/auth-types";
 import { useAuth } from "@/lib/auth";
 import { formatFinancialDate } from "@/lib/financial-date";
+import {
+  isCurrentFinancialResponse,
+  normalizeFinancialRows,
+  scopedFinancialValue,
+} from "@/lib/financial-unit-state";
 import { cn } from "@/lib/utils";
 
 type FinancialPage = "dashboard" | "central" | "students" | "settings";
@@ -128,6 +134,7 @@ type FinanceSearch = {
   direction?: string;
 };
 type FilterOptions = { courses: Array<string>; classes: Array<string> };
+type IntegrationResponse = { configured: boolean; integration: IntegrationState | null };
 
 const tabs = [
   { id: "dashboard" as const, label: "Dashboard", icon: LayoutDashboard },
@@ -136,6 +143,19 @@ const tabs = [
   { id: "settings" as const, label: "Configurações", icon: Settings },
 ];
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+const EMPTY_COLLECTIONS: Array<CollectionRow> = [];
+const EMPTY_FILTER_OPTIONS: FilterOptions = { courses: [], classes: [] };
+const EMPTY_INTEGRATION_STATE: IntegrationState = {
+  configured: false,
+  active: false,
+  syncPastDays: 730,
+  syncFutureDays: 365,
+  lastSyncAt: null,
+  lastSuccessfulSyncAt: null,
+  lastError: null,
+  studentsCount: 0,
+  installmentsCount: 0,
+};
 async function readJson<T>(response: Response) {
   const data = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok) throw new Error(data.error ?? "Falha na requisição.");
@@ -173,20 +193,35 @@ function FinancialPageRoute() {
     courses: [],
     classes: [],
   });
+  const [integrationConfigured, setIntegrationConfigured] = React.useState<boolean | null>(null);
+  const [loadedUnitId, setLoadedUnitId] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+  const requestVersion = React.useRef(0);
+  const activeUnitId = React.useRef(unitId);
+  activeUnitId.current = unitId;
   const filterQuery = React.useMemo(() => {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(search)) if (value) query.set(key, value);
     return query.toString();
   }, [search]);
+  React.useEffect(() => {
+    requestVersion.current += 1;
+    setLoadedUnitId("");
+    setDashboard(null);
+    setCollections([]);
+    setFilterOptions({ courses: [], classes: [] });
+    setIntegrationConfigured(null);
+    setPage("dashboard");
+  }, [unitId]);
   const load = React.useCallback(async () => {
     if (!unitId) return;
+    const version = ++requestVersion.current;
     setLoading(true);
     try {
       const q = new URLSearchParams(filterQuery);
       q.set("unit_id", unitId);
       q.set("pageSize", "10");
-      const [d, c, students] = await Promise.all([
+      const [d, c, students, integration] = await Promise.all([
         readJson<{ dashboard: DashboardData }>(
           await fetch(`/api/financeiro/dashboard?${q}`, { credentials: "same-origin" }),
         ),
@@ -196,19 +231,47 @@ function FinancialPageRoute() {
         readJson<StudentsData>(
           await fetch(`/api/financeiro/students?${q}`, { credentials: "same-origin" }),
         ),
+        readJson<IntegrationResponse>(
+          await fetch(`/api/financeiro/integration?${q}`, { credentials: "same-origin" }),
+        ),
       ]);
+      if (
+        !isCurrentFinancialResponse(activeUnitId.current, unitId, version, requestVersion.current)
+      )
+        return;
       setDashboard(d.dashboard);
       setCollections(c.collections);
-      setFilterOptions(students.filters);
+      setFilterOptions({
+        courses: Array.isArray(students.filters?.courses) ? students.filters.courses : [],
+        classes: Array.isArray(students.filters?.classes) ? students.filters.classes : [],
+      });
+      setIntegrationConfigured(integration.configured);
+      setLoadedUnitId(unitId);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao carregar o Financeiro.");
     } finally {
-      setLoading(false);
+      if (isCurrentFinancialResponse(activeUnitId.current, unitId, version, requestVersion.current))
+        setLoading(false);
     }
   }, [filterQuery, unitId]);
   React.useEffect(() => {
     void load();
   }, [load]);
+  const visibleDashboard = scopedFinancialValue(unitId, loadedUnitId, dashboard, null);
+  const visibleCollections = scopedFinancialValue(
+    unitId,
+    loadedUnitId,
+    collections,
+    EMPTY_COLLECTIONS,
+  );
+  const visibleOptions = scopedFinancialValue(
+    unitId,
+    loadedUnitId,
+    filterOptions,
+    EMPTY_FILTER_OPTIONS,
+  );
+  const visibleConfigured = scopedFinancialValue(unitId, loadedUnitId, integrationConfigured, null);
+  const canConfigure = session ? canManageFinancialIntegration(session.user.role) : false;
   return (
     <div className="space-y-6">
       <PageHeader
@@ -223,7 +286,7 @@ function FinancialPageRoute() {
       />
       <FinancialFilterBar
         value={search}
-        options={filterOptions}
+        options={visibleOptions}
         onApply={(next) => void navigate({ search: next })}
         onSort={(sort) =>
           void navigate({
@@ -235,29 +298,39 @@ function FinancialPageRoute() {
           })
         }
       />
+      {visibleConfigured === false ? (
+        <FinancialNotConfigured
+          canConfigure={canConfigure}
+          onConfigure={() => setPage("settings")}
+        />
+      ) : null}
       <div className="overflow-x-auto rounded-xl border bg-card p-1.5 shadow-card">
         <div className="flex min-w-max gap-1">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <Button
-                key={tab.id}
-                size="sm"
-                variant={page === tab.id ? "default" : "ghost"}
-                className={cn("rounded-lg", page === tab.id && "bg-gradient-primary")}
-                onClick={() => setPage(tab.id)}
-              >
-                <Icon className="h-4 w-4" />
-                {tab.label}
-              </Button>
-            );
-          })}
+          {tabs
+            .filter((tab) => canConfigure || tab.id !== "settings")
+            .map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <Button
+                  key={tab.id}
+                  size="sm"
+                  variant={page === tab.id ? "default" : "ghost"}
+                  className={cn("rounded-lg", page === tab.id && "bg-gradient-primary")}
+                  onClick={() => setPage(tab.id)}
+                >
+                  <Icon className="h-4 w-4" />
+                  {tab.label}
+                </Button>
+              );
+            })}
         </div>
       </div>
-      {page === "dashboard" ? <Dashboard data={dashboard} collections={collections} /> : null}
+      {page === "dashboard" ? (
+        <Dashboard data={visibleDashboard} collections={visibleCollections} />
+      ) : null}
       {page === "central" ? (
         <DailyCollection
-          rows={collections}
+          rows={visibleCollections}
           search={search}
           onSort={(sort) => {
             void navigate({
@@ -270,8 +343,32 @@ function FinancialPageRoute() {
           }}
         />
       ) : null}
-      {page === "students" ? <Students unitId={unitId} filterQuery={filterQuery} /> : null}
-      {page === "settings" ? <IntegrationSettings unitId={unitId} onSync={load} /> : null}
+      {page === "students" ? (
+        <Students key={unitId} unitId={unitId} filterQuery={filterQuery} />
+      ) : null}
+      {page === "settings" ? (
+        <IntegrationSettings key={unitId} unitId={unitId} onSync={load} />
+      ) : null}
+    </div>
+  );
+}
+
+function FinancialNotConfigured({
+  canConfigure,
+  onConfigure,
+}: {
+  canConfigure: boolean;
+  onConfigure: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-4 rounded-xl border border-dashed bg-muted/20 p-5 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h2 className="font-semibold">Financeiro ainda não configurado para esta unidade.</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Nenhum dado de outra unidade será utilizado como substituição.
+        </p>
+      </div>
+      {canConfigure ? <Button onClick={onConfigure}>Configurar integração</Button> : null}
     </div>
   );
 }
@@ -915,7 +1012,7 @@ function Students({ unitId, filterQuery }: { unitId: string; filterQuery: string
   );
 }
 function IntegrationSettings({ unitId, onSync }: { unitId: string; onSync: () => Promise<void> }) {
-  const [state, setState] = React.useState<IntegrationState | null>(null);
+  const [state, setState] = React.useState<IntegrationState>(() => EMPTY_INTEGRATION_STATE);
   const [runs, setRuns] = React.useState<Array<SyncRun>>([]);
   const [token, setToken] = React.useState("");
   const [past, setPast] = React.useState(730);
@@ -924,20 +1021,24 @@ function IntegrationSettings({ unitId, onSync }: { unitId: string; onSync: () =>
   const [busy, setBusy] = React.useState("");
   const load = React.useCallback(async () => {
     if (!unitId) return;
+    setState(EMPTY_INTEGRATION_STATE);
+    setRuns([]);
+    setToken("");
     const q = `unit_id=${encodeURIComponent(unitId)}`;
     const [i, r] = await Promise.all([
-      readJson<{ integration: IntegrationState }>(
+      readJson<IntegrationResponse>(
         await fetch(`/api/financeiro/integration?${q}`, { credentials: "same-origin" }),
       ),
       readJson<{ runs: Array<SyncRun> }>(
         await fetch(`/api/financeiro/sync?${q}`, { credentials: "same-origin" }),
       ),
     ]);
-    setState(i.integration);
-    setPast(i.integration.syncPastDays);
-    setFuture(i.integration.syncFutureDays);
-    setActive(i.integration.active);
-    setRuns(r.runs);
+    const next = i.integration ?? EMPTY_INTEGRATION_STATE;
+    setState(next);
+    setPast(next.syncPastDays);
+    setFuture(next.syncFutureDays);
+    setActive(next.configured ? next.active : true);
+    setRuns(normalizeFinancialRows(r.runs));
   }, [unitId]);
   React.useEffect(() => {
     void load().catch((e) =>
@@ -1024,7 +1125,7 @@ function IntegrationSettings({ unitId, onSync }: { unitId: string; onSync: () =>
             <div>
               <strong className="text-sm">Integração ativa</strong>
               <p className="text-xs text-muted-foreground">
-                {state?.configured ? "Token armazenado" : "Token ainda não configurado"}
+                {state.configured ? "Token armazenado" : "Token ainda não configurado"}
               </p>
             </div>
             <Switch checked={active} onCheckedChange={setActive} />
@@ -1038,7 +1139,7 @@ function IntegrationSettings({ unitId, onSync }: { unitId: string; onSync: () =>
               value={token}
               onChange={(e) => setToken(e.target.value)}
               placeholder={
-                state?.configured ? "Deixe vazio para manter o token salvo" : "Cole o token do CAEZ"
+                state.configured ? "Deixe vazio para manter o token salvo" : "Cole o token do CAEZ"
               }
             />
             <p className="text-xs text-muted-foreground">
@@ -1077,7 +1178,7 @@ function IntegrationSettings({ unitId, onSync }: { unitId: string; onSync: () =>
             <Button
               variant="outline"
               onClick={() => void action("sync")}
-              disabled={!!busy || !state?.configured}
+              disabled={!!busy || !state.configured}
             >
               Sincronizar agora
             </Button>
@@ -1090,12 +1191,12 @@ function IntegrationSettings({ unitId, onSync }: { unitId: string; onSync: () =>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <Mini label="Alunos" value={state?.studentsCount ?? 0} />
-            <Mini label="Parcelas" value={state?.installmentsCount ?? 0} />
-            <Mini label="Última tentativa" value={formatFinancialDate(state?.lastSyncAt)} />
-            <Mini label="Último sucesso" value={formatFinancialDate(state?.lastSuccessfulSyncAt)} />
+            <Mini label="Alunos" value={state.studentsCount} />
+            <Mini label="Parcelas" value={state.installmentsCount} />
+            <Mini label="Última tentativa" value={formatFinancialDate(state.lastSyncAt)} />
+            <Mini label="Último sucesso" value={formatFinancialDate(state.lastSuccessfulSyncAt)} />
           </div>
-          {state?.lastError ? (
+          {state.lastError ? (
             <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
               {state.lastError}
             </div>
