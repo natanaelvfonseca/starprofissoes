@@ -54,6 +54,18 @@ export async function handleKognaMetaRelay(
     return { status: 400, body: { ok: false, error: "Cliente inválido." } };
   }
 
+  console.info("[Meta Ads] lead pipeline", {
+    event_id: null,
+    leadgen_id: typeof payload.leadgen_id === "string" ? payload.leadgen_id : null,
+    page_id: typeof payload.page_id === "string" ? payload.page_id : null,
+    form_id: typeof payload.form_id === "string" ? payload.form_id : null,
+    client: "star",
+    stage: "hmac_validated",
+    status: "success",
+    error_code: null,
+    fbtrace_id: null,
+  });
+
   try {
     const result = await processPayload(payload);
     const status = typeof result.status === "number" ? result.status : 200;

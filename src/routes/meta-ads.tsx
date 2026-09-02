@@ -6,6 +6,7 @@ import {
   Building2,
   CheckCircle2,
   Clock3,
+  Download,
   ExternalLink,
   Loader2,
   PanelsTopLeft,
@@ -82,6 +83,8 @@ type MetaPage = {
   tokenMasked: string | null;
   token_status: "unknown" | "valid" | "invalid";
   last_validated_at: string | null;
+  leadgen_subscribed_at: string | null;
+  forms_synced_at: string | null;
   subscription_status: "unknown" | "subscribed" | "not_subscribed" | "error";
   formsCount: number;
   leads_received_count: number;
@@ -108,6 +111,9 @@ type MetaForm = {
   field_mapping: Array<Record<string, unknown>>;
   settings: Record<string, unknown>;
   status: "active" | "inactive";
+  meta_status: string;
+  meta_created_time: string | null;
+  last_seen_at: string | null;
   leads_received_count: number;
   last_lead_received_at: string | null;
   synced_at: string | null;
@@ -155,6 +161,21 @@ type MetaState = {
 };
 
 type MetaConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
+
+type HistoricalImportSummary = {
+  formsChecked: number;
+  leadsFound: number;
+  imported: number;
+  duplicates: number;
+  pendingConfiguration: number;
+  errors: number;
+  formErrors: Array<{
+    formId: string;
+    message: string;
+    code: string | null;
+    fbtraceId: string | null;
+  }>;
+};
 
 type MetaDisconnectTarget = { scope: "page"; page: MetaPage } | { scope: "all" };
 
@@ -385,23 +406,53 @@ function MetaAdsPage() {
     setWorkingKey("syncConnection");
     try {
       for (const page of connectedPages) {
-        await readJson(
-          await fetch("/api/meta-ads", {
-            method: "POST",
-            credentials: "same-origin",
-            headers: { "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify({
-              action: "syncForms",
-              unitId: activeUnitId,
-              pageDbId: page.id,
+        for (const action of ["validatePage", "subscribePage", "syncForms"]) {
+          await readJson(
+            await fetch("/api/meta-ads", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json", Accept: "application/json" },
+              body: JSON.stringify({ action, unitId: activeUnitId, pageDbId: page.id }),
             }),
-          }),
-        );
+          );
+        }
       }
       toast.success("Ativos da Meta sincronizados.");
       await loadData();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao sincronizar a Meta.");
+    } finally {
+      setWorkingKey("");
+    }
+  }
+
+  async function importFormLeads(form: MetaForm) {
+    const key = `importForm-${form.id}`;
+    setWorkingKey(key);
+    try {
+      const response = await readJson<{ result: HistoricalImportSummary }>(
+        await fetch("/api/meta-ads", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            action: "importHistoricalLeads",
+            unitId: activeUnitId,
+            pageDbId: form.page_id,
+            formDbId: form.id,
+          }),
+        }),
+      );
+      const result = response.result;
+      const summary = `${result.leadsFound} lead(s): ${result.imported} importado(s), ${result.duplicates} duplicado(s), ${result.errors} erro(s).`;
+      if (result.errors) {
+        toast.error(`${summary} ${result.formErrors[0]?.message ?? "Consulte o status técnico."}`);
+      } else {
+        toast.success(summary);
+      }
+      await loadData();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao importar leads existentes.");
     } finally {
       setWorkingKey("");
     }
@@ -546,6 +597,7 @@ function MetaAdsPage() {
   const lastSynchronization = data
     ? mostRecentDate([
         ...data.forms.map((form) => form.synced_at),
+        ...data.pages.map((page) => page.forms_synced_at),
         ...data.pages.map((page) => page.last_validated_at),
         data.integration.last_communication_at,
       ])
@@ -640,16 +692,18 @@ function MetaAdsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="pl-5">Formulário</TableHead>
+                    <TableHead>Status Meta</TableHead>
+                    <TableHead>Unidade</TableHead>
                     <TableHead>Turma</TableHead>
                     <TableHead>Canal</TableHead>
                     <TableHead>Leads</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Status Star</TableHead>
                     <TableHead className="pr-5 text-right">Ação</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <LoadingRow columns={6} />
+                    <LoadingRow columns={8} />
                   ) : filteredForms.length ? (
                     filteredForms.map((form) => (
                       <TableRow key={form.id}>
@@ -659,6 +713,10 @@ function MetaAdsPage() {
                             {form.page_name} · {form.meta_form_id}
                           </div>
                         </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{form.meta_status || "UNKNOWN"}</Badge>
+                        </TableCell>
+                        <TableCell>{form.unit_name ?? "—"}</TableCell>
                         <TableCell className="max-w-sm whitespace-normal">
                           {form.attendance_id ? (
                             (data?.options.attendances.find(
@@ -675,24 +733,47 @@ function MetaAdsPage() {
                         <TableCell>{form.acquisition_channel_name ?? "—"}</TableCell>
                         <TableCell>{form.leads_received_count}</TableCell>
                         <TableCell>
-                          <StatusBadge status={form.status} />
+                          {form.status === "active" && form.attendance_id ? (
+                            <Badge className="bg-emerald-100 text-emerald-700">Configurado</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-amber-700">
+                              Pendente de configuração
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell className="pr-5 text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => editForm(form)}
-                            disabled={!canManage}
-                          >
-                            <Settings2 />
-                            Configurar
-                          </Button>
+                          <div className="flex justify-end gap-2">
+                            {form.status === "active" && form.attendance_id ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void importFormLeads(form)}
+                                disabled={!canManage || Boolean(workingKey)}
+                              >
+                                {workingKey === `importForm-${form.id}` ? (
+                                  <Loader2 className="animate-spin" />
+                                ) : (
+                                  <Download />
+                                )}
+                                Importar leads
+                              </Button>
+                            ) : null}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => editForm(form)}
+                              disabled={!canManage || Boolean(workingKey)}
+                            >
+                              <Settings2 />
+                              Configurar
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))
                   ) : (
                     <EmptyRow
-                      columns={6}
+                      columns={8}
                       text={
                         formSearch.trim()
                           ? "Nenhum formulário encontrado com esse nome."
@@ -1139,6 +1220,35 @@ function MetaConnectionPanel({
                   <p className="truncate text-xs text-muted-foreground">
                     ID: {page.page_id} · {page.formsCount} formulário(s)
                   </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <Badge
+                      variant="outline"
+                      className={
+                        page.token_status === "valid" ? "text-emerald-700" : "text-destructive"
+                      }
+                    >
+                      Token: {page.token_status === "valid" ? "válido" : page.token_status}
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      className={
+                        page.subscription_status === "subscribed"
+                          ? "text-emerald-700"
+                          : "text-destructive"
+                      }
+                    >
+                      Leadgen: {page.subscription_status === "subscribed" ? "inscrito" : "erro"}
+                    </Badge>
+                    <Badge variant="outline">Forms: {page.formsCount}</Badge>
+                    <Badge variant="outline">
+                      Sync: {dateTime(page.forms_synced_at ?? page.last_validated_at)}
+                    </Badge>
+                  </div>
+                  {page.last_error ? (
+                    <p className="mt-2 whitespace-normal text-xs text-destructive">
+                      {page.last_error}
+                    </p>
+                  ) : null}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">

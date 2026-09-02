@@ -8,6 +8,7 @@ import {
   disconnectAllMetaPages,
   disconnectMetaPage,
   duplicateMetaForm,
+  importHistoricalMetaLeads,
   listMetaState,
   reprocessMetaEvent,
   resetMetaConnection,
@@ -102,6 +103,17 @@ export const Route = createFileRoute("/api/meta-ads")({
           if (action === "reprocessEvent") {
             return Response.json({
               result: await reprocessMetaEvent(String(body?.eventId ?? ""), unit.id),
+            });
+          }
+          if (action === "importHistoricalLeads") {
+            const pageDbId = String(body?.pageDbId ?? "");
+            await assertMetaPageInUnit(pageDbId, unit.id);
+            return Response.json({
+              result: await importHistoricalMetaLeads(
+                pageDbId,
+                unit.id,
+                typeof body?.formDbId === "string" ? body.formDbId : undefined,
+              ),
             });
           }
 

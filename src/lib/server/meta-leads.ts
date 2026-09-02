@@ -1,6 +1,7 @@
 import { createHmac, createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import type { PoolClient, QueryResultRow } from "pg";
 import type { LeadStage } from "@/lib/commercial-types";
+import { createMetaImportSummary, recordMetaImportResult } from "@/lib/meta-import-summary";
 import { ensureCommercialSchema, isUuid } from "@/lib/server/commercial-schema";
 import {
   ensureCourseAttendanceSchema,
@@ -9,6 +10,12 @@ import {
   parseCampaignRoute,
 } from "@/lib/server/course-attendances";
 import { ensureRuntimeSchema, queryDb, withTransaction } from "@/lib/server/db";
+import {
+  ensureMetaPageLeadgenSubscription,
+  fetchAllMetaGraphPages,
+  metaGraphErrorDetails,
+  metaGraphRequest,
+} from "@/lib/server/meta-graph";
 import {
   isMetaConnectionAlreadyUnavailable,
   type MetaGraphErrorPayload,
@@ -73,6 +80,8 @@ type MetaPageRow = QueryResultRow & {
   page_access_token_encrypted: string | null;
   token_status: "unknown" | "valid" | "invalid";
   last_validated_at: string | null;
+  leadgen_subscribed_at: string | null;
+  forms_synced_at: string | null;
   subscription_status: "unknown" | "subscribed" | "not_subscribed" | "error";
   forms_count: string;
   leads_received_count: number;
@@ -110,6 +119,9 @@ type MetaFormRow = QueryResultRow & {
   settings: Record<string, unknown>;
   selected_consultant_ids: Array<string> | null;
   status: "active" | "inactive";
+  meta_status: string;
+  meta_created_time: string | null;
+  last_seen_at: string | null;
   configured_at: string | null;
   synced_at: string | null;
   last_lead_received_at: string | null;
@@ -144,6 +156,11 @@ type MetaEventRow = QueryResultRow & {
   assigned_user_id: string | null;
   routing_source: "form_turma" | "campaign_matrix" | "form_fallback" | null;
   routing_error: string | null;
+  processing_stage: string | null;
+  error_type: string | null;
+  error_code: string | null;
+  error_subcode: string | null;
+  fbtrace_id: string | null;
   payload: Record<string, unknown>;
   lead_payload: Record<string, unknown> | null;
   mapped_payload: Record<string, unknown> | null;
@@ -180,6 +197,61 @@ type MetaLeadPayload = {
   page_id?: string;
   page_name?: string;
 };
+
+type MetaGraphForm = {
+  id?: string;
+  name?: string;
+  status?: string;
+  created_time?: string;
+};
+
+type MetaProcessingStage =
+  | "received"
+  | "hmac_validated"
+  | "token_resolved"
+  | "lead_fetched"
+  | "form_resolved"
+  | "lead_created"
+  | "duplicate"
+  | "pending_configuration"
+  | "failed";
+
+function logMetaStage(input: {
+  eventId?: string | null;
+  leadgenId: string;
+  pageId: string;
+  formId: string;
+  stage: MetaProcessingStage;
+  status: string;
+  errorCode?: string | null;
+  fbtraceId?: string | null;
+}) {
+  console.info("[Meta Ads] lead pipeline", {
+    event_id: input.eventId ?? null,
+    leadgen_id: input.leadgenId,
+    page_id: input.pageId,
+    form_id: input.formId,
+    client: "star",
+    stage: input.stage,
+    status: input.status,
+    error_code: input.errorCode ?? null,
+    fbtrace_id: input.fbtraceId ?? null,
+  });
+}
+
+function metaTechnicalMessage(error: unknown, fallback: string) {
+  const details = metaGraphErrorDetails(error);
+  if (!details) return error instanceof Error && error.message ? error.message : fallback;
+
+  return [
+    details.message,
+    details.code ? `code=${details.code}` : "",
+    details.subcode ? `subcode=${details.subcode}` : "",
+    details.fbtraceId ? `fbtrace_id=${details.fbtraceId}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 export const META_WEBHOOK_PATH = "/api/webhooks/meta-leads";
 
@@ -248,6 +320,9 @@ export async function ensureMetaLeadSchema() {
     create index if not exists app_meta_pages_unit_idx
       on app_meta_pages (unit_id, status, created_at desc);
 
+    alter table app_meta_pages add column if not exists leadgen_subscribed_at timestamptz;
+    alter table app_meta_pages add column if not exists forms_synced_at timestamptz;
+
     create table if not exists app_meta_oauth_unit_contexts (
       id uuid primary key default gen_random_uuid(),
       nonce text not null unique,
@@ -296,6 +371,9 @@ export async function ensureMetaLeadSchema() {
 
     alter table app_meta_forms add column if not exists attendance_id uuid
       references app_course_attendances(id) on delete set null;
+    alter table app_meta_forms add column if not exists meta_status text not null default 'UNKNOWN';
+    alter table app_meta_forms add column if not exists meta_created_time timestamptz;
+    alter table app_meta_forms add column if not exists last_seen_at timestamptz;
     create index if not exists app_meta_forms_attendance_idx on app_meta_forms (attendance_id);
 
     create table if not exists app_meta_form_consultants (
@@ -350,6 +428,16 @@ export async function ensureMetaLeadSchema() {
       add column if not exists routing_source text;
     alter table app_meta_lead_events
       add column if not exists routing_error text;
+    alter table app_meta_lead_events
+      add column if not exists processing_stage text;
+    alter table app_meta_lead_events
+      add column if not exists error_type text;
+    alter table app_meta_lead_events
+      add column if not exists error_code text;
+    alter table app_meta_lead_events
+      add column if not exists error_subcode text;
+    alter table app_meta_lead_events
+      add column if not exists fbtrace_id text;
   `,
   )
     .then(() => undefined)
@@ -503,9 +591,7 @@ export async function ensureMetaIntegration(createdBy?: string) {
     ],
   );
 
-  if (result.rows[0]) {
-    return result.rows[0];
-  }
+  if (result.rows[0]) return withMetaEnvironment(result.rows[0]);
 
   const existing = await queryDb<MetaIntegrationRow>(
     `
@@ -529,7 +615,21 @@ export async function ensureMetaIntegration(createdBy?: string) {
     `,
   );
 
-  return existing.rows[0];
+  return withMetaEnvironment(existing.rows[0]);
+}
+
+function withMetaEnvironment(integration: MetaIntegrationRow) {
+  if (!integration) throw new Error("Integração Meta não encontrada.");
+
+  return {
+    ...integration,
+    app_id: integration.app_id || process.env.META_APP_ID || null,
+    app_secret: integration.app_secret || process.env.META_APP_SECRET || null,
+    verify_token: integration.verify_token || process.env.META_VERIFY_TOKEN || null,
+    graph_api_version:
+      integration.graph_api_version || process.env.META_GRAPH_API_VERSION || "v23.0",
+    callback_url: integration.callback_url || process.env.META_CALLBACK_URL || null,
+  };
 }
 
 export async function getMetaIntegration() {
@@ -1083,14 +1183,6 @@ function stringOrNull(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function appSecretProof(token: string, appSecret: string | null) {
-  if (!appSecret) {
-    return "";
-  }
-
-  return createHmac("sha256", appSecret).update(token).digest("hex");
-}
-
 export async function fetchMetaLeadDetails(
   leadgenId: string,
   token: string,
@@ -1098,26 +1190,13 @@ export async function fetchMetaLeadDetails(
 ) {
   const version = integration.graph_api_version || "v23.0";
   const params = new URLSearchParams({
-    access_token: token,
     fields:
       "id,created_time,field_data,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,form_id",
   });
-  const proof = appSecretProof(token, integration.app_secret);
-
-  if (proof) {
-    params.set("appsecret_proof", proof);
-  }
-
-  const response = await fetch(`https://graph.facebook.com/${version}/${leadgenId}?${params}`);
-  const data = (await response.json().catch(() => ({}))) as MetaLeadPayload & {
-    error?: { message?: string };
-  };
-
-  if (!response.ok) {
-    throw new Error(data.error?.message ?? "Falha ao consultar lead na Graph API.");
-  }
-
-  return data;
+  return metaGraphRequest<MetaLeadPayload>(
+    `https://graph.facebook.com/${version}/${encodeURIComponent(leadgenId)}?${params}`,
+    { token, appSecret: integration.app_secret },
+  );
 }
 
 async function fetchMetaLeadDetailsWithRetry(
@@ -1210,6 +1289,8 @@ export async function listMetaState(unitId: string, searchValue = "") {
           p.created_at::text,
           p.updated_at::text,
           p.last_validated_at::text,
+          p.leadgen_subscribed_at::text,
+          p.forms_synced_at::text,
           u.name as unit_name,
           count(f.id)::text as forms_count
         from app_meta_pages p
@@ -1241,7 +1322,9 @@ export async function listMetaState(unitId: string, searchValue = "") {
           f.updated_at::text,
           f.configured_at::text,
           f.synced_at::text,
-          f.last_lead_received_at::text
+          f.last_lead_received_at::text,
+          f.meta_created_time::text,
+          f.last_seen_at::text
         from app_meta_forms f
         inner join app_meta_pages p on p.id = f.page_id
         inner join app_units u on u.id = p.unit_id
@@ -1284,6 +1367,11 @@ export async function listMetaState(unitId: string, searchValue = "") {
           assigned_user_id,
           routing_source,
           routing_error,
+          processing_stage,
+          error_type,
+          error_code,
+          error_subcode,
+          fbtrace_id,
           payload,
           lead_payload,
           mapped_payload
@@ -1312,6 +1400,7 @@ export async function listMetaState(unitId: string, searchValue = "") {
           form_name, page_name, meta_created_time::text, received_at::text,
           processed_at::text, status, error_message, distribution_reason,
           attendance_id, assigned_user_id, routing_source, routing_error,
+          processing_stage, error_type, error_code, error_subcode, fbtrace_id,
           payload, lead_payload, mapped_payload
         from app_meta_lead_events
         where status in ('received', 'pending_configuration', 'processing', 'error')
@@ -1775,42 +1864,62 @@ export async function syncFormsForPage(pageDbId: string) {
   }
 
   const version = integration.graph_api_version || "v23.0";
-  const params = new URLSearchParams({
-    access_token: token,
-    fields: "id,name,status,created_time",
-  });
-  const response = await fetch(
-    `https://graph.facebook.com/${version}/${page.page_id}/leadgen_forms?${params}`,
-  );
-  const data = (await response.json().catch(() => ({}))) as {
-    data?: Array<{ id?: string; name?: string; created_time?: string }>;
-    error?: { message?: string };
-  };
-
-  if (!response.ok) {
-    throw new Error(data.error?.message ?? "Falha ao sincronizar formulários.");
-  }
-
-  for (const form of data.data ?? []) {
-    if (!form.id) {
-      continue;
-    }
-
-    await queryDb(
-      `
-        insert into app_meta_forms (page_id, unit_id, form_name, meta_form_id, synced_at, status)
-        values ($1, $2, $3, $4, now(), 'inactive')
-        on conflict (page_id, meta_form_id) do update
-        set form_name = excluded.form_name,
-            unit_id = coalesce(app_meta_forms.unit_id, excluded.unit_id),
-            synced_at = now(),
-            updated_at = now()
-      `,
-      [page.id, page.unit_id, form.name ?? form.id, form.id],
+  try {
+    const params = new URLSearchParams({
+      fields: "id,name,status,created_time",
+      limit: "100",
+    });
+    const result = await fetchAllMetaGraphPages<MetaGraphForm>(
+      `https://graph.facebook.com/${version}/${encodeURIComponent(page.page_id)}/leadgen_forms?${params}`,
+      { token, appSecret: integration.app_secret },
     );
-  }
 
-  return { count: data.data?.length ?? 0 };
+    await withTransaction(async (client) => {
+      for (const form of result.items) {
+        if (!form.id) continue;
+
+        await client.query(
+          `
+            insert into app_meta_forms (
+              page_id, unit_id, form_name, meta_form_id, synced_at, last_seen_at,
+              meta_status, meta_created_time, status
+            )
+            values ($1, $2, $3, $4, now(), now(), $5, nullif($6, '')::timestamptz, 'inactive')
+            on conflict (page_id, meta_form_id) do update
+            set form_name = excluded.form_name,
+                unit_id = coalesce(app_meta_forms.unit_id, excluded.unit_id),
+                meta_status = excluded.meta_status,
+                meta_created_time = coalesce(excluded.meta_created_time, app_meta_forms.meta_created_time),
+                last_seen_at = now(),
+                synced_at = now(),
+                updated_at = now()
+          `,
+          [
+            page.id,
+            page.unit_id,
+            form.name ?? form.id,
+            form.id,
+            form.status ?? "UNKNOWN",
+            form.created_time ?? "",
+          ],
+        );
+      }
+
+      await client.query(
+        `update app_meta_pages set forms_synced_at = now(), last_error = null, updated_at = now() where id = $1`,
+        [page.id],
+      );
+    });
+
+    return { count: result.items.length, pages: result.pages };
+  } catch (error) {
+    const message = metaTechnicalMessage(error, "Falha ao sincronizar formulários.");
+    await queryDb(`update app_meta_pages set last_error = $2, updated_at = now() where id = $1`, [
+      page.id,
+      message,
+    ]);
+    throw new Error(message);
+  }
 }
 
 export async function validateMetaPageToken(pageDbId: string) {
@@ -1832,10 +1941,18 @@ export async function validateMetaPageToken(pageDbId: string) {
 
   const token = decryptPageToken(page.page_access_token_encrypted);
   const version = integration.graph_api_version || "v23.0";
-  const params = new URLSearchParams({ access_token: token, fields: "id,name" });
-  const response = await fetch(`https://graph.facebook.com/${version}/${page.page_id}?${params}`);
-  const data = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
-  const valid = response.ok;
+  let valid = false;
+  let errorMessage: string | null = null;
+
+  try {
+    await metaGraphRequest(
+      `https://graph.facebook.com/${version}/${encodeURIComponent(page.page_id)}?fields=id,name`,
+      { token, appSecret: integration.app_secret },
+    );
+    valid = true;
+  } catch (error) {
+    errorMessage = metaTechnicalMessage(error, "Token inválido.");
+  }
 
   await queryDb(
     `
@@ -1846,11 +1963,7 @@ export async function validateMetaPageToken(pageDbId: string) {
           updated_at = now()
       where id = $1
     `,
-    [
-      page.id,
-      valid ? "valid" : "invalid",
-      valid ? null : (data.error?.message ?? "Token inválido."),
-    ],
+    [page.id, valid ? "valid" : "invalid", errorMessage],
   );
 
   return { valid };
@@ -1875,38 +1988,40 @@ export async function subscribeMetaPage(pageDbId: string) {
 
   const token = decryptPageToken(page.page_access_token_encrypted);
   const version = integration.graph_api_version || "v23.0";
-  const response = await fetch(
-    `https://graph.facebook.com/${version}/${page.page_id}/subscribed_apps`,
-    {
-      method: "POST",
-      body: new URLSearchParams({
-        subscribed_fields: "leadgen",
-        access_token: token,
-      }),
-    },
-  );
-  const data = (await response.json().catch(() => ({}))) as {
-    success?: boolean;
-    error?: { message?: string };
-  };
-  const subscribed = response.ok && data.success !== false;
+  const appId = integration.app_id;
+
+  if (!token) throw new Error("Token da Página ausente.");
+  if (!appId) throw new Error("META_APP_ID não configurado.");
+
+  let subscribed = false;
+  let changed = false;
+  let errorMessage: string | null = null;
+
+  try {
+    const result = await ensureMetaPageLeadgenSubscription(version, page.page_id, appId, {
+      token,
+      appSecret: integration.app_secret,
+    });
+    subscribed = result.leadgenSubscribed;
+    changed = result.changed;
+  } catch (error) {
+    errorMessage = metaTechnicalMessage(error, "Falha na inscrição leadgen.");
+  }
 
   await queryDb(
     `
       update app_meta_pages
       set subscription_status = $2,
+          leadgen_subscribed_at = case when $2 = 'subscribed' then now() else leadgen_subscribed_at end,
           last_error = $3,
           updated_at = now()
       where id = $1
     `,
-    [
-      page.id,
-      subscribed ? "subscribed" : "error",
-      subscribed ? null : (data.error?.message ?? "Falha na inscrição."),
-    ],
+    [page.id, subscribed ? "subscribed" : "error", errorMessage],
   );
 
-  return { subscribed };
+  if (!subscribed) throw new Error(errorMessage ?? "Falha na inscrição leadgen.");
+  return { subscribed, changed };
 }
 
 async function unsubscribeMetaPage(page: MetaPageRow, graphApiVersion: string) {
@@ -2430,6 +2545,11 @@ async function refreshMetaEventLeadPayload(eventId: string) {
           meta_created_time = coalesce(nullif($10, '')::timestamptz, meta_created_time),
           lead_payload = $11::jsonb,
           error_message = null,
+          processing_stage = 'lead_fetched',
+          error_type = null,
+          error_code = null,
+          error_subcode = null,
+          fbtrace_id = null,
           updated_at = now()
       where id = $1
     `,
@@ -2481,6 +2601,11 @@ async function processEventById(eventId: string) {
           assigned_user_id,
           routing_source,
           routing_error,
+          processing_stage,
+          error_type,
+          error_code,
+          error_subcode,
+          fbtrace_id,
           payload,
           lead_payload,
           mapped_payload
@@ -2499,11 +2624,24 @@ async function processEventById(eventId: string) {
 
     if (event.lead_id && event.status === "processed") {
       await client.query(
-        `update app_meta_lead_events set status = 'duplicate', updated_at = now() where id = $1`,
+        `update app_meta_lead_events set status = 'duplicate', processing_stage = 'duplicate', updated_at = now() where id = $1`,
         [event.id],
       );
+      logMetaStage({
+        eventId: event.id,
+        leadgenId: event.leadgen_id,
+        pageId: event.page_id,
+        formId: event.form_id,
+        stage: "duplicate",
+        status: "duplicate",
+      });
       return { status: "duplicate", leadId: event.lead_id };
     }
+
+    await client.query(
+      `update app_meta_lead_events set status = 'processing', processing_stage = 'lead_fetched', updated_at = now() where id = $1`,
+      [event.id],
+    );
 
     const pageResult = await client.query<{ unit_id: string | null }>(
       `
@@ -2530,19 +2668,37 @@ async function processEventById(eventId: string) {
           update app_meta_lead_events
           set status = 'pending_configuration',
               form_db_id = $2,
-              error_message = $3,
+              error_message = coalesce(error_message, $3),
               routing_error = $3,
+              processing_stage = 'pending_configuration',
               updated_at = now()
           where id = $1
         `,
         [event.id, form?.id ?? null, configurationReason],
       );
+      logMetaStage({
+        eventId: event.id,
+        leadgenId: event.leadgen_id,
+        pageId: event.page_id,
+        formId: event.form_id,
+        stage: "pending_configuration",
+        status: "pending_configuration",
+      });
       return { status: "pending_configuration", leadId: null };
     }
 
     if (!form || !pageUnitId) {
       throw new Error("Configuração de unidade Meta inconsistente.");
     }
+
+    logMetaStage({
+      eventId: event.id,
+      leadgenId: event.leadgen_id,
+      pageId: event.page_id,
+      formId: event.form_id,
+      stage: "form_resolved",
+      status: "success",
+    });
 
     const leadPayload = (event.lead_payload ?? {}) as MetaLeadPayload;
     const mapped = mapMetaLead(leadPayload, form.field_mapping);
@@ -2555,6 +2711,7 @@ async function processEventById(eventId: string) {
           set status = 'error',
               error_message = $2,
               mapped_payload = $3::jsonb,
+              processing_stage = 'failed',
               updated_at = now()
           where id = $1
         `,
@@ -2570,6 +2727,16 @@ async function processEventById(eventId: string) {
           JSON.stringify(mapped),
         ],
       );
+      logMetaStage({
+        eventId: event.id,
+        leadgenId: event.leadgen_id,
+        pageId: event.page_id,
+        formId: event.form_id,
+        stage: "failed",
+        status: "error",
+        errorCode: event.error_code,
+        fbtraceId: event.fbtrace_id,
+      });
       return { status: "error", leadId: null };
     }
 
@@ -2608,12 +2775,22 @@ async function processEventById(eventId: string) {
       await client.query(
         `
           update app_meta_lead_events
-          set status = 'pending_configuration', form_db_id = $2, error_message = $3,
-              routing_source = $4, routing_error = $3, updated_at = now()
+          set status = 'pending_configuration', form_db_id = $2,
+              error_message = coalesce(error_message, $3),
+              routing_source = $4, routing_error = $3,
+              processing_stage = 'pending_configuration', updated_at = now()
           where id = $1
         `,
         [event.id, form.id, routingError, routingSource],
       );
+      logMetaStage({
+        eventId: event.id,
+        leadgenId: event.leadgen_id,
+        pageId: event.page_id,
+        formId: event.form_id,
+        stage: "pending_configuration",
+        status: "pending_configuration",
+      });
       return { status: "pending_configuration", leadId: null };
     }
 
@@ -2623,7 +2800,8 @@ async function processEventById(eventId: string) {
         `
           update app_meta_lead_events
           set status = 'pending_configuration', form_db_id = $2, attendance_id = $3,
-              error_message = $4, routing_source = $5, routing_error = $4, updated_at = now()
+              error_message = coalesce(error_message, $4), routing_source = $5, routing_error = $4,
+              processing_stage = 'pending_configuration', updated_at = now()
           where id = $1
         `,
         [
@@ -2634,6 +2812,14 @@ async function processEventById(eventId: string) {
           routingSource,
         ],
       );
+      logMetaStage({
+        eventId: event.id,
+        leadgenId: event.leadgen_id,
+        pageId: event.page_id,
+        formId: event.form_id,
+        stage: "pending_configuration",
+        status: "pending_configuration",
+      });
       return { status: "pending_configuration", leadId: null };
     }
 
@@ -2642,12 +2828,22 @@ async function processEventById(eventId: string) {
       await client.query(
         `
           update app_meta_lead_events
-          set status = 'pending_configuration', form_db_id = $2, error_message = $3,
-              routing_source = $4, routing_error = $3, updated_at = now()
+          set status = 'pending_configuration', form_db_id = $2,
+              error_message = coalesce(error_message, $3),
+              routing_source = $4, routing_error = $3,
+              processing_stage = 'pending_configuration', updated_at = now()
           where id = $1
         `,
         [event.id, form.id, routingError, routingSource],
       );
+      logMetaStage({
+        eventId: event.id,
+        leadgenId: event.leadgen_id,
+        pageId: event.page_id,
+        formId: event.form_id,
+        stage: "pending_configuration",
+        status: "pending_configuration",
+      });
       return { status: "pending_configuration", leadId: null };
     }
 
@@ -2725,6 +2921,11 @@ async function processEventById(eventId: string) {
           assigned_user_id = $8,
           routing_source = $9,
           routing_error = $10,
+          processing_stage = 'lead_created',
+          error_type = null,
+          error_code = null,
+          error_subcode = null,
+          fbtrace_id = null,
           updated_at = now()
         where id = $1
       `,
@@ -2779,6 +2980,15 @@ async function processEventById(eventId: string) {
       [integration.id],
     );
 
+    logMetaStage({
+      eventId: event.id,
+      leadgenId: event.leadgen_id,
+      pageId: event.page_id,
+      formId: event.form_id,
+      stage: "lead_created",
+      status: "processed",
+    });
+
     return { status: "processed", leadId };
   });
 }
@@ -2803,25 +3013,52 @@ export async function reprocessMetaEvent(eventId: string, expectedUnitId: string
     throw new Error("O evento não pertence à unidade ativa.");
   }
 
-  await refreshMetaEventLeadPayload(eventId);
-  return processEventById(eventId);
+  try {
+    await refreshMetaEventLeadPayload(eventId);
+    return processEventById(eventId);
+  } catch (error) {
+    const details = metaGraphErrorDetails(error);
+    const message = metaTechnicalMessage(error, "Falha ao reprocessar evento Meta.");
+    await queryDb(
+      `
+        update app_meta_lead_events
+        set status = 'error', error_message = $2, processing_stage = 'failed',
+            error_type = $3, error_code = $4, error_subcode = $5, fbtrace_id = $6,
+            updated_at = now()
+        where id = $1
+      `,
+      [
+        eventId,
+        message,
+        details?.type ?? null,
+        details?.code ?? null,
+        details?.subcode ?? null,
+        details?.fbtraceId ?? null,
+      ],
+    );
+    throw new Error(message);
+  }
 }
 
-async function processMetaLeadEvent(
+async function processMetaLead(
   payload: Record<string, unknown>,
   parsed: ParsedMetaLeadEvent,
   integration: MetaIntegrationRow,
+  prefetchedLeadPayload?: MetaLeadPayload,
+  countAsReceived = true,
 ) {
-  await queryDb(
-    `
-      update app_meta_integrations
-      set total_events_received = total_events_received + 1,
-          last_communication_at = now(),
-          updated_at = now()
-      where id = $1
-    `,
-    [integration.id],
-  );
+  if (countAsReceived) {
+    await queryDb(
+      `
+        update app_meta_integrations
+        set total_events_received = total_events_received + 1,
+            last_communication_at = now(),
+            updated_at = now()
+        where id = $1
+      `,
+      [integration.id],
+    );
+  }
 
   const pageResult = await queryDb<MetaPageRow>(
     `
@@ -2834,25 +3071,66 @@ async function processMetaLeadEvent(
   );
   const page = pageResult.rows[0] ?? null;
 
+  logMetaStage({
+    leadgenId: parsed.leadgenId,
+    pageId: parsed.pageId,
+    formId: parsed.formId,
+    stage: "received",
+    status: "received",
+  });
+
   if (page && (page.status !== "active" || !page.page_access_token_encrypted)) {
     return { ok: true, status: 200, result: "ignored_disconnected_page" };
   }
 
-  let leadPayload = leadPayloadFromWebhookValue(parsed.value, parsed);
+  let leadPayload = prefetchedLeadPayload ?? leadPayloadFromWebhookValue(parsed.value, parsed);
   let leadFetchError: string | null = null;
+  let leadFetchDetails: ReturnType<typeof metaGraphErrorDetails> = null;
 
-  if (page?.page_access_token_encrypted) {
+  if (prefetchedLeadPayload) {
+    logMetaStage({
+      leadgenId: parsed.leadgenId,
+      pageId: parsed.pageId,
+      formId: parsed.formId,
+      stage: "lead_fetched",
+      status: "success",
+    });
+  } else if (page?.page_access_token_encrypted) {
     try {
+      logMetaStage({
+        leadgenId: parsed.leadgenId,
+        pageId: parsed.pageId,
+        formId: parsed.formId,
+        stage: "token_resolved",
+        status: "success",
+      });
       leadPayload = await fetchMetaLeadDetailsWithRetry(
         parsed.leadgenId,
         decryptPageToken(page.page_access_token_encrypted),
         integration,
       );
+      logMetaStage({
+        leadgenId: parsed.leadgenId,
+        pageId: parsed.pageId,
+        formId: parsed.formId,
+        stage: "lead_fetched",
+        status: "success",
+      });
     } catch (error) {
-      leadFetchError =
-        error instanceof Error
-          ? `Não foi possível buscar os dados do lead na Meta: ${error.message}`
-          : "Não foi possível buscar os dados do lead na Meta.";
+      leadFetchDetails = metaGraphErrorDetails(error);
+      leadFetchError = `Não foi possível buscar os dados do lead na Meta: ${metaTechnicalMessage(
+        error,
+        "Falha na Graph API.",
+      )}`;
+      logMetaStage({
+        leadgenId: parsed.leadgenId,
+        pageId: parsed.pageId,
+        formId: parsed.formId,
+        stage: "failed",
+        status: "error",
+        errorCode: leadFetchDetails?.code,
+        fbtraceId: leadFetchDetails?.fbtraceId,
+      });
     }
   } else {
     leadFetchError = "A Página não possui token para consultar os dados do lead na Meta.";
@@ -2878,6 +3156,11 @@ async function processMetaLeadEvent(
         meta_created_time,
         status,
         error_message,
+        processing_stage,
+        error_type,
+        error_code,
+        error_subcode,
+        fbtrace_id,
         payload,
         lead_payload
       )
@@ -2899,6 +3182,11 @@ async function processMetaLeadEvent(
         nullif($14, '')::timestamptz,
         'received',
         $15,
+        $21,
+        $22,
+        $23,
+        $24,
+        $25,
         $16::jsonb,
         $20::jsonb
       )
@@ -2913,6 +3201,11 @@ async function processMetaLeadEvent(
           page_name = coalesce(excluded.page_name, app_meta_lead_events.page_name),
           lead_payload = coalesce(excluded.lead_payload, app_meta_lead_events.lead_payload),
           error_message = excluded.error_message,
+          processing_stage = excluded.processing_stage,
+          error_type = excluded.error_type,
+          error_code = excluded.error_code,
+          error_subcode = excluded.error_subcode,
+          fbtrace_id = excluded.fbtrace_id,
           updated_at = now()
       returning id, lead_id, status
     `,
@@ -2937,15 +3230,28 @@ async function processMetaLeadEvent(
       parsed.adsetId,
       parsed.adId,
       JSON.stringify(leadPayload),
+      leadFetchError ? "failed" : "lead_fetched",
+      leadFetchDetails?.type ?? null,
+      leadFetchDetails?.code ?? null,
+      leadFetchDetails?.subcode ?? null,
+      leadFetchDetails?.fbtraceId ?? null,
     ],
   );
   const event = eventResult.rows[0];
 
   if (event.lead_id || event.status === "processed") {
     await queryDb(
-      `update app_meta_lead_events set status = 'duplicate', updated_at = now() where id = $1`,
+      `update app_meta_lead_events set status = 'duplicate', processing_stage = 'duplicate', updated_at = now() where id = $1`,
       [event.id],
     );
+    logMetaStage({
+      eventId: event.id,
+      leadgenId: parsed.leadgenId,
+      pageId: parsed.pageId,
+      formId: parsed.formId,
+      stage: "duplicate",
+      status: "duplicate",
+    });
     return { ok: true, status: 200, result: "duplicate" };
   }
 
@@ -2955,11 +3261,22 @@ async function processMetaLeadEvent(
         update app_meta_lead_events
         set status = 'error',
             error_message = $2,
+            processing_stage = 'failed',
             updated_at = now()
         where id = $1
       `,
       [event.id, error instanceof Error ? error.message : "Falha ao processar evento."],
     );
+    logMetaStage({
+      eventId: event.id,
+      leadgenId: parsed.leadgenId,
+      pageId: parsed.pageId,
+      formId: parsed.formId,
+      stage: "failed",
+      status: "error",
+      errorCode: metaGraphErrorDetails(error)?.code,
+      fbtraceId: metaGraphErrorDetails(error)?.fbtraceId,
+    });
     await queryDb(
       `
         update app_meta_integrations
@@ -2975,6 +3292,120 @@ async function processMetaLeadEvent(
   return { ok: true, status: 200, result: result.status, leadId: result.leadId };
 }
 
+export async function importHistoricalMetaLeads(
+  pageDbId: string,
+  expectedUnitId: string,
+  formDbId?: string,
+) {
+  if (!isUuid(pageDbId) || !isUuid(expectedUnitId) || (formDbId && !isUuid(formDbId))) {
+    throw new Error("Página ou formulário inválido para importação.");
+  }
+
+  const integration = await ensureMetaIntegration();
+  const formsResult = await queryDb<MetaFormRow & { page_access_token_encrypted: string | null }>(
+    `
+      select f.*, p.page_id as meta_page_id, p.page_name,
+        p.page_access_token_encrypted, p.unit_id as page_unit_id,
+        ''::text as unit_name, ''::text as course_name,
+        ''::text as attendance_city, ''::text as attendance_state,
+        null::text as attendance_class_date, null::text as attendance_status,
+        ''::text as acquisition_channel_name, ''::text as default_responsible_name,
+        '{}'::text[] as selected_consultant_ids,
+        f.created_at::text, f.updated_at::text, f.configured_at::text,
+        f.synced_at::text, f.last_lead_received_at::text,
+        f.meta_created_time::text, f.last_seen_at::text
+      from app_meta_forms f
+      inner join app_meta_pages p on p.id = f.page_id
+      where p.id = $1
+        and p.unit_id = $2
+        and p.status = 'active'
+        and f.status = 'active'
+        and f.attendance_id is not null
+        and ($3::uuid is null or f.id = $3)
+      order by f.created_at
+    `,
+    [pageDbId, expectedUnitId, formDbId ?? null],
+  );
+
+  if (!formsResult.rows.length) {
+    throw new Error("Nenhum formulário configurado e ativo foi encontrado para importação.");
+  }
+
+  const summary = createMetaImportSummary();
+
+  for (const form of formsResult.rows) {
+    const token = decryptPageToken(form.page_access_token_encrypted);
+    if (!token) {
+      summary.errors += 1;
+      summary.formErrors.push({
+        formId: form.meta_form_id,
+        message: "Token da Página ausente.",
+        code: null,
+        fbtraceId: null,
+      });
+      continue;
+    }
+
+    summary.formsChecked += 1;
+
+    try {
+      const params = new URLSearchParams({
+        fields:
+          "id,created_time,field_data,form_id,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name",
+        limit: "100",
+      });
+      const history = await fetchAllMetaGraphPages<MetaLeadPayload>(
+        `https://graph.facebook.com/${integration.graph_api_version || "v23.0"}/${encodeURIComponent(form.meta_form_id)}/leads?${params}`,
+        { token, appSecret: integration.app_secret },
+      );
+      summary.leadsFound += history.items.length;
+
+      for (const lead of history.items) {
+        if (!lead.id) {
+          summary.errors += 1;
+          continue;
+        }
+
+        const parsed: ParsedMetaLeadEvent = {
+          pageId: form.meta_page_id,
+          formId: lead.form_id || form.meta_form_id,
+          leadgenId: lead.id,
+          campaignId: lead.campaign_id ?? null,
+          adsetId: lead.adset_id ?? null,
+          adId: lead.ad_id ?? null,
+          createdTime: lead.created_time ?? null,
+          value: lead as Record<string, unknown>,
+        };
+        const result = await processMetaLead(
+          {
+            source: "historical_import",
+            page_id: parsed.pageId,
+            form_id: parsed.formId,
+            leadgen_id: parsed.leadgenId,
+          },
+          parsed,
+          integration,
+          lead,
+          false,
+        );
+
+        recordMetaImportResult(summary, result.result);
+      }
+    } catch (error) {
+      const details = metaGraphErrorDetails(error);
+      summary.errors += 1;
+      summary.formErrors.push({
+        formId: form.meta_form_id,
+        message: metaTechnicalMessage(error, "Falha ao importar leads do formulário."),
+        code: details?.code ?? null,
+        fbtraceId: details?.fbtraceId ?? null,
+      });
+    }
+  }
+
+  return summary;
+}
+
 async function processMetaLeadEvents(
   payload: Record<string, unknown>,
   parsedEvents: Array<ParsedMetaLeadEvent>,
@@ -2987,7 +3418,7 @@ async function processMetaLeadEvents(
   const results = [];
 
   for (const parsed of parsedEvents) {
-    results.push(await processMetaLeadEvent(payload, parsed, integration));
+    results.push(await processMetaLead(payload, parsed, integration));
   }
 
   if (results.length === 1) {
@@ -3027,8 +3458,18 @@ export async function receiveMetaWebhook(rawBody: string, signature: string | nu
   } catch {
     return { ok: false, status: 400, error: "JSON inválido." };
   }
+  const events = parseMetaLeadEvents(payload);
+  for (const event of events) {
+    logMetaStage({
+      leadgenId: event.leadgenId,
+      pageId: event.pageId,
+      formId: event.formId,
+      stage: "hmac_validated",
+      status: "success",
+    });
+  }
 
-  return processMetaLeadEvents(payload, parseMetaLeadEvents(payload));
+  return processMetaLeadEvents(payload, events);
 }
 
 export async function receiveKognaMetaWebhook(payload: Record<string, unknown>) {
