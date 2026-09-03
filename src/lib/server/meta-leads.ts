@@ -25,6 +25,7 @@ import {
   parseMetaLeadEvents,
   type ParsedMetaLeadEvent,
 } from "@/lib/server/meta-webhook-payload";
+import type { MakeMetaLeadPayload } from "@/lib/server/make-meta-bridge";
 import { getMetaUnitConfigurationIssue, resolveMetaPageUnit } from "@/lib/server/meta-unit-routing";
 
 export type MetaDistributionRule =
@@ -128,6 +129,14 @@ type MetaFormRow = QueryResultRow & {
   leads_received_count: number;
   created_at: string;
   updated_at: string;
+};
+
+type MetaProcessingForm = Pick<
+  MetaFormRow,
+  "status" | "unit_id" | "field_mapping" | "attendance_id" | "acquisition_channel_id"
+> & {
+  id: string | null;
+  page_id: string | null;
 };
 
 type MetaEventRow = QueryResultRow & {
@@ -375,6 +384,24 @@ export async function ensureMetaLeadSchema() {
     alter table app_meta_forms add column if not exists meta_created_time timestamptz;
     alter table app_meta_forms add column if not exists last_seen_at timestamptz;
     create index if not exists app_meta_forms_attendance_idx on app_meta_forms (attendance_id);
+
+    create table if not exists app_make_meta_form_connections (
+      id uuid primary key default gen_random_uuid(),
+      form_id text not null unique,
+      turma_id uuid not null references app_course_attendances(id) on delete restrict,
+      active boolean not null default true,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+
+    create index if not exists app_make_meta_form_connections_turma_idx
+      on app_make_meta_form_connections (turma_id, active);
+
+    insert into app_make_meta_form_connections (form_id, turma_id)
+    select meta_form_id, attendance_id
+    from app_meta_forms
+    where attendance_id is not null
+    on conflict (form_id) do nothing;
 
     create table if not exists app_meta_form_consultants (
       form_id uuid not null references app_meta_forms(id) on delete cascade,
@@ -2378,7 +2405,7 @@ async function defaultMarketingOwner(client: PoolClient, unitId: string | null) 
 }
 
 async function getFormForProcessing(client: PoolClient, pageId: string, formId: string) {
-  const result = await client.query<MetaFormRow>(
+  const result = await client.query<MetaProcessingForm>(
     `
       select
         f.*,
@@ -2412,6 +2439,34 @@ async function getFormForProcessing(client: PoolClient, pageId: string, formId: 
       for update of f
     `,
     [pageId, formId],
+  );
+
+  return result.rows[0] ?? null;
+}
+
+async function getMakeFormForProcessing(client: PoolClient, formId: string) {
+  const result = await client.query<MetaProcessingForm>(
+    `
+      select
+        f.id,
+        f.page_id,
+        a.unit_id,
+        'active'::text as status,
+        '[]'::jsonb as field_mapping,
+        connection.turma_id as attendance_id,
+        f.acquisition_channel_id
+      from app_make_meta_form_connections connection
+      inner join app_course_attendances a
+        on a.id = connection.turma_id
+       and a.status = 'active'
+      left join app_meta_forms f on f.meta_form_id = connection.form_id
+      where connection.form_id = $1
+        and connection.active = true
+      order by f.updated_at desc nulls last
+      limit 1
+      for update of connection, a
+    `,
+    [formId],
   );
 
   return result.rows[0] ?? null;
@@ -2569,7 +2624,7 @@ async function refreshMetaEventLeadPayload(eventId: string) {
   );
 }
 
-async function processEventById(eventId: string) {
+async function processEventById(eventId: string, source: "meta" | "make" = "meta") {
   const integration = await ensureMetaIntegration();
 
   return withTransaction(async (client) => {
@@ -2643,24 +2698,34 @@ async function processEventById(eventId: string) {
       [event.id],
     );
 
-    const pageResult = await client.query<{ unit_id: string | null }>(
-      `
-        select unit_id
-        from app_meta_pages
-        where id = $1 or page_id = $2
-        order by (id = $1) desc
-        limit 1
-        for update
-      `,
-      [event.page_db_id, event.page_id],
-    );
-    const pageUnitId = pageResult.rows[0]?.unit_id ?? null;
-    const form = await getFormForProcessing(client, event.page_id, event.form_id);
+    const form =
+      source === "make"
+        ? await getMakeFormForProcessing(client, event.form_id)
+        : await getFormForProcessing(client, event.page_id, event.form_id);
+    const pageUnitId =
+      source === "make"
+        ? (form?.unit_id ?? null)
+        : ((
+            await client.query<{ unit_id: string | null }>(
+              `
+                select unit_id
+                from app_meta_pages
+                where id = $1 or page_id = $2
+                order by (id = $1) desc
+                limit 1
+                for update
+              `,
+              [event.page_db_id, event.page_id],
+            )
+          ).rows[0]?.unit_id ?? null);
 
-    const configurationReason = getMetaUnitConfigurationIssue(
-      pageUnitId,
-      form ? { status: form.status, unitId: form.unit_id } : null,
-    );
+    const configurationReason =
+      source === "make" && !form
+        ? "Formulário não conectado a uma turma no bridge Make."
+        : getMetaUnitConfigurationIssue(
+            pageUnitId,
+            form ? { status: form.status, unitId: form.unit_id } : null,
+          );
 
     if (configurationReason) {
       await client.query(
@@ -3046,6 +3111,7 @@ async function processMetaLead(
   integration: MetaIntegrationRow,
   prefetchedLeadPayload?: MetaLeadPayload,
   countAsReceived = true,
+  source: "meta" | "make" = "meta",
 ) {
   if (countAsReceived) {
     await queryDb(
@@ -3255,7 +3321,7 @@ async function processMetaLead(
     return { ok: true, status: 200, result: "duplicate" };
   }
 
-  const result = await processEventById(event.id).catch(async (error: unknown) => {
+  const result = await processEventById(event.id, source).catch(async (error: unknown) => {
     await queryDb(
       `
         update app_meta_lead_events
@@ -3404,6 +3470,47 @@ export async function importHistoricalMetaLeads(
   }
 
   return summary;
+}
+
+export async function receiveMakeMetaLead(payload: MakeMetaLeadPayload) {
+  const integration = await ensureMetaIntegration();
+  const fieldData = [
+    { name: "full_name", values: [payload.name] },
+    { name: "phone_number", values: [payload.phone] },
+    ...(payload.email ? [{ name: "email", values: [payload.email] }] : []),
+  ];
+  const leadPayload: MetaLeadPayload = {
+    id: payload.leadgen_id,
+    created_time: payload.created_time ?? undefined,
+    field_data: fieldData,
+    form_id: payload.form_id,
+    form_name: payload.form_name ?? undefined,
+    campaign_id: payload.campaign_id ?? undefined,
+    campaign_name: payload.campaign_name ?? undefined,
+    adset_id: payload.adset_id ?? undefined,
+    adset_name: payload.adset_name ?? undefined,
+    ad_id: payload.ad_id ?? undefined,
+    ad_name: payload.ad_name ?? undefined,
+  };
+  const parsed: ParsedMetaLeadEvent = {
+    pageId: payload.page_id,
+    formId: payload.form_id,
+    leadgenId: payload.leadgen_id,
+    campaignId: payload.campaign_id,
+    adsetId: payload.adset_id,
+    adId: payload.ad_id,
+    createdTime: payload.created_time,
+    value: leadPayload as Record<string, unknown>,
+  };
+
+  return processMetaLead(
+    { source: "make_meta_bridge", ...payload },
+    parsed,
+    integration,
+    leadPayload,
+    false,
+    "make",
+  );
 }
 
 async function processMetaLeadEvents(

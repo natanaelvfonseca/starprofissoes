@@ -76,6 +76,7 @@ import { Route as ApiFinanceiroCollectionsTodayRouteImport } from './routes/api/
 import { Route as ApiFinanceiroStudentsStudentIdRouteImport } from './routes/api/financeiro/students.$studentId'
 import { Route as ApiGestaoChannelsIdRouteImport } from './routes/api/gestao/channels.$id'
 import { Route as ApiGestaoCoursesIdRouteImport } from './routes/api/gestao/courses.$id'
+import { Route as ApiWebhooksMakeMetaLeadRouteImport } from './routes/api/webhooks/make/meta-lead'
 import { Route as ApiWhatsappSupervisionConversationsIdRouteImport } from './routes/api/whatsapp-supervision.conversations.$id'
 
 const IndexRoute = IndexRouteImport.update({
@@ -424,6 +425,11 @@ const ApiGestaoCoursesIdRoute = ApiGestaoCoursesIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => ApiGestaoCoursesRoute,
 } as any)
+const ApiWebhooksMakeMetaLeadRoute = ApiWebhooksMakeMetaLeadRouteImport.update({
+  id: '/api/webhooks/make/meta-lead',
+  path: '/api/webhooks/make/meta-lead',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiWhatsappSupervisionConversationsIdRoute =
   ApiWhatsappSupervisionConversationsIdRouteImport.update({
     id: '/conversations/$id',
@@ -499,6 +505,7 @@ export interface FileRoutesByFullPath {
   '/api/financeiro/students/$studentId': typeof ApiFinanceiroStudentsStudentIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
+  '/api/webhooks/make/meta-lead': typeof ApiWebhooksMakeMetaLeadRoute
   '/api/whatsapp-supervision/conversations/$id': typeof ApiWhatsappSupervisionConversationsIdRoute
 }
 export interface FileRoutesByTo {
@@ -569,6 +576,7 @@ export interface FileRoutesByTo {
   '/api/financeiro/students/$studentId': typeof ApiFinanceiroStudentsStudentIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
+  '/api/webhooks/make/meta-lead': typeof ApiWebhooksMakeMetaLeadRoute
   '/api/whatsapp-supervision/conversations/$id': typeof ApiWhatsappSupervisionConversationsIdRoute
 }
 export interface FileRoutesById {
@@ -640,6 +648,7 @@ export interface FileRoutesById {
   '/api/financeiro/students/$studentId': typeof ApiFinanceiroStudentsStudentIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
+  '/api/webhooks/make/meta-lead': typeof ApiWebhooksMakeMetaLeadRoute
   '/api/whatsapp-supervision/conversations/$id': typeof ApiWhatsappSupervisionConversationsIdRoute
 }
 export interface FileRouteTypes {
@@ -712,6 +721,7 @@ export interface FileRouteTypes {
     | '/api/financeiro/students/$studentId'
     | '/api/gestao/channels/$id'
     | '/api/gestao/courses/$id'
+    | '/api/webhooks/make/meta-lead'
     | '/api/whatsapp-supervision/conversations/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -782,6 +792,7 @@ export interface FileRouteTypes {
     | '/api/financeiro/students/$studentId'
     | '/api/gestao/channels/$id'
     | '/api/gestao/courses/$id'
+    | '/api/webhooks/make/meta-lead'
     | '/api/whatsapp-supervision/conversations/$id'
   id:
     | '__root__'
@@ -852,6 +863,7 @@ export interface FileRouteTypes {
     | '/api/financeiro/students/$studentId'
     | '/api/gestao/channels/$id'
     | '/api/gestao/courses/$id'
+    | '/api/webhooks/make/meta-lead'
     | '/api/whatsapp-supervision/conversations/$id'
   fileRoutesById: FileRoutesById
 }
@@ -911,6 +923,7 @@ export interface RootRouteChildren {
   ApiWebhooksKognaMetaLeadsRoute: typeof ApiWebhooksKognaMetaLeadsRoute
   ApiWebhooksMetaLeadsRoute: typeof ApiWebhooksMetaLeadsRoute
   ApiFinanceiroCollectionsTodayRoute: typeof ApiFinanceiroCollectionsTodayRoute
+  ApiWebhooksMakeMetaLeadRoute: typeof ApiWebhooksMakeMetaLeadRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1384,6 +1397,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiGestaoCoursesIdRouteImport
       parentRoute: typeof ApiGestaoCoursesRoute
     }
+    '/api/webhooks/make/meta-lead': {
+      id: '/api/webhooks/make/meta-lead'
+      path: '/api/webhooks/make/meta-lead'
+      fullPath: '/api/webhooks/make/meta-lead'
+      preLoaderRoute: typeof ApiWebhooksMakeMetaLeadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/whatsapp-supervision/conversations/$id': {
       id: '/api/whatsapp-supervision/conversations/$id'
       path: '/conversations/$id'
@@ -1567,6 +1587,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiWebhooksKognaMetaLeadsRoute: ApiWebhooksKognaMetaLeadsRoute,
   ApiWebhooksMetaLeadsRoute: ApiWebhooksMetaLeadsRoute,
   ApiFinanceiroCollectionsTodayRoute: ApiFinanceiroCollectionsTodayRoute,
+  ApiWebhooksMakeMetaLeadRoute: ApiWebhooksMakeMetaLeadRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
