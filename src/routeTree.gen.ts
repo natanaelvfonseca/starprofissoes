@@ -17,6 +17,7 @@ import { Route as CrmRouteImport } from './routes/crm'
 import { Route as FeedbackRouteImport } from './routes/feedback'
 import { Route as FinanceiroRouteImport } from './routes/financeiro'
 import { Route as IaComercialRouteImport } from './routes/ia-comercial'
+import { Route as IntegracoesLeadsRouteImport } from './routes/integracoes-leads'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as MetaAdsRouteImport } from './routes/meta-ads'
 import { Route as PerfilRouteImport } from './routes/perfil'
@@ -25,6 +26,7 @@ import { Route as UnidadesRouteImport } from './routes/unidades'
 import { Route as UsuariosRouteImport } from './routes/usuarios'
 import { Route as ApiGrowthRouteImport } from './routes/api/growth'
 import { Route as ApiIaComercialRouteImport } from './routes/api/ia-comercial'
+import { Route as ApiLeadIntegrationsRouteImport } from './routes/api/lead-integrations'
 import { Route as ApiMetaAdsRouteImport } from './routes/api/meta-ads'
 import { Route as ApiProfileRouteImport } from './routes/api/profile'
 import { Route as ApiSystemFeedbackRouteImport } from './routes/api/system-feedback'
@@ -119,6 +121,11 @@ const IaComercialRoute = IaComercialRouteImport.update({
   path: '/ia-comercial',
   getParentRoute: () => rootRouteImport,
 } as any)
+const IntegracoesLeadsRoute = IntegracoesLeadsRouteImport.update({
+  id: '/integracoes-leads',
+  path: '/integracoes-leads',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -157,6 +164,11 @@ const ApiGrowthRoute = ApiGrowthRouteImport.update({
 const ApiIaComercialRoute = ApiIaComercialRouteImport.update({
   id: '/api/ia-comercial',
   path: '/api/ia-comercial',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiLeadIntegrationsRoute = ApiLeadIntegrationsRouteImport.update({
+  id: '/api/lead-integrations',
+  path: '/api/lead-integrations',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiMetaAdsRoute = ApiMetaAdsRouteImport.update({
@@ -446,6 +458,7 @@ export interface FileRoutesByFullPath {
   '/feedback': typeof FeedbackRoute
   '/financeiro': typeof FinanceiroRouteWithChildren
   '/ia-comercial': typeof IaComercialRoute
+  '/integracoes-leads': typeof IntegracoesLeadsRoute
   '/login': typeof LoginRoute
   '/meta-ads': typeof MetaAdsRoute
   '/perfil': typeof PerfilRoute
@@ -454,6 +467,7 @@ export interface FileRoutesByFullPath {
   '/usuarios': typeof UsuariosRoute
   '/api/growth': typeof ApiGrowthRoute
   '/api/ia-comercial': typeof ApiIaComercialRouteWithChildren
+  '/api/lead-integrations': typeof ApiLeadIntegrationsRoute
   '/api/meta-ads': typeof ApiMetaAdsRoute
   '/api/profile': typeof ApiProfileRoute
   '/api/system-feedback': typeof ApiSystemFeedbackRoute
@@ -517,6 +531,7 @@ export interface FileRoutesByTo {
   '/feedback': typeof FeedbackRoute
   '/financeiro': typeof FinanceiroRouteWithChildren
   '/ia-comercial': typeof IaComercialRoute
+  '/integracoes-leads': typeof IntegracoesLeadsRoute
   '/login': typeof LoginRoute
   '/meta-ads': typeof MetaAdsRoute
   '/perfil': typeof PerfilRoute
@@ -525,6 +540,7 @@ export interface FileRoutesByTo {
   '/usuarios': typeof UsuariosRoute
   '/api/growth': typeof ApiGrowthRoute
   '/api/ia-comercial': typeof ApiIaComercialRouteWithChildren
+  '/api/lead-integrations': typeof ApiLeadIntegrationsRoute
   '/api/meta-ads': typeof ApiMetaAdsRoute
   '/api/profile': typeof ApiProfileRoute
   '/api/system-feedback': typeof ApiSystemFeedbackRoute
@@ -589,6 +605,7 @@ export interface FileRoutesById {
   '/feedback': typeof FeedbackRoute
   '/financeiro': typeof FinanceiroRouteWithChildren
   '/ia-comercial': typeof IaComercialRoute
+  '/integracoes-leads': typeof IntegracoesLeadsRoute
   '/login': typeof LoginRoute
   '/meta-ads': typeof MetaAdsRoute
   '/perfil': typeof PerfilRoute
@@ -597,6 +614,7 @@ export interface FileRoutesById {
   '/usuarios': typeof UsuariosRoute
   '/api/growth': typeof ApiGrowthRoute
   '/api/ia-comercial': typeof ApiIaComercialRouteWithChildren
+  '/api/lead-integrations': typeof ApiLeadIntegrationsRoute
   '/api/meta-ads': typeof ApiMetaAdsRoute
   '/api/profile': typeof ApiProfileRoute
   '/api/system-feedback': typeof ApiSystemFeedbackRoute
@@ -662,6 +680,7 @@ export interface FileRouteTypes {
     | '/feedback'
     | '/financeiro'
     | '/ia-comercial'
+    | '/integracoes-leads'
     | '/login'
     | '/meta-ads'
     | '/perfil'
@@ -670,6 +689,7 @@ export interface FileRouteTypes {
     | '/usuarios'
     | '/api/growth'
     | '/api/ia-comercial'
+    | '/api/lead-integrations'
     | '/api/meta-ads'
     | '/api/profile'
     | '/api/system-feedback'
@@ -733,6 +753,7 @@ export interface FileRouteTypes {
     | '/feedback'
     | '/financeiro'
     | '/ia-comercial'
+    | '/integracoes-leads'
     | '/login'
     | '/meta-ads'
     | '/perfil'
@@ -741,6 +762,7 @@ export interface FileRouteTypes {
     | '/usuarios'
     | '/api/growth'
     | '/api/ia-comercial'
+    | '/api/lead-integrations'
     | '/api/meta-ads'
     | '/api/profile'
     | '/api/system-feedback'
@@ -804,6 +826,7 @@ export interface FileRouteTypes {
     | '/feedback'
     | '/financeiro'
     | '/ia-comercial'
+    | '/integracoes-leads'
     | '/login'
     | '/meta-ads'
     | '/perfil'
@@ -812,6 +835,7 @@ export interface FileRouteTypes {
     | '/usuarios'
     | '/api/growth'
     | '/api/ia-comercial'
+    | '/api/lead-integrations'
     | '/api/meta-ads'
     | '/api/profile'
     | '/api/system-feedback'
@@ -876,6 +900,7 @@ export interface RootRouteChildren {
   FeedbackRoute: typeof FeedbackRoute
   FinanceiroRoute: typeof FinanceiroRouteWithChildren
   IaComercialRoute: typeof IaComercialRoute
+  IntegracoesLeadsRoute: typeof IntegracoesLeadsRoute
   LoginRoute: typeof LoginRoute
   MetaAdsRoute: typeof MetaAdsRoute
   PerfilRoute: typeof PerfilRoute
@@ -884,6 +909,7 @@ export interface RootRouteChildren {
   UsuariosRoute: typeof UsuariosRoute
   ApiGrowthRoute: typeof ApiGrowthRoute
   ApiIaComercialRoute: typeof ApiIaComercialRouteWithChildren
+  ApiLeadIntegrationsRoute: typeof ApiLeadIntegrationsRoute
   ApiMetaAdsRoute: typeof ApiMetaAdsRoute
   ApiProfileRoute: typeof ApiProfileRoute
   ApiSystemFeedbackRoute: typeof ApiSystemFeedbackRoute
@@ -984,6 +1010,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IaComercialRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/integracoes-leads': {
+      id: '/integracoes-leads'
+      path: '/integracoes-leads'
+      fullPath: '/integracoes-leads'
+      preLoaderRoute: typeof IntegracoesLeadsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -1038,6 +1071,13 @@ declare module '@tanstack/react-router' {
       path: '/api/ia-comercial'
       fullPath: '/api/ia-comercial'
       preLoaderRoute: typeof ApiIaComercialRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/lead-integrations': {
+      id: '/api/lead-integrations'
+      path: '/api/lead-integrations'
+      fullPath: '/api/lead-integrations'
+      preLoaderRoute: typeof ApiLeadIntegrationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/meta-ads': {
@@ -1540,6 +1580,7 @@ const rootRouteChildren: RootRouteChildren = {
   FeedbackRoute: FeedbackRoute,
   FinanceiroRoute: FinanceiroRouteWithChildren,
   IaComercialRoute: IaComercialRoute,
+  IntegracoesLeadsRoute: IntegracoesLeadsRoute,
   LoginRoute: LoginRoute,
   MetaAdsRoute: MetaAdsRoute,
   PerfilRoute: PerfilRoute,
@@ -1548,6 +1589,7 @@ const rootRouteChildren: RootRouteChildren = {
   UsuariosRoute: UsuariosRoute,
   ApiGrowthRoute: ApiGrowthRoute,
   ApiIaComercialRoute: ApiIaComercialRouteWithChildren,
+  ApiLeadIntegrationsRoute: ApiLeadIntegrationsRoute,
   ApiMetaAdsRoute: ApiMetaAdsRoute,
   ApiProfileRoute: ApiProfileRoute,
   ApiSystemFeedbackRoute: ApiSystemFeedbackRoute,

@@ -2,6 +2,7 @@ import * as React from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Building2,
+  Cable,
   ChartNoAxesCombined,
   ClipboardPenLine,
   ContactRound,
@@ -44,6 +45,7 @@ import starLogo from "@/assets/star-profissoes-logo.png";
 import { useAuth } from "@/lib/auth";
 import {
   canAccessSystemFeedback,
+  canManageMetaAds,
   canManageUnits,
   canSwitchActiveUnit,
   canViewGrowth,
@@ -173,7 +175,12 @@ export function AppSidebar() {
     }))
     .filter((group) => group.items.length > 0);
   const administrationItems: Array<NavigationItem> = [
-    ...(user && canViewMetaAds(user.role)
+    ...(user && canManageMetaAds(user.role)
+      ? [{ title: "Integrações de Leads", url: "/integracoes-leads", icon: Cable }]
+      : []),
+    ...(user &&
+    canViewMetaAds(user.role) &&
+    user.email.trim().toLocaleLowerCase("pt-BR") === "natanaelfonseca@gmail.com"
       ? [{ title: "Meta Ads", url: "/meta-ads", icon: Megaphone }]
       : []),
     ...(session?.canRegisterUsers

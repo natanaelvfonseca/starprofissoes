@@ -338,8 +338,8 @@ function MetaAdsPage() {
   }, [activeUnitId, loadData]);
 
   React.useEffect(() => {
-    if (session && canViewMetaAds(session.user.role)) void loadData();
-  }, [loadData, session]);
+    if (session && canViewMetaAds(session.user.role) && canManageMetaConnection) void loadData();
+  }, [canManageMetaConnection, loadData, session]);
 
   React.useEffect(() => {
     const handleMetaOAuthMessage = (event: MessageEvent) => {
@@ -368,6 +368,7 @@ function MetaAdsPage() {
   );
 
   if (session && !canViewMetaAds(session.user.role)) return <Navigate to="/" />;
+  if (session && !canManageMetaConnection) return <Navigate to="/integracoes-leads" />;
 
   async function runAction(
     action: string,
