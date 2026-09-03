@@ -58,6 +58,8 @@ type LeadIntegrationsData = {
   attendances: Array<AttendanceOption>;
 };
 
+const EMPTY_DATA: LeadIntegrationsData = { forms: [], attendances: [] };
+
 async function readJson<T>(response: Response) {
   const data = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok) throw new Error(data.error ?? "Falha na operação.");
@@ -71,34 +73,42 @@ export const Route = createFileRoute("/integracoes-leads")({
 
 function LeadIntegrationsPage() {
   const { session } = useAuth();
-  const [data, setData] = React.useState<LeadIntegrationsData>({ forms: [], attendances: [] });
+  const [data, setData] = React.useState<LeadIntegrationsData>(EMPTY_DATA);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [selectedForm, setSelectedForm] = React.useState<LeadFormConnection | null>(null);
   const [selectedAttendanceId, setSelectedAttendanceId] = React.useState("");
   const canManage = session ? canManageMetaAds(session.user.role) : false;
+  const activeUnitId = session?.activeUnit?.id ?? "";
 
-  const loadData = React.useCallback(async () => {
+  const loadData = React.useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     try {
-      setData(
-        await readJson<LeadIntegrationsData>(
-          await fetch("/api/lead-integrations", {
-            credentials: "same-origin",
-            headers: { Accept: "application/json" },
-          }),
-        ),
+      const nextData = await readJson<LeadIntegrationsData>(
+        await fetch("/api/lead-integrations", {
+          credentials: "same-origin",
+          headers: { Accept: "application/json" },
+          signal,
+        }),
       );
+      if (!signal?.aborted) setData(nextData);
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
       toast.error(error instanceof Error ? error.message : "Falha ao carregar integrações.");
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, []);
 
   React.useEffect(() => {
-    if (session && canManage) void loadData();
-  }, [canManage, loadData, session]);
+    if (!session || !canManage || !activeUnitId) return;
+    const controller = new AbortController();
+    setData(EMPTY_DATA);
+    setSelectedForm(null);
+    setSelectedAttendanceId("");
+    void loadData(controller.signal);
+    return () => controller.abort();
+  }, [activeUnitId, canManage, loadData, session]);
 
   if (session && !canManage) return <Navigate to="/" />;
 
@@ -152,7 +162,7 @@ function LeadIntegrationsPage() {
       <PageHeader
         eyebrow="Integração temporária Make → Star"
         title="Integrações de Leads"
-        description="Conecte cada formulário recebido pelo Make a uma turma existente na Star."
+        description={`Conecte cada formulário recebido pelo Make a uma turma de ${session?.activeUnit?.name ?? "sua unidade"}.`}
         actions={
           <Button variant="outline" onClick={() => void loadData()} disabled={loading}>
             {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}

@@ -39,9 +39,9 @@ function attendanceName(row: {
   return `${row.course_name} · ${row.city}/${row.state} · ${day}/${month}/${year}`;
 }
 
-export async function listMakeMetaConnections(unitIds: Array<string>) {
+export async function listMakeMetaConnections(unitId: string) {
   await ensureMetaLeadSchema();
-  if (!unitIds.length || unitIds.some((id) => !isUuid(id))) {
+  if (!isUuid(unitId)) {
     return { forms: [], attendances: [] };
   }
 
@@ -92,19 +92,16 @@ export async function listMakeMetaConnections(unitIds: Array<string>) {
         left join app_meta_pages meta_page on meta_page.id = meta_form.page_id
         left join app_meta_pages received_page on received_page.page_id = received.page_id
         where
-          (connection.turma_id is not null and attendance.unit_id = any($1::uuid[]))
+          (connection.turma_id is not null and attendance.unit_id = $1)
           or (
             connection.turma_id is null
-            and (
-              coalesce(received_page.unit_id, meta_page.unit_id) = any($1::uuid[])
-              or coalesce(received_page.unit_id, meta_page.unit_id) is null
-            )
+            and coalesce(received_page.unit_id, meta_page.unit_id) = $1
           )
         order by
           (connection.active = true and attendance.status = 'active') asc,
           coalesce(received.form_name, meta_form.form_name, catalog.form_id)
       `,
-      [unitIds],
+      [unitId],
     ),
     queryDb<AttendanceRow>(
       `
@@ -119,11 +116,11 @@ export async function listMakeMetaConnections(unitIds: Array<string>) {
         from app_course_attendances attendance
         inner join app_units unit on unit.id = attendance.unit_id
         inner join app_courses course on course.id = attendance.course_id
-        where attendance.unit_id = any($1::uuid[])
+        where attendance.unit_id = $1
           and attendance.status = 'active'
         order by unit.name, attendance.class_date, course.name, attendance.city
       `,
-      [unitIds],
+      [unitId],
     ),
   ]);
 
@@ -150,14 +147,10 @@ export async function listMakeMetaConnections(unitIds: Array<string>) {
   };
 }
 
-export async function saveMakeMetaConnection(
-  formId: string,
-  turmaId: string,
-  allowedUnitIds: Array<string>,
-) {
+export async function saveMakeMetaConnection(formId: string, turmaId: string, unitId: string) {
   await ensureMetaLeadSchema();
   const normalizedFormId = formId.trim();
-  if (!normalizedFormId || !isUuid(turmaId) || !allowedUnitIds.length) {
+  if (!normalizedFormId || !isUuid(turmaId) || !isUuid(unitId)) {
     throw new Error("Formulário ou turma inválida.");
   }
 
@@ -168,11 +161,11 @@ export async function saveMakeMetaConnection(
         from app_course_attendances
         where id = $1
           and status = 'active'
-          and unit_id = any($2::uuid[])
+          and unit_id = $2
         limit 1
         for update
       `,
-      [turmaId, allowedUnitIds],
+      [turmaId, unitId],
     );
     if (!attendance.rowCount) throw new Error("Turma indisponível ou sem acesso.");
 
@@ -200,7 +193,7 @@ export async function saveMakeMetaConnection(
       `,
       [normalizedFormId],
     );
-    if (existing.rows[0] && !allowedUnitIds.includes(existing.rows[0].unit_id)) {
+    if (existing.rows[0] && existing.rows[0].unit_id !== unitId) {
       throw new Error("A conexão existente pertence a uma unidade sem acesso.");
     }
 

@@ -12,18 +12,18 @@ export const Route = createFileRoute("/api/lead-integrations")({
       GET: async ({ request }) => {
         const session = await getSessionFromRequest(request);
         if (!session) return Response.json({ error: "Não autenticado." }, { status: 401 });
-        if (!canManageMetaAds(session.user.role)) {
+        if (!canManageMetaAds(session.user.role) || !session.activeUnit) {
           return Response.json({ error: "Acesso negado." }, { status: 403 });
         }
 
-        return Response.json(await listMakeMetaConnections(session.units.map((unit) => unit.id)), {
+        return Response.json(await listMakeMetaConnections(session.activeUnit.id), {
           headers: { "Cache-Control": "no-store" },
         });
       },
       POST: async ({ request }) => {
         const session = await getSessionFromRequest(request);
         if (!session) return Response.json({ error: "Não autenticado." }, { status: 401 });
-        if (!canManageMetaAds(session.user.role)) {
+        if (!canManageMetaAds(session.user.role) || !session.activeUnit) {
           return Response.json({ error: "Acesso negado." }, { status: 403 });
         }
 
@@ -33,7 +33,7 @@ export const Route = createFileRoute("/api/lead-integrations")({
             result: await saveMakeMetaConnection(
               typeof body?.formId === "string" ? body.formId : "",
               typeof body?.turmaId === "string" ? body.turmaId : "",
-              session.units.map((unit) => unit.id),
+              session.activeUnit.id,
             ),
           });
         } catch (error) {
