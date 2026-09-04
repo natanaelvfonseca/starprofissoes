@@ -56,6 +56,12 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   CONSULTOR: "Consultor",
 };
 
+export const META_ADS_MASTER_EMAIL = "natanaelfonseca@gmail.com";
+
+export function canAccessMetaAdsScreen(email: string | null | undefined) {
+  return email?.trim().toLocaleLowerCase("pt-BR") === META_ADS_MASTER_EMAIL;
+}
+
 export function isMasterRole(role: UserRole) {
   return role === "DEV" || role === "CVO";
 }

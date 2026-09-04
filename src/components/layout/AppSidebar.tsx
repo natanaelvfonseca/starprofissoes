@@ -44,13 +44,13 @@ import {
 import starLogo from "@/assets/star-profissoes-logo.png";
 import { useAuth } from "@/lib/auth";
 import {
+  canAccessMetaAdsScreen,
   canAccessSystemFeedback,
   canManageMetaAds,
   canManageUnits,
   canSwitchActiveUnit,
   canViewGrowth,
   canViewManagement,
-  canViewMetaAds,
   canViewSalesAi,
   canViewStudents,
   getInitials,
@@ -178,9 +178,7 @@ export function AppSidebar() {
     ...(user && canManageMetaAds(user.role)
       ? [{ title: "Integrações de Leads", url: "/integracoes-leads", icon: Cable }]
       : []),
-    ...(user &&
-    canViewMetaAds(user.role) &&
-    user.email.trim().toLocaleLowerCase("pt-BR") === "natanaelfonseca@gmail.com"
+    ...(user && canAccessMetaAdsScreen(user.email)
       ? [{ title: "Meta Ads", url: "/meta-ads", icon: Megaphone }]
       : []),
     ...(session?.canRegisterUsers

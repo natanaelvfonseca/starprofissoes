@@ -59,7 +59,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuth } from "@/lib/auth";
-import { canManageMetaAds, canViewMetaAds } from "@/lib/auth-types";
+import { canAccessMetaAdsScreen, canManageMetaAds } from "@/lib/auth-types";
 
 type MetaIntegration = {
   app_id: string | null;
@@ -216,8 +216,6 @@ const stages = [
   "Recuperação",
 ];
 
-const META_CONNECTION_MANAGER_EMAIL = "natanaelfonseca@gmail.com";
-
 async function readJson<T>(response: Response) {
   const data = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok) throw new Error(data.error ?? "Falha na operação.");
@@ -287,8 +285,7 @@ function MetaAdsPage() {
   const metaOAuthSucceededRef = React.useRef(false);
   const metaConnectionStatusBeforeOAuthRef = React.useRef<MetaConnectionStatus>("disconnected");
   const canManage = session ? canManageMetaAds(session.user.role) : false;
-  const canManageMetaConnection =
-    session?.user.email.trim().toLocaleLowerCase("pt-BR") === META_CONNECTION_MANAGER_EMAIL;
+  const canManageMetaConnection = canAccessMetaAdsScreen(session?.user.email);
   const activeUnitId = session?.activeUnit?.id ?? "";
 
   const stopMetaOAuthPopupMonitor = React.useCallback(() => {
@@ -338,7 +335,7 @@ function MetaAdsPage() {
   }, [activeUnitId, loadData]);
 
   React.useEffect(() => {
-    if (session && canViewMetaAds(session.user.role) && canManageMetaConnection) void loadData();
+    if (session && canManageMetaConnection) void loadData();
   }, [canManageMetaConnection, loadData, session]);
 
   React.useEffect(() => {
@@ -367,7 +364,6 @@ function MetaAdsPage() {
     [stopMetaOAuthPopupMonitor],
   );
 
-  if (session && !canViewMetaAds(session.user.role)) return <Navigate to="/" />;
   if (session && !canManageMetaConnection) return <Navigate to="/integracoes-leads" />;
 
   async function runAction(
