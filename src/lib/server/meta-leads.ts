@@ -2472,6 +2472,35 @@ async function getMakeFormForProcessing(client: PoolClient, formId: string) {
   return result.rows[0] ?? null;
 }
 
+async function getMakeAttendanceRecipients(
+  client: PoolClient,
+  attendance: { id: string; unit_id: string },
+) {
+  const result = await client.query<{ id: string; name: string }>(
+    `
+      select user_account.id, user_account.name
+      from app_course_attendance_consultants attendance_user
+      inner join app_users user_account on user_account.id = attendance_user.user_id
+      where attendance_user.attendance_id = $1
+        and user_account.role in ('CONSULTOR', 'GERENTE', 'DIRETOR')
+        and user_account.status = 'active'
+        and (
+          user_account.primary_unit_id = $2
+          or exists (
+            select 1
+            from app_user_units user_unit
+            where user_unit.user_id = user_account.id
+              and user_unit.unit_id = $2
+          )
+        )
+      order by user_account.name
+    `,
+    [attendance.id, attendance.unit_id],
+  );
+
+  return result.rows;
+}
+
 async function getCourseSnapshot(
   client: PoolClient,
   courseId: string | null,
@@ -2859,7 +2888,10 @@ async function processEventById(eventId: string, source: "meta" | "make" = "meta
       return { status: "pending_configuration", leadId: null };
     }
 
-    const attendanceConsultants = await getAttendanceConsultants(client, attendance);
+    const attendanceConsultants =
+      source === "make"
+        ? await getMakeAttendanceRecipients(client, attendance)
+        : await getAttendanceConsultants(client, attendance);
     if (!attendanceConsultants.length) {
       await client.query(
         `
@@ -3265,6 +3297,10 @@ async function processMetaLead(
           ad_name = coalesce(excluded.ad_name, app_meta_lead_events.ad_name),
           form_name = coalesce(excluded.form_name, app_meta_lead_events.form_name),
           page_name = coalesce(excluded.page_name, app_meta_lead_events.page_name),
+          payload = case
+            when excluded.payload->>'source' = 'make_meta_bridge' then excluded.payload
+            else app_meta_lead_events.payload
+          end,
           lead_payload = coalesce(excluded.lead_payload, app_meta_lead_events.lead_payload),
           error_message = excluded.error_message,
           processing_stage = excluded.processing_stage,
@@ -3472,8 +3508,43 @@ export async function importHistoricalMetaLeads(
   return summary;
 }
 
+async function recoverConfiguredMakeFormConnection(formId: string) {
+  const result = await queryDb(
+    `
+      with candidate as (
+        select
+          f.meta_form_id,
+          max(f.attendance_id::text)::uuid as attendance_id
+        from app_meta_forms f
+        inner join app_meta_pages p on p.id = f.page_id
+        inner join app_course_attendances a
+          on a.id = f.attendance_id
+         and a.status = 'active'
+         and a.unit_id = f.unit_id
+         and a.unit_id = p.unit_id
+        where f.meta_form_id = $1
+          and f.status = 'active'
+        group by f.meta_form_id
+        having count(distinct f.attendance_id) = 1
+      )
+      insert into app_make_meta_form_connections (form_id, turma_id, active)
+      select meta_form_id, attendance_id, true
+      from candidate
+      on conflict (form_id) do nothing
+      returning form_id
+    `,
+    [formId],
+  );
+
+  return Boolean(result.rowCount);
+}
+
 export async function receiveMakeMetaLead(payload: MakeMetaLeadPayload) {
   const integration = await ensureMetaIntegration();
+  const recoveredConnection = await recoverConfiguredMakeFormConnection(payload.form_id);
+  if (recoveredConnection) {
+    await reprocessPendingMakeMetaEvents(payload.form_id, payload.leadgen_id);
+  }
   const fieldData = [
     { name: "full_name", values: [payload.name] },
     { name: "phone_number", values: [payload.phone] },
@@ -3513,18 +3584,37 @@ export async function receiveMakeMetaLead(payload: MakeMetaLeadPayload) {
   );
 }
 
-export async function reprocessPendingMakeMetaEvents(formId: string) {
+export async function reprocessPendingMakeMetaEvents(
+  formId: string,
+  excludedLeadgenId: string | null = null,
+) {
   await ensureMetaLeadSchema();
+  await queryDb(
+    `
+      update app_meta_lead_events
+      set payload = jsonb_set(payload, '{source}', '"make_meta_bridge"'::jsonb, true),
+          updated_at = now()
+      where form_id = $1
+        and status = 'pending_configuration'
+        and payload->>'source' is null
+        and routing_error = 'Formulário não conectado a uma turma no bridge Make.'
+    `,
+    [formId],
+  );
   const result = await queryDb<{ id: string }>(
     `
       select id
       from app_meta_lead_events
       where form_id = $1
         and status = 'pending_configuration'
-        and payload->>'source' = 'make_meta_bridge'
+        and (
+          payload->>'source' = 'make_meta_bridge'
+          or routing_error = 'Formulário não conectado a uma turma no bridge Make.'
+        )
+        and ($2::text is null or leadgen_id <> $2)
       order by received_at
     `,
-    [formId],
+    [formId, excludedLeadgenId],
   );
   let processed = 0;
   let duplicates = 0;

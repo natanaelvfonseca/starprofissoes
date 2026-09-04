@@ -56,6 +56,7 @@ export async function listMakeMetaConnections(unitId: string) {
             event.received_at
           from app_meta_lead_events event
           where event.payload->>'source' = 'make_meta_bridge'
+             or event.routing_error = 'Formulário não conectado a uma turma no bridge Make.'
           order by event.form_id, event.received_at desc
         ), catalog as (
           select form_id from received
@@ -169,7 +170,11 @@ export async function saveMakeMetaConnection(formId: string, turmaId: string, un
       `
         select 1
         from app_meta_lead_events
-        where form_id = $1 and payload->>'source' = 'make_meta_bridge'
+        where form_id = $1
+          and (
+            payload->>'source' = 'make_meta_bridge'
+            or routing_error = 'Formulário não conectado a uma turma no bridge Make.'
+          )
         union all
         select 1 from app_meta_forms where meta_form_id = $1
         limit 1
