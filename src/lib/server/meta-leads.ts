@@ -3513,6 +3513,39 @@ export async function receiveMakeMetaLead(payload: MakeMetaLeadPayload) {
   );
 }
 
+export async function reprocessPendingMakeMetaEvents(formId: string) {
+  await ensureMetaLeadSchema();
+  const result = await queryDb<{ id: string }>(
+    `
+      select id
+      from app_meta_lead_events
+      where form_id = $1
+        and status = 'pending_configuration'
+        and payload->>'source' = 'make_meta_bridge'
+      order by received_at
+    `,
+    [formId],
+  );
+  let processed = 0;
+  let duplicates = 0;
+  let pending = 0;
+  let errors = 0;
+
+  for (const event of result.rows) {
+    try {
+      const outcome = await processEventById(event.id, "make");
+      if (outcome.status === "processed") processed += 1;
+      else if (outcome.status === "duplicate") duplicates += 1;
+      else if (outcome.status === "pending_configuration") pending += 1;
+      else errors += 1;
+    } catch {
+      errors += 1;
+    }
+  }
+
+  return { found: result.rows.length, processed, duplicates, pending, errors };
+}
+
 async function processMetaLeadEvents(
   payload: Record<string, unknown>,
   parsedEvents: Array<ParsedMetaLeadEvent>,

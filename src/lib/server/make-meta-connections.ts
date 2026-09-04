@@ -1,7 +1,7 @@
 import type { QueryResultRow } from "pg";
 import { isUuid } from "@/lib/server/commercial-schema";
 import { queryDb, withTransaction } from "@/lib/server/db";
-import { ensureMetaLeadSchema } from "@/lib/server/meta-leads";
+import { ensureMetaLeadSchema, reprocessPendingMakeMetaEvents } from "@/lib/server/meta-leads";
 
 type ConnectionRow = QueryResultRow & {
   form_id: string;
@@ -90,13 +90,9 @@ export async function listMakeMetaConnections(unitId: string) {
           limit 1
         ) meta_form on true
         left join app_meta_pages meta_page on meta_page.id = meta_form.page_id
-        left join app_meta_pages received_page on received_page.page_id = received.page_id
         where
           (connection.turma_id is not null and attendance.unit_id = $1)
-          or (
-            connection.turma_id is null
-            and coalesce(received_page.unit_id, meta_page.unit_id) = $1
-          )
+          or connection.turma_id is null
         order by
           (connection.active = true and attendance.status = 'active') asc,
           coalesce(received.form_name, meta_form.form_name, catalog.form_id)
@@ -210,5 +206,6 @@ export async function saveMakeMetaConnection(formId: string, turmaId: string, un
     );
   });
 
-  return { saved: true };
+  const reprocessed = await reprocessPendingMakeMetaEvents(normalizedFormId);
+  return { saved: true, reprocessed };
 }
