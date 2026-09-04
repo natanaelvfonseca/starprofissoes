@@ -49,6 +49,7 @@ type LeadRow = QueryResultRow & {
   pipeline_column_id: string | null;
   student_pipeline_column_id: string | null;
   created_at: string;
+  updated_at: string;
 };
 
 type PipelineColumnRow = QueryResultRow & {
@@ -127,6 +128,7 @@ function mapLead(row: LeadRow, exposeAcquisitionChannel: boolean): LeadRecord {
     pipelineColumnId: row.pipeline_column_id ?? null,
     studentPipelineColumnId: row.student_pipeline_column_id ?? null,
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -442,7 +444,8 @@ export const Route = createFileRoute("/api/crm/leads")({
               l.stage,
               l.pipeline_column_id,
               l.student_pipeline_column_id,
-              l.created_at::text
+              l.created_at::text,
+              l.updated_at::text
             from app_leads l
             inner join app_units un on un.id = l.unit_id
             left join app_users owner on owner.id = l.created_by

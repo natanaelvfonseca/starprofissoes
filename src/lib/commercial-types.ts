@@ -69,7 +69,10 @@ export type LeadRecord = {
   pipelineColumnId: string | null;
   studentPipelineColumnId: string | null;
   createdAt: string;
+  updatedAt: string;
 };
+
+export type ConsultantPipelineScope = "mine" | "all";
 
 export function isSharedLeadQueueEntry(
   lead: Pick<LeadRecord, "sharedQueue" | "stage" | "attendanceId">,
@@ -89,4 +92,24 @@ export function canConsultantMovePipelineLead(
   userId: string,
 ) {
   return isSharedLeadQueueEntry(lead) || lead.createdById === userId;
+}
+
+export function leadMatchesConsultantScope(
+  lead: Pick<LeadRecord, "createdById">,
+  userId: string,
+  scope: ConsultantPipelineScope,
+) {
+  return scope === "all" || lead.createdById === userId;
+}
+
+export function canConsultantAssumePipelineLead(
+  lead: Pick<LeadRecord, "createdById" | "sharedQueue" | "stage">,
+  userId: string,
+) {
+  return (
+    !lead.sharedQueue &&
+    lead.stage !== "Matriculado" &&
+    Boolean(lead.createdById) &&
+    lead.createdById !== userId
+  );
 }

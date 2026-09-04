@@ -80,6 +80,7 @@ import { Route as ApiGestaoChannelsIdRouteImport } from './routes/api/gestao/cha
 import { Route as ApiGestaoCoursesIdRouteImport } from './routes/api/gestao/courses.$id'
 import { Route as ApiWebhooksMakeMetaLeadRouteImport } from './routes/api/webhooks/make/meta-lead'
 import { Route as ApiWhatsappSupervisionConversationsIdRouteImport } from './routes/api/whatsapp-supervision.conversations.$id'
+import { Route as ApiCrmLeadsIdAssumeRouteImport } from './routes/api/crm/leads.$id.assume'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -448,6 +449,11 @@ const ApiWhatsappSupervisionConversationsIdRoute =
     path: '/conversations/$id',
     getParentRoute: () => ApiWhatsappSupervisionRoute,
   } as any)
+const ApiCrmLeadsIdAssumeRoute = ApiCrmLeadsIdAssumeRouteImport.update({
+  id: '/assume',
+  path: '/assume',
+  getParentRoute: () => ApiCrmLeadsIdRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -514,13 +520,14 @@ export interface FileRoutesByFullPath {
   '/api/whatsapp-supervision/access': typeof ApiWhatsappSupervisionAccessRoute
   '/api/whatsapp-supervision/notifications': typeof ApiWhatsappSupervisionNotificationsRoute
   '/financeiro/aluno/$studentId': typeof FinanceiroAlunoStudentIdRoute
-  '/api/crm/leads/$id': typeof ApiCrmLeadsIdRoute
+  '/api/crm/leads/$id': typeof ApiCrmLeadsIdRouteWithChildren
   '/api/financeiro/collections/today': typeof ApiFinanceiroCollectionsTodayRoute
   '/api/financeiro/students/$studentId': typeof ApiFinanceiroStudentsStudentIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
   '/api/webhooks/make/meta-lead': typeof ApiWebhooksMakeMetaLeadRoute
   '/api/whatsapp-supervision/conversations/$id': typeof ApiWhatsappSupervisionConversationsIdRoute
+  '/api/crm/leads/$id/assume': typeof ApiCrmLeadsIdAssumeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -587,13 +594,14 @@ export interface FileRoutesByTo {
   '/api/whatsapp-supervision/access': typeof ApiWhatsappSupervisionAccessRoute
   '/api/whatsapp-supervision/notifications': typeof ApiWhatsappSupervisionNotificationsRoute
   '/financeiro/aluno/$studentId': typeof FinanceiroAlunoStudentIdRoute
-  '/api/crm/leads/$id': typeof ApiCrmLeadsIdRoute
+  '/api/crm/leads/$id': typeof ApiCrmLeadsIdRouteWithChildren
   '/api/financeiro/collections/today': typeof ApiFinanceiroCollectionsTodayRoute
   '/api/financeiro/students/$studentId': typeof ApiFinanceiroStudentsStudentIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
   '/api/webhooks/make/meta-lead': typeof ApiWebhooksMakeMetaLeadRoute
   '/api/whatsapp-supervision/conversations/$id': typeof ApiWhatsappSupervisionConversationsIdRoute
+  '/api/crm/leads/$id/assume': typeof ApiCrmLeadsIdAssumeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -661,13 +669,14 @@ export interface FileRoutesById {
   '/api/whatsapp-supervision/access': typeof ApiWhatsappSupervisionAccessRoute
   '/api/whatsapp-supervision/notifications': typeof ApiWhatsappSupervisionNotificationsRoute
   '/financeiro/aluno/$studentId': typeof FinanceiroAlunoStudentIdRoute
-  '/api/crm/leads/$id': typeof ApiCrmLeadsIdRoute
+  '/api/crm/leads/$id': typeof ApiCrmLeadsIdRouteWithChildren
   '/api/financeiro/collections/today': typeof ApiFinanceiroCollectionsTodayRoute
   '/api/financeiro/students/$studentId': typeof ApiFinanceiroStudentsStudentIdRoute
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
   '/api/webhooks/make/meta-lead': typeof ApiWebhooksMakeMetaLeadRoute
   '/api/whatsapp-supervision/conversations/$id': typeof ApiWhatsappSupervisionConversationsIdRoute
+  '/api/crm/leads/$id/assume': typeof ApiCrmLeadsIdAssumeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -743,6 +752,7 @@ export interface FileRouteTypes {
     | '/api/gestao/courses/$id'
     | '/api/webhooks/make/meta-lead'
     | '/api/whatsapp-supervision/conversations/$id'
+    | '/api/crm/leads/$id/assume'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -816,6 +826,7 @@ export interface FileRouteTypes {
     | '/api/gestao/courses/$id'
     | '/api/webhooks/make/meta-lead'
     | '/api/whatsapp-supervision/conversations/$id'
+    | '/api/crm/leads/$id/assume'
   id:
     | '__root__'
     | '/'
@@ -889,6 +900,7 @@ export interface FileRouteTypes {
     | '/api/gestao/courses/$id'
     | '/api/webhooks/make/meta-lead'
     | '/api/whatsapp-supervision/conversations/$id'
+    | '/api/crm/leads/$id/assume'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1451,6 +1463,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWhatsappSupervisionConversationsIdRouteImport
       parentRoute: typeof ApiWhatsappSupervisionRoute
     }
+    '/api/crm/leads/$id/assume': {
+      id: '/api/crm/leads/$id/assume'
+      path: '/assume'
+      fullPath: '/api/crm/leads/$id/assume'
+      preLoaderRoute: typeof ApiCrmLeadsIdAssumeRouteImport
+      parentRoute: typeof ApiCrmLeadsIdRoute
+    }
   }
 }
 
@@ -1524,12 +1543,24 @@ const ApiWhatsappSupervisionRouteWithChildren =
     ApiWhatsappSupervisionRouteChildren,
   )
 
+interface ApiCrmLeadsIdRouteChildren {
+  ApiCrmLeadsIdAssumeRoute: typeof ApiCrmLeadsIdAssumeRoute
+}
+
+const ApiCrmLeadsIdRouteChildren: ApiCrmLeadsIdRouteChildren = {
+  ApiCrmLeadsIdAssumeRoute: ApiCrmLeadsIdAssumeRoute,
+}
+
+const ApiCrmLeadsIdRouteWithChildren = ApiCrmLeadsIdRoute._addFileChildren(
+  ApiCrmLeadsIdRouteChildren,
+)
+
 interface ApiCrmLeadsRouteChildren {
-  ApiCrmLeadsIdRoute: typeof ApiCrmLeadsIdRoute
+  ApiCrmLeadsIdRoute: typeof ApiCrmLeadsIdRouteWithChildren
 }
 
 const ApiCrmLeadsRouteChildren: ApiCrmLeadsRouteChildren = {
-  ApiCrmLeadsIdRoute: ApiCrmLeadsIdRoute,
+  ApiCrmLeadsIdRoute: ApiCrmLeadsIdRouteWithChildren,
 }
 
 const ApiCrmLeadsRouteWithChildren = ApiCrmLeadsRoute._addFileChildren(

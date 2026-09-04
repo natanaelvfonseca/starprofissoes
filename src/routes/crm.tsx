@@ -9,6 +9,7 @@ import {
   Clock3,
   Filter,
   KanbanSquare,
+  List as ListIcon,
   Loader2,
   Mail,
   MapPin,
@@ -33,8 +34,11 @@ import type {
 import {
   canConsultantMovePipelineLead,
   canConsultantOpenPipelineLead,
+  canConsultantAssumePipelineLead,
   isSharedLeadQueueEntry,
+  leadMatchesConsultantScope,
 } from "@/lib/commercial-types";
+import type { ConsultantPipelineScope } from "@/lib/commercial-types";
 import type { CrmLeadTask } from "@/lib/crm-task-types";
 import { useAuth } from "@/lib/auth";
 import { canAccessLeadTransferCenter, canOperateCrm, canTransferLeads } from "@/lib/auth-types";
@@ -61,6 +65,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 type LeadFormState = {
   fullName: string;
@@ -83,6 +96,7 @@ type LeadTaskFormState = {
 };
 
 type LeadDialogMode = "create" | "edit";
+type PipelineViewMode = "kanban" | "list";
 
 type LeadsResponse = {
   leads: Array<LeadRecord>;
@@ -392,6 +406,21 @@ function formatLeadCreatedTime(value: string) {
   return `Criado às ${time}`;
 }
 
+function formatLeadUpdatedAt(value: string) {
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime())
+    ? "Data indisponível"
+    : new Intl.DateTimeFormat("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "America/Sao_Paulo",
+      }).format(date);
+}
+
 function formatTransferLeadAge(lead: TransferLead) {
   if (lead.ageHours < 24) {
     return `${lead.ageHours}h`;
@@ -448,6 +477,8 @@ function CRMPipeline() {
   const [search, setSearch] = React.useState("");
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [filters, setFilters] = React.useState<PipelineFilters>(() => emptyPipelineFilters());
+  const [consultantScope, setConsultantScope] = React.useState<ConsultantPipelineScope>("mine");
+  const [pipelineViewMode, setPipelineViewMode] = React.useState<PipelineViewMode>("kanban");
   const [stageVisibleCounts, setStageVisibleCounts] = React.useState<Record<string, number>>({});
   const [loadingLeads, setLoadingLeads] = React.useState(true);
   const [loadingOptions, setLoadingOptions] = React.useState(false);
@@ -464,6 +495,8 @@ function CRMPipeline() {
   const [draggingLeadId, setDraggingLeadId] = React.useState<string | null>(null);
   const [dropTargetStage, setDropTargetStage] = React.useState<string | null>(null);
   const [syncingLeadId, setSyncingLeadId] = React.useState<string | null>(null);
+  const [pendingAssumeLead, setPendingAssumeLead] = React.useState<LeadRecord | null>(null);
+  const [assumingLead, setAssumingLead] = React.useState(false);
   const [transferDialogOpen, setTransferDialogOpen] = React.useState(false);
   const [transferLeads, setTransferLeads] = React.useState<Array<TransferLead>>([]);
   const [transferConsultants, setTransferConsultants] = React.useState<Array<TransferConsultant>>(
@@ -523,17 +556,24 @@ function CRMPipeline() {
       scopedLeads.filter(
         (lead) =>
           leadMatchesSearch(lead, search) &&
+          (!isConsultant ||
+            leadMatchesConsultantScope(lead, session?.user.id ?? "", consultantScope)) &&
           (filters.attendanceId === FILTER_ALL || lead.attendanceId === filters.attendanceId) &&
           (filters.courseId === FILTER_ALL || lead.courseId === filters.courseId) &&
           (filters.channelId === FILTER_ALL || lead.acquisitionChannelId === filters.channelId) &&
           (filters.ownerId === FILTER_ALL || lead.createdById === filters.ownerId) &&
           (filters.city === FILTER_ALL || lead.city === filters.city),
       ),
-    [filters, scopedLeads, search],
+    [consultantScope, filters, isConsultant, scopedLeads, search, session?.user.id],
   );
   const displayPipelineColumns = pipelineColumns.length
     ? pipelineColumns
     : fallbackLeadPipelineColumns;
+  const firstClaimColumn =
+    displayPipelineColumns.find((column) => column.semanticStage === "Em contato") ??
+    displayPipelineColumns.find(
+      (column) => column.semanticStage && column.semanticStage !== "Novo lead",
+    );
 
   React.useEffect(() => {
     setStageVisibleCounts({});
@@ -542,6 +582,7 @@ function CRMPipeline() {
   React.useEffect(() => {
     setSearch("");
     setFilters(emptyPipelineFilters());
+    setConsultantScope("mine");
     setCourses([]);
     setAttendances([]);
     setChannels([]);
@@ -549,6 +590,7 @@ function CRMPipeline() {
     setEditingLead(null);
     setLeadDialogOpen(false);
     setLeadTasks([]);
+    setPendingAssumeLead(null);
   }, [activeUnitId]);
 
   const loadLeads = React.useCallback(
@@ -1067,6 +1109,48 @@ function CRMPipeline() {
     }
   }
 
+  async function handleAssumeLead() {
+    if (!pendingAssumeLead?.createdById || !activeUnitId || !isConsultant) {
+      return;
+    }
+
+    setAssumingLead(true);
+    setSyncingLeadId(pendingAssumeLead.id);
+
+    try {
+      await readJson<{ ok: true; createdById: string; createdByName: string }>(
+        await fetch(`/api/crm/leads/${pendingAssumeLead.id}/assume`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            unitId: activeUnitId,
+            expectedOwnerId: pendingAssumeLead.createdById,
+          }),
+        }),
+      );
+
+      setPendingAssumeLead(null);
+      setConsultantScope("mine");
+      broadcastChannelRef.current?.postMessage({
+        type: "lead-transferred",
+        leadIds: [pendingAssumeLead.id],
+      });
+      await loadLeads({ silent: true });
+      toast.success("Atendimento assumido com sucesso.");
+    } catch (error) {
+      setPendingAssumeLead(null);
+      void loadLeads({ silent: true });
+      toast.error(error instanceof Error ? error.message : "Falha ao assumir atendimento.");
+    } finally {
+      setAssumingLead(false);
+      setSyncingLeadId(null);
+    }
+  }
+
   async function handleConvertLeadToStudent() {
     if (!editingLead) {
       return;
@@ -1295,6 +1379,78 @@ function CRMPipeline() {
               />
             </div>
             <div className="flex flex-wrap gap-2">
+              {isConsultant ? (
+                <div className="flex rounded-xl border border-white/20 bg-white/10 p-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setConsultantScope("mine")}
+                    className={`h-9 px-3 text-xs font-bold ${
+                      consultantScope === "mine"
+                        ? "bg-white text-[#16006C] hover:bg-white"
+                        : "text-white hover:bg-white/15 hover:text-white"
+                    }`}
+                  >
+                    Meus leads
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setConsultantScope("all")}
+                    className={`h-9 px-3 text-xs font-bold ${
+                      consultantScope === "all"
+                        ? "bg-white text-[#16006C] hover:bg-white"
+                        : "text-white hover:bg-white/15 hover:text-white"
+                    }`}
+                  >
+                    Todos os atendimentos
+                  </Button>
+                </div>
+              ) : null}
+              <TooltipProvider delayDuration={150}>
+                <div className="flex rounded-xl border border-white/20 bg-white/10 p-1">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        aria-label="Visualização Kanban"
+                        onClick={() => setPipelineViewMode("kanban")}
+                        className={`h-9 w-9 ${
+                          pipelineViewMode === "kanban"
+                            ? "bg-white text-[#16006C] hover:bg-white"
+                            : "text-white hover:bg-white/15 hover:text-white"
+                        }`}
+                      >
+                        <KanbanSquare className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Kanban</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        aria-label="Visualização em lista"
+                        onClick={() => setPipelineViewMode("list")}
+                        className={`h-9 w-9 ${
+                          pipelineViewMode === "list"
+                            ? "bg-white text-[#16006C] hover:bg-white"
+                            : "text-white hover:bg-white/15 hover:text-white"
+                        }`}
+                      >
+                        <ListIcon className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Lista</TooltipContent>
+                  </Tooltip>
+                </div>
+              </TooltipProvider>
               <Button
                 type="button"
                 variant="outline"
@@ -1469,154 +1625,177 @@ function CRMPipeline() {
             </h2>
           </div>
           <p className="max-w-md text-xs leading-relaxed text-muted-foreground sm:text-right">
-            Na primeira etapa, os leads ficam disponíveis para toda a turma. Ao mover, o consultor
-            assume o atendimento.
+            Na primeira etapa, os leads ficam disponíveis para todos os consultores da unidade. Ao
+            pegar, o consultor assume o atendimento.
           </p>
         </div>
 
-        <div className="overflow-x-auto pb-2">
-          <div className="flex min-w-max gap-3">
-            {displayPipelineColumns.map((column, stageIndex) => {
-              const stageLeads = filteredLeads.filter(
-                (lead) => resolveLeadPipelineColumn(lead, displayPipelineColumns)?.id === column.id,
-              );
-              const visibleCount = stageVisibleCounts[column.id] ?? PIPELINE_STAGE_PAGE_SIZE;
-              const visibleStageLeads = stageLeads.slice(0, visibleCount);
-              const hiddenCount = Math.max(stageLeads.length - visibleStageLeads.length, 0);
-              const stageValue = stageLeads.reduce(
-                (sum, lead) => sum + (pipelineDisplayValue(lead, session?.user.role) ?? 0),
-                0,
-              );
-              const isDropTarget = dropTargetStage === column.id;
-              const stageVisual =
-                pipelineColorVisual[column.color] ?? pipelineStageVisual["Novo lead"];
-              const firstClaimColumn = displayPipelineColumns.find(
-                (candidate) => candidate.semanticStage && candidate.semanticStage !== "Novo lead",
-              );
-
-              return (
-                <div
-                  key={column.id}
-                  className={`w-[310px] flex-shrink-0 overflow-hidden rounded-[22px] border bg-gradient-to-b ${stageVisual.surface} to-white/70 transition-all duration-200 ${
-                    isDropTarget
-                      ? "border-[#F4B728] shadow-[0_18px_42px_-28px_rgba(244,183,40,0.95)] ring-2 ring-[#F4B728]/20"
-                      : "border-[#16006C]/10"
-                  }`}
-                >
-                  <div className="border-b border-[#16006C]/10 bg-white/75 p-4 backdrop-blur-sm">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div
-                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-black text-white shadow-sm ${stageVisual.accent}`}
-                        >
-                          {String(stageIndex + 1).padStart(2, "0")}
-                        </div>
-                        <div className="min-w-0">
-                          <h3 className="truncate text-sm font-black text-[#07154C]">
-                            {column.name}
-                          </h3>
-                          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                            <span className={`h-1.5 w-1.5 rounded-full ${stageVisual.dot}`} />
-                            {loadingLeads ? "Carregando" : `${stageLeads.length} oportunidades`}
+        {pipelineViewMode === "list" ? (
+          <LeadPipelineList
+            leads={filteredLeads}
+            columns={displayPipelineColumns}
+            loading={loadingLeads}
+            syncingLeadId={syncingLeadId}
+            isConsultant={isConsultant}
+            canOperate={canOperatePipeline}
+            consultantId={session?.user.id ?? ""}
+            consultantScope={consultantScope}
+            firstClaimColumn={firstClaimColumn}
+            onOpen={openEditLeadDialog}
+            onClaim={(lead) => {
+              if (firstClaimColumn) void updateLeadStage(lead, firstClaimColumn);
+            }}
+            onAssume={setPendingAssumeLead}
+          />
+        ) : (
+          <div className="overflow-x-auto pb-2">
+            <div className="flex min-w-max gap-3">
+              {displayPipelineColumns.map((column, stageIndex) => {
+                const stageLeads = filteredLeads.filter(
+                  (lead) =>
+                    resolveLeadPipelineColumn(lead, displayPipelineColumns)?.id === column.id,
+                );
+                const visibleCount = stageVisibleCounts[column.id] ?? PIPELINE_STAGE_PAGE_SIZE;
+                const visibleStageLeads = stageLeads.slice(0, visibleCount);
+                const hiddenCount = Math.max(stageLeads.length - visibleStageLeads.length, 0);
+                const stageValue = stageLeads.reduce(
+                  (sum, lead) => sum + (pipelineDisplayValue(lead, session?.user.role) ?? 0),
+                  0,
+                );
+                const isDropTarget = dropTargetStage === column.id;
+                const stageVisual =
+                  pipelineColorVisual[column.color] ?? pipelineStageVisual["Novo lead"];
+                return (
+                  <div
+                    key={column.id}
+                    className={`w-[310px] flex-shrink-0 overflow-hidden rounded-[22px] border bg-gradient-to-b ${stageVisual.surface} to-white/70 transition-all duration-200 ${
+                      isDropTarget
+                        ? "border-[#F4B728] shadow-[0_18px_42px_-28px_rgba(244,183,40,0.95)] ring-2 ring-[#F4B728]/20"
+                        : "border-[#16006C]/10"
+                    }`}
+                  >
+                    <div className="border-b border-[#16006C]/10 bg-white/75 p-4 backdrop-blur-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div
+                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-black text-white shadow-sm ${stageVisual.accent}`}
+                          >
+                            {String(stageIndex + 1).padStart(2, "0")}
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="truncate text-sm font-black text-[#07154C]">
+                              {column.name}
+                            </h3>
+                            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                              <span className={`h-1.5 w-1.5 rounded-full ${stageVisual.dot}`} />
+                              {loadingLeads ? "Carregando" : `${stageLeads.length} oportunidades`}
+                            </div>
                           </div>
                         </div>
+                        <Badge
+                          variant="outline"
+                          className={`shrink-0 border px-2 py-1 text-[10px] font-bold ${stageVisual.badge}`}
+                        >
+                          {currencyFormatter.format(stageValue)}
+                        </Badge>
                       </div>
-                      <Badge
-                        variant="outline"
-                        className={`shrink-0 border px-2 py-1 text-[10px] font-bold ${stageVisual.badge}`}
-                      >
-                        {currencyFormatter.format(stageValue)}
-                      </Badge>
+                    </div>
+                    <div
+                      className="min-h-[360px] space-y-3 p-3"
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        setDropTargetStage(column.id);
+                      }}
+                      onDragEnter={(event) => {
+                        event.preventDefault();
+                        setDropTargetStage(column.id);
+                      }}
+                      onDragLeave={() =>
+                        setDropTargetStage((current) => (current === column.id ? null : current))
+                      }
+                      onDrop={(event) => handleStageDrop(event, column)}
+                    >
+                      {loadingLeads ? (
+                        <EmptyState
+                          icon={KanbanSquare}
+                          title="Carregando"
+                          description="Sincronizando leads da unidade ativa."
+                        />
+                      ) : stageLeads.length ? (
+                        <>
+                          {visibleStageLeads.map((lead) => (
+                            <LeadPipelineCard
+                              key={lead.id}
+                              lead={lead}
+                              columnColor={column.color}
+                              removing={removingLeadId === lead.id}
+                              dragging={draggingLeadId === lead.id}
+                              syncing={syncingLeadId === lead.id}
+                              displayValue={pipelineDisplayValue(lead, session?.user.role)}
+                              canViewAcquisitionChannel={canViewAcquisitionChannel}
+                              canViewLeadAge={canViewLeadAge}
+                              canViewOwner
+                              canRemove={canRemoveLeads}
+                              canOpen={
+                                canOperatePipeline &&
+                                (!isConsultant ||
+                                  canConsultantOpenPipelineLead(lead, session?.user.id ?? ""))
+                              }
+                              canDrag={
+                                canOperatePipeline &&
+                                (!isConsultant
+                                  ? !isSharedLeadQueueEntry(lead)
+                                  : canConsultantMovePipelineLead(lead, session?.user.id ?? ""))
+                              }
+                              onClaim={
+                                isConsultant && isSharedLeadQueueEntry(lead) && firstClaimColumn
+                                  ? () => void updateLeadStage(lead, firstClaimColumn)
+                                  : undefined
+                              }
+                              onAssume={
+                                isConsultant &&
+                                consultantScope === "all" &&
+                                canConsultantAssumePipelineLead(lead, session?.user.id ?? "")
+                                  ? () => setPendingAssumeLead(lead)
+                                  : undefined
+                              }
+                              onRemove={() => void handleRemoveLead(lead)}
+                              onEdit={() => openEditLeadDialog(lead)}
+                              onDragStart={(event) => handleDragStart(event, lead)}
+                              onDragEnd={handleDragEnd}
+                            />
+                          ))}
+
+                          {hiddenCount ? (
+                            <div className="sticky bottom-0 -mx-1 -mb-1 rounded-b-xl bg-gradient-to-t from-[#F7F8FC] via-[#F7F8FC]/95 to-transparent px-1 pb-1 pt-8 backdrop-blur-sm">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="w-full border-[#16006C]/15 bg-white/90 text-[#16006C] shadow-sm hover:bg-[#16006C] hover:text-white"
+                                onClick={() => loadMoreStageLeads(column.id, stageLeads.length)}
+                              >
+                                + carregar mais leads
+                                <span className="ml-1 text-xs opacity-75">({hiddenCount})</span>
+                              </Button>
+                            </div>
+                          ) : null}
+                        </>
+                      ) : (
+                        <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#16006C]/15 bg-white/40 px-5 text-center">
+                          <div className={`mb-3 h-2 w-2 rounded-full ${stageVisual.dot}`} />
+                          <div className="text-sm font-bold text-[#07154C]">Etapa livre</div>
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                            Novas oportunidades aparecerão aqui.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <div
-                    className="min-h-[360px] space-y-3 p-3"
-                    onDragOver={(event) => {
-                      event.preventDefault();
-                      setDropTargetStage(column.id);
-                    }}
-                    onDragEnter={(event) => {
-                      event.preventDefault();
-                      setDropTargetStage(column.id);
-                    }}
-                    onDragLeave={() =>
-                      setDropTargetStage((current) => (current === column.id ? null : current))
-                    }
-                    onDrop={(event) => handleStageDrop(event, column)}
-                  >
-                    {loadingLeads ? (
-                      <EmptyState
-                        icon={KanbanSquare}
-                        title="Carregando"
-                        description="Sincronizando leads da unidade ativa."
-                      />
-                    ) : stageLeads.length ? (
-                      <>
-                        {visibleStageLeads.map((lead) => (
-                          <LeadPipelineCard
-                            key={lead.id}
-                            lead={lead}
-                            columnColor={column.color}
-                            removing={removingLeadId === lead.id}
-                            dragging={draggingLeadId === lead.id}
-                            syncing={syncingLeadId === lead.id}
-                            displayValue={pipelineDisplayValue(lead, session?.user.role)}
-                            canViewAcquisitionChannel={canViewAcquisitionChannel}
-                            canViewLeadAge={canViewLeadAge}
-                            canViewOwner
-                            canRemove={canRemoveLeads}
-                            canOpen={
-                              canOperatePipeline &&
-                              (!isConsultant ||
-                                canConsultantOpenPipelineLead(lead, session?.user.id ?? ""))
-                            }
-                            canDrag={
-                              canOperatePipeline &&
-                              (!isConsultant
-                                ? !isSharedLeadQueueEntry(lead)
-                                : canConsultantMovePipelineLead(lead, session?.user.id ?? ""))
-                            }
-                            onClaim={
-                              isConsultant && isSharedLeadQueueEntry(lead) && firstClaimColumn
-                                ? () => void updateLeadStage(lead, firstClaimColumn)
-                                : undefined
-                            }
-                            onRemove={() => void handleRemoveLead(lead)}
-                            onEdit={() => openEditLeadDialog(lead)}
-                            onDragStart={(event) => handleDragStart(event, lead)}
-                            onDragEnd={handleDragEnd}
-                          />
-                        ))}
-
-                        {hiddenCount ? (
-                          <div className="sticky bottom-0 -mx-1 -mb-1 rounded-b-xl bg-gradient-to-t from-[#F7F8FC] via-[#F7F8FC]/95 to-transparent px-1 pb-1 pt-8 backdrop-blur-sm">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="w-full border-[#16006C]/15 bg-white/90 text-[#16006C] shadow-sm hover:bg-[#16006C] hover:text-white"
-                              onClick={() => loadMoreStageLeads(column.id, stageLeads.length)}
-                            >
-                              + carregar mais leads
-                              <span className="ml-1 text-xs opacity-75">({hiddenCount})</span>
-                            </Button>
-                          </div>
-                        ) : null}
-                      </>
-                    ) : (
-                      <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#16006C]/15 bg-white/40 px-5 text-center">
-                        <div className={`mb-3 h-2 w-2 rounded-full ${stageVisual.dot}`} />
-                        <div className="text-sm font-bold text-[#07154C]">Etapa livre</div>
-                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                          Novas oportunidades aparecerão aqui.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
       </section>
 
       <CreateLeadDialog
@@ -1661,6 +1840,37 @@ function CRMPipeline() {
           setForm(emptyLeadForm(activeUnitId));
         }}
       />
+      <Dialog
+        open={Boolean(pendingAssumeLead)}
+        onOpenChange={(open) => {
+          if (!open && !assumingLead) setPendingAssumeLead(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assumir atendimento?</DialogTitle>
+            <DialogDescription>
+              {pendingAssumeLead?.createdByName
+                ? `Este lead está com ${pendingAssumeLead.createdByName}. Ao confirmar, você passará a ser o responsável.`
+                : "Ao confirmar, você passará a ser o responsável por este lead."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={assumingLead}
+              onClick={() => setPendingAssumeLead(null)}
+            >
+              Cancelar
+            </Button>
+            <Button type="button" disabled={assumingLead} onClick={() => void handleAssumeLead()}>
+              {assumingLead ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Confirmar e assumir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <TransferLeadDialog
         open={transferDialogOpen}
         leads={transferLeads}
@@ -1714,6 +1924,141 @@ function ConversionConfetti({ runId }: { runId: number }) {
   );
 }
 
+function LeadPipelineList({
+  leads,
+  columns,
+  loading,
+  syncingLeadId,
+  isConsultant,
+  canOperate,
+  consultantId,
+  consultantScope,
+  firstClaimColumn,
+  onOpen,
+  onClaim,
+  onAssume,
+}: {
+  leads: Array<LeadRecord>;
+  columns: Array<PipelineColumn>;
+  loading: boolean;
+  syncingLeadId: string | null;
+  isConsultant: boolean;
+  canOperate: boolean;
+  consultantId: string;
+  consultantScope: ConsultantPipelineScope;
+  firstClaimColumn?: PipelineColumn;
+  onOpen: (lead: LeadRecord) => void;
+  onClaim: (lead: LeadRecord) => void;
+  onAssume: (lead: LeadRecord) => void;
+}) {
+  if (loading) {
+    return (
+      <EmptyState
+        icon={ListIcon}
+        title="Carregando"
+        description="Sincronizando leads da unidade ativa."
+      />
+    );
+  }
+
+  if (!leads.length) {
+    return (
+      <EmptyState
+        icon={ListIcon}
+        title="Nenhum lead nesta visão"
+        description="Altere a visão ou os filtros para consultar outros atendimentos."
+      />
+    );
+  }
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-[#16006C]/10 bg-white">
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nome</TableHead>
+              <TableHead>Telefone</TableHead>
+              <TableHead>Etapa</TableHead>
+              <TableHead>Responsável</TableHead>
+              <TableHead>Última atualização</TableHead>
+              <TableHead className="text-right">Ação</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {leads.map((lead) => {
+              const column = resolveLeadPipelineColumn(lead, columns);
+              const canOpen =
+                canOperate && (!isConsultant || canConsultantOpenPipelineLead(lead, consultantId));
+              const canClaim =
+                isConsultant && isSharedLeadQueueEntry(lead) && Boolean(firstClaimColumn);
+              const canAssume =
+                isConsultant &&
+                consultantScope === "all" &&
+                canConsultantAssumePipelineLead(lead, consultantId);
+              const syncing = syncingLeadId === lead.id;
+
+              return (
+                <TableRow key={lead.id}>
+                  <TableCell className="min-w-52 font-bold text-[#07154C]">
+                    <button
+                      type="button"
+                      disabled={!canOpen}
+                      onClick={canOpen ? () => onOpen(lead) : undefined}
+                      className={canOpen ? "text-left hover:text-[#224C99]" : "text-left"}
+                    >
+                      {lead.fullName}
+                    </button>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">{lead.phone}</TableCell>
+                  <TableCell>
+                    <Badge variant="secondary">{column?.name ?? lead.stage}</Badge>
+                  </TableCell>
+                  <TableCell className="min-w-44">
+                    {lead.createdByName ?? "Fila compartilhada"}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">
+                    {formatLeadUpdatedAt(lead.updatedAt)}
+                  </TableCell>
+                  <TableCell className="min-w-44 text-right">
+                    {canClaim ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={syncing}
+                        onClick={() => onClaim(lead)}
+                      >
+                        {syncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Pegar atendimento
+                      </Button>
+                    ) : canAssume ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={syncing}
+                        onClick={() => onAssume(lead)}
+                      >
+                        Assumir atendimento
+                      </Button>
+                    ) : canOpen ? (
+                      <Button type="button" size="sm" variant="ghost" onClick={() => onOpen(lead)}>
+                        Abrir
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Somente leitura</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
 function LeadPipelineCard({
   lead,
   columnColor,
@@ -1728,6 +2073,7 @@ function LeadPipelineCard({
   canOpen,
   canDrag,
   onClaim,
+  onAssume,
   onRemove,
   onEdit,
   onDragStart,
@@ -1746,6 +2092,7 @@ function LeadPipelineCard({
   canOpen: boolean;
   canDrag: boolean;
   onClaim?: () => void;
+  onAssume?: () => void;
   onRemove: () => void;
   onEdit: () => void;
   onDragStart: (event: React.DragEvent<HTMLDivElement>) => void;
@@ -1876,9 +2223,25 @@ function LeadPipelineCard({
                 ) : (
                   <UserPlus className="mr-1.5 h-3.5 w-3.5" />
                 )}
-                Atender este lead
+                Pegar atendimento
               </Button>
             ) : null}
+          </div>
+        ) : onAssume ? (
+          <div className="mt-3 rounded-xl border border-amber-300/70 bg-amber-50 p-2.5">
+            <div className="text-[11px] font-semibold text-amber-900">
+              Atendimento atual: {lead.createdByName ?? "Responsável não identificado"}
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="mt-2 h-8 w-full border-amber-400 bg-white text-xs font-bold text-amber-900 hover:bg-amber-100"
+              onClick={onAssume}
+              disabled={syncing}
+            >
+              Assumir atendimento
+            </Button>
           </div>
         ) : null}
       </div>

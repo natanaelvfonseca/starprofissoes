@@ -126,6 +126,10 @@ export async function moveLeadToPipelineColumn(params: {
     const isSharedNewLead =
       lead.shared_queue && lead.stage === "Novo lead" && Boolean(lead.attendance_id);
 
+    if (params.claimUserId && !isSharedNewLead && lead.created_by !== params.claimUserId) {
+      throw new LeadPipelineMoveError("Este lead já foi assumido por outro consultor.", 409);
+    }
+
     if (isSharedNewLead) {
       const claimUserId = params.claimUserId?.trim();
       if (column.semantic_stage === "Novo lead") {
@@ -163,6 +167,22 @@ export async function moveLeadToPipelineColumn(params: {
       if (!claimed.rowCount) {
         throw new LeadPipelineMoveError("Este lead já foi assumido por outro consultor.", 409);
       }
+
+      await client.query(
+        `
+          insert into app_lead_owner_transfers (
+            unit_id, lead_id, previous_owner_id, next_owner_id, transferred_by, reason
+          )
+          values ($1, $2, $3, $4, $4, $5)
+        `,
+        [
+          lead.unit_id,
+          lead.id,
+          lead.created_by,
+          claimUserId,
+          "Lead assumido da fila compartilhada",
+        ],
+      );
 
       return {
         changed: true,
