@@ -89,13 +89,10 @@ type AttendanceRecord = {
   classDate: string;
   displayName: string;
   status: CommercialStatus;
-  consultantIds: Array<string>;
-  consultantNames: Array<string>;
 };
 
 type AttendancesResponse = {
   attendances: Array<AttendanceRecord>;
-  consultants: Array<{ id: string; name: string }>;
 };
 
 type PipelineColumnsResponse = {
@@ -114,7 +111,6 @@ type AttendanceFormState = {
   city: string;
   state: string;
   classDate: string;
-  consultantIds: Array<string>;
   status: CommercialStatus;
 };
 
@@ -143,7 +139,6 @@ const initialAttendanceForm: AttendanceFormState = {
   classDate: new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
   }).format(new Date()),
-  consultantIds: [],
   status: "active",
 };
 
@@ -179,7 +174,6 @@ function CadastroPage() {
   const [courses, setCourses] = React.useState<Array<CourseRecord>>([]);
   const [channels, setChannels] = React.useState<Array<AcquisitionChannelRecord>>([]);
   const [attendances, setAttendances] = React.useState<Array<AttendanceRecord>>([]);
-  const [consultants, setConsultants] = React.useState<AttendancesResponse["consultants"]>([]);
   const [pipelineColumns, setPipelineColumns] = React.useState<Array<PipelineColumn>>([]);
   const [loading, setLoading] = React.useState(true);
   const [savingCourse, setSavingCourse] = React.useState(false);
@@ -250,7 +244,6 @@ function CadastroPage() {
       setCourses(coursesData.courses);
       setChannels(channelsData.channels);
       setAttendances(attendancesData.attendances);
-      setConsultants(attendancesData.consultants);
       setPipelineColumns(pipelineData.columns);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao carregar cadastros.");
@@ -326,7 +319,6 @@ function CadastroPage() {
       city: attendance.city,
       state: attendance.state,
       classDate: attendance.classDate,
-      consultantIds: attendance.consultantIds,
       status: attendance.status,
     });
     setAttendanceDialogOpen(true);
@@ -817,7 +809,7 @@ function CadastroPage() {
               <div>
                 <CardTitle className="text-base">Turmas por curso, cidade e data</CardTitle>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Defina a data e os responsáveis que receberão os leads de cada turma.
+                  A turma organiza os leads; todos os consultores da unidade podem atendê-los.
                 </p>
               </div>
             </div>
@@ -833,7 +825,7 @@ function CadastroPage() {
               <TableRow>
                 <TableHead className="px-5">Turma</TableHead>
                 <TableHead>Data</TableHead>
-                <TableHead>Responsáveis</TableHead>
+                <TableHead>Distribuição</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-[128px] pr-5 text-right">Ações</TableHead>
               </TableRow>
@@ -854,14 +846,8 @@ function CadastroPage() {
                     <TableCell>
                       {new Date(`${attendance.classDate}T12:00:00`).toLocaleDateString("pt-BR")}
                     </TableCell>
-                    <TableCell className="max-w-md">
-                      <div className="flex flex-wrap gap-1">
-                        {attendance.consultantNames.map((name) => (
-                          <Badge key={name} variant="secondary">
-                            {name}
-                          </Badge>
-                        ))}
-                      </div>
+                    <TableCell className="max-w-md text-sm text-muted-foreground">
+                      Todos os consultores da unidade
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={attendance.status} />
@@ -932,7 +918,6 @@ function CadastroPage() {
         editing={Boolean(editingAttendanceId)}
         form={attendanceForm}
         courses={courses.filter((course) => course.status === "active")}
-        consultants={consultants}
         saving={savingAttendance}
         onOpenChange={setAttendanceDialogOpen}
         onFormChange={setAttendanceForm}
@@ -1358,7 +1343,6 @@ function AttendanceDialog({
   editing,
   form,
   courses,
-  consultants,
   saving,
   onOpenChange,
   onFormChange,
@@ -1368,21 +1352,11 @@ function AttendanceDialog({
   editing: boolean;
   form: AttendanceFormState;
   courses: Array<CourseRecord>;
-  consultants: Array<{ id: string; name: string }>;
   saving: boolean;
   onOpenChange: (open: boolean) => void;
   onFormChange: React.Dispatch<React.SetStateAction<AttendanceFormState>>;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }) {
-  function toggleConsultant(id: string) {
-    onFormChange((current) => ({
-      ...current,
-      consultantIds: current.consultantIds.includes(id)
-        ? current.consultantIds.filter((consultantId) => consultantId !== id)
-        : [...current.consultantIds, id],
-    }));
-  }
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="border-primary/20 bg-card shadow-elegant sm:max-w-2xl">
@@ -1454,29 +1428,8 @@ function AttendanceDialog({
                 required
               />
             </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>Responsáveis participantes</Label>
-              <div className="grid max-h-52 gap-2 overflow-y-auto rounded-lg border bg-background/70 p-3 sm:grid-cols-2">
-                {consultants.length ? (
-                  consultants.map((consultant) => (
-                    <label
-                      key={consultant.id}
-                      className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-primary/5"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={form.consultantIds.includes(consultant.id)}
-                        onChange={() => toggleConsultant(consultant.id)}
-                      />
-                      {consultant.name}
-                    </label>
-                  ))
-                ) : (
-                  <span className="text-sm text-muted-foreground">
-                    Cadastre consultores, gerentes ou diretores ativos nesta unidade.
-                  </span>
-                )}
-              </div>
+            <div className="rounded-lg border border-primary/15 bg-primary/5 p-3 text-sm text-muted-foreground md:col-span-2">
+              Os leads desta turma ficarão disponíveis para todos os consultores ativos da unidade.
             </div>
             <div className="space-y-2 md:col-span-2">
               <Label>Status</Label>
@@ -1511,8 +1464,7 @@ function AttendanceDialog({
                 !form.courseId ||
                 !form.city.trim() ||
                 form.state.length !== 2 ||
-                !form.classDate ||
-                !form.consultantIds.length
+                !form.classDate
               }
             >
               {saving ? "Salvando..." : editing ? "Salvar alterações" : "Criar turma"}

@@ -230,24 +230,27 @@ async function recordPaidStudentPayment(leadId: string, userId: string) {
   );
 }
 
-async function hasActiveAttendanceConsultant(attendanceId: string | null, userId?: string) {
-  if (!attendanceId) {
-    return false;
-  }
-
+async function hasActiveUnitConsultant(unitId: string, userId?: string) {
   const result = await queryDb<{ allowed: boolean }>(
     `
       select exists (
         select 1
-        from app_course_attendance_consultants attendance_consultant
-        inner join app_users consultant on consultant.id = attendance_consultant.user_id
-        where attendance_consultant.attendance_id = $1
-          and consultant.role = 'CONSULTOR'
+        from app_users consultant
+        where consultant.role = 'CONSULTOR'
           and consultant.status = 'active'
           and ($2::uuid is null or consultant.id = $2)
+          and (
+            consultant.primary_unit_id = $1
+            or exists (
+              select 1
+              from app_user_units user_unit
+              where user_unit.user_id = consultant.id
+                and user_unit.unit_id = $1
+            )
+          )
       ) as allowed
     `,
-    [attendanceId, userId ?? null],
+    [unitId, userId ?? null],
   );
 
   return result.rows[0]?.allowed === true;
@@ -326,7 +329,7 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
         const consultantCanAccessSharedLead =
           session.user.role === "CONSULTOR" &&
           isSharedNewLead &&
-          (await hasActiveAttendanceConsultant(lead.attendance_id, session.user.id));
+          (await hasActiveUnitConsultant(lead.unit_id, session.user.id));
 
         if (
           !canManageUnitLeads &&
@@ -410,7 +413,7 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
             (session.user.role !== "CONSULTOR" || !consultantCanAccessSharedLead)
           ) {
             return Response.json(
-              { ok: false, error: "Um consultor da turma deve assumir este lead." },
+              { ok: false, error: "Um consultor ativo da unidade deve assumir este lead." },
               { status: 403 },
             );
           }
@@ -477,7 +480,10 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
 
         if (isSharedNewLead && resolvedStage !== "Novo lead") {
           return Response.json(
-            { ok: false, error: "Um consultor da turma deve assumir o lead pelo pipeline." },
+            {
+              ok: false,
+              error: "Um consultor ativo da unidade deve assumir o lead pelo pipeline.",
+            },
             { status: 409 },
           );
         }
@@ -522,8 +528,7 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
           }
 
           const resolvedCity = `${attendance.city} - ${attendance.state}`;
-          const releaseToSharedQueue =
-            resolvedStage === "Novo lead" && (await hasActiveAttendanceConsultant(attendance.id));
+          const releaseToSharedQueue = resolvedStage === "Novo lead" && Boolean(attendance.id);
 
           await queryDb(
             `
@@ -623,8 +628,7 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
           return Response.json({ ok: false, error: "Estágio inválido." }, { status: 400 });
         }
 
-        const releaseToSharedQueue =
-          nextStage === "Novo lead" && (await hasActiveAttendanceConsultant(lead.attendance_id));
+        const releaseToSharedQueue = nextStage === "Novo lead" && Boolean(lead.attendance_id);
 
         await queryDb(
           `

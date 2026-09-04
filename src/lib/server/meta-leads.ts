@@ -1,12 +1,12 @@
 import { createHmac, createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import type { PoolClient, QueryResultRow } from "pg";
 import type { LeadStage } from "@/lib/commercial-types";
+import { countActiveUnitConsultants } from "@/lib/lead-distribution";
 import { createMetaImportSummary, recordMetaImportResult } from "@/lib/meta-import-summary";
 import { ensureCommercialSchema, isUuid } from "@/lib/server/commercial-schema";
 import {
   ensureCourseAttendanceSchema,
   findCampaignAttendance,
-  getAttendanceConsultants,
   parseCampaignRoute,
 } from "@/lib/server/course-attendances";
 import { ensureRuntimeSchema, queryDb, withTransaction } from "@/lib/server/db";
@@ -2472,35 +2472,6 @@ async function getMakeFormForProcessing(client: PoolClient, formId: string) {
   return result.rows[0] ?? null;
 }
 
-async function getMakeAttendanceRecipients(
-  client: PoolClient,
-  attendance: { id: string; unit_id: string },
-) {
-  const result = await client.query<{ id: string; name: string }>(
-    `
-      select user_account.id, user_account.name
-      from app_course_attendance_consultants attendance_user
-      inner join app_users user_account on user_account.id = attendance_user.user_id
-      where attendance_user.attendance_id = $1
-        and user_account.role in ('CONSULTOR', 'GERENTE', 'DIRETOR')
-        and user_account.status = 'active'
-        and (
-          user_account.primary_unit_id = $2
-          or exists (
-            select 1
-            from app_user_units user_unit
-            where user_unit.user_id = user_account.id
-              and user_unit.unit_id = $2
-          )
-        )
-      order by user_account.name
-    `,
-    [attendance.id, attendance.unit_id],
-  );
-
-  return result.rows;
-}
-
 async function getCourseSnapshot(
   client: PoolClient,
   courseId: string | null,
@@ -2888,37 +2859,7 @@ async function processEventById(eventId: string, source: "meta" | "make" = "meta
       return { status: "pending_configuration", leadId: null };
     }
 
-    const attendanceConsultants =
-      source === "make"
-        ? await getMakeAttendanceRecipients(client, attendance)
-        : await getAttendanceConsultants(client, attendance);
-    if (!attendanceConsultants.length) {
-      await client.query(
-        `
-          update app_meta_lead_events
-          set status = 'pending_configuration', form_db_id = $2, attendance_id = $3,
-              error_message = coalesce(error_message, $4), routing_source = $5, routing_error = $4,
-              processing_stage = 'pending_configuration', updated_at = now()
-          where id = $1
-        `,
-        [
-          event.id,
-          form.id,
-          attendance.id,
-          "Turma sem consultores ativos selecionados.",
-          routingSource,
-        ],
-      );
-      logMetaStage({
-        eventId: event.id,
-        leadgenId: event.leadgen_id,
-        pageId: event.page_id,
-        formId: event.form_id,
-        stage: "pending_configuration",
-        status: "pending_configuration",
-      });
-      return { status: "pending_configuration", leadId: null };
-    }
+    const unitConsultantCount = await countActiveUnitConsultants(client, attendance.unit_id);
 
     if (attendance.unit_id !== pageUnitId) {
       const routingError = "A turma encontrada não pertence à unidade da Página Meta.";
@@ -3031,7 +2972,7 @@ async function processEventById(eventId: string, source: "meta" | "make" = "meta
         leadId,
         event.page_id,
         form.id,
-        `Fila compartilhada da turma; disponível para ${attendanceConsultants.length} consultor(es).`,
+        `Fila compartilhada da unidade; disponível para ${unitConsultantCount} consultor(es).`,
         JSON.stringify({
           ...mapped,
           fullName: leadFullName,

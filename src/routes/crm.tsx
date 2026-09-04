@@ -30,7 +30,11 @@ import type {
   LeadStage,
   PipelineColumn,
 } from "@/lib/commercial-types";
-import { isSharedLeadQueueEntry } from "@/lib/commercial-types";
+import {
+  canConsultantMovePipelineLead,
+  canConsultantOpenPipelineLead,
+  isSharedLeadQueueEntry,
+} from "@/lib/commercial-types";
 import type { CrmLeadTask } from "@/lib/crm-task-types";
 import { useAuth } from "@/lib/auth";
 import { canAccessLeadTransferCenter, canOperateCrm, canTransferLeads } from "@/lib/auth-types";
@@ -145,6 +149,7 @@ const NO_SELECTION = "__none__";
 const FILTER_ALL = "__all__";
 const PIPELINE_STAGE_PAGE_SIZE = 15;
 const CONSULTANT_PIPELINE_VALUE = 130;
+const EMPTY_LEADS: Array<LeadRecord> = [];
 
 const stages: Array<LeadStage> = [
   "Novo lead",
@@ -241,6 +246,7 @@ const confettiPieces = Array.from({ length: 72 }, (_, index) => ({
 }));
 
 type PipelineFilters = {
+  attendanceId: string;
   courseId: string;
   channelId: string;
   ownerId: string;
@@ -249,6 +255,7 @@ type PipelineFilters = {
 
 function emptyPipelineFilters(): PipelineFilters {
   return {
+    attendanceId: FILTER_ALL,
     courseId: FILTER_ALL,
     channelId: FILTER_ALL,
     ownerId: FILTER_ALL,
@@ -269,6 +276,7 @@ function leadMatchesSearch(lead: LeadRecord, search: string) {
     lead.phone2,
     lead.email,
     lead.city,
+    lead.attendanceName,
     lead.courseName,
     lead.acquisitionChannelName,
     lead.createdByName,
@@ -428,6 +436,7 @@ function CRMPipeline() {
   const { session } = useAuth();
   const activeUnitId = session?.activeUnit?.id ?? "";
   const [leads, setLeads] = React.useState<Array<LeadRecord>>([]);
+  const [loadedLeadsUnitId, setLoadedLeadsUnitId] = React.useState("");
   const [pipelineColumns, setPipelineColumns] = React.useState<Array<PipelineColumn>>([]);
   const [courses, setCourses] = React.useState<Array<CourseRecord>>([]);
   const [attendances, setAttendances] = React.useState<Array<AttendanceOption>>([]);
@@ -471,23 +480,28 @@ function CRMPipeline() {
   const selectedAttendance =
     attendances.find((attendance) => attendance.id === form.attendanceId) ?? null;
   const broadcastChannelRef = React.useRef<BroadcastChannel | null>(null);
+  const leadRequestIdRef = React.useRef(0);
+  const optionsRequestIdRef = React.useRef(0);
   const canTransferUnitLeads = session ? canTransferLeads(session.user.role) : false;
   const canAccessTransfers = session ? canAccessLeadTransferCenter(session.user.role) : false;
   const canOperatePipeline = session ? canOperateCrm(session.user.role) : false;
+  const isConsultant = session?.user.role === "CONSULTOR";
   const canRemoveLeads = canTransferUnitLeads;
   const canViewAcquisitionChannel = session?.user.role !== "CONSULTOR";
   const canViewLeadAge = session?.user.role !== "CONSULTOR";
   const selectedTransferCount = selectedTransferLeadIds.size;
   const activeFilterCount = [
+    filters.attendanceId,
     filters.courseId,
     filters.channelId,
     filters.ownerId,
     filters.city,
   ].filter((value) => value !== FILTER_ALL).length;
+  const scopedLeads = loadedLeadsUnitId === activeUnitId ? leads : EMPTY_LEADS;
   const ownerOptions = React.useMemo(() => {
     const map = new Map<string, string>();
 
-    leads.forEach((lead) => {
+    scopedLeads.forEach((lead) => {
       if (lead.createdById && lead.createdByName) {
         map.set(lead.createdById, lead.createdByName);
       }
@@ -496,25 +510,26 @@ function CRMPipeline() {
     return Array.from(map, ([id, name]) => ({ id, name })).sort((first, second) =>
       first.name.localeCompare(second.name, "pt-BR"),
     );
-  }, [leads]);
+  }, [scopedLeads]);
   const cityOptions = React.useMemo(
     () =>
-      Array.from(new Set(leads.map((lead) => lead.city).filter(Boolean) as Array<string>)).sort(
-        (first, second) => first.localeCompare(second, "pt-BR"),
-      ),
-    [leads],
+      Array.from(
+        new Set(scopedLeads.map((lead) => lead.city).filter(Boolean) as Array<string>),
+      ).sort((first, second) => first.localeCompare(second, "pt-BR")),
+    [scopedLeads],
   );
   const filteredLeads = React.useMemo(
     () =>
-      leads.filter(
+      scopedLeads.filter(
         (lead) =>
           leadMatchesSearch(lead, search) &&
+          (filters.attendanceId === FILTER_ALL || lead.attendanceId === filters.attendanceId) &&
           (filters.courseId === FILTER_ALL || lead.courseId === filters.courseId) &&
           (filters.channelId === FILTER_ALL || lead.acquisitionChannelId === filters.channelId) &&
           (filters.ownerId === FILTER_ALL || lead.createdById === filters.ownerId) &&
           (filters.city === FILTER_ALL || lead.city === filters.city),
       ),
-    [filters, leads, search],
+    [filters, scopedLeads, search],
   );
   const displayPipelineColumns = pipelineColumns.length
     ? pipelineColumns
@@ -524,9 +539,25 @@ function CRMPipeline() {
     setStageVisibleCounts({});
   }, [filters, search]);
 
+  React.useEffect(() => {
+    setSearch("");
+    setFilters(emptyPipelineFilters());
+    setCourses([]);
+    setAttendances([]);
+    setChannels([]);
+    setForm(emptyLeadForm(activeUnitId));
+    setEditingLead(null);
+    setLeadDialogOpen(false);
+    setLeadTasks([]);
+  }, [activeUnitId]);
+
   const loadLeads = React.useCallback(
     async (options?: { silent?: boolean }) => {
+      const requestId = ++leadRequestIdRef.current;
+
       if (!activeUnitId) {
+        setLeads([]);
+        setLoadedLeadsUnitId("");
         setLoadingLeads(false);
         return;
       }
@@ -543,12 +574,17 @@ function CRMPipeline() {
           }),
         );
 
-        setLeads(data.leads);
-        setPipelineColumns(data.pipelineColumns ?? []);
+        if (requestId === leadRequestIdRef.current) {
+          setLeads(data.leads);
+          setLoadedLeadsUnitId(activeUnitId);
+          setPipelineColumns(data.pipelineColumns ?? []);
+        }
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Falha ao carregar leads.");
+        if (requestId === leadRequestIdRef.current) {
+          toast.error(error instanceof Error ? error.message : "Falha ao carregar leads.");
+        }
       } finally {
-        if (!options?.silent) {
+        if (requestId === leadRequestIdRef.current) {
           setLoadingLeads(false);
         }
       }
@@ -557,6 +593,8 @@ function CRMPipeline() {
   );
 
   const loadOptions = React.useCallback(async (unitId: string) => {
+    const requestId = ++optionsRequestIdRef.current;
+
     if (!unitId) {
       setCourses([]);
       setAttendances([]);
@@ -582,13 +620,19 @@ function CRMPipeline() {
         ),
       ]);
 
-      setCourses(coursesData.courses.filter((course) => course.status === "active"));
-      setAttendances(coursesData.attendances);
-      setChannels(channelsData.channels.filter((channel) => channel.status === "active"));
+      if (requestId === optionsRequestIdRef.current) {
+        setCourses(coursesData.courses.filter((course) => course.status === "active"));
+        setAttendances(coursesData.attendances);
+        setChannels(channelsData.channels.filter((channel) => channel.status === "active"));
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Falha ao carregar opções do lead.");
+      if (requestId === optionsRequestIdRef.current) {
+        toast.error(error instanceof Error ? error.message : "Falha ao carregar opções do lead.");
+      }
     } finally {
-      setLoadingOptions(false);
+      if (requestId === optionsRequestIdRef.current) {
+        setLoadingOptions(false);
+      }
     }
   }, []);
 
@@ -708,12 +752,6 @@ function CRMPipeline() {
       }
     };
   }, [activeUnitId, loadLeads]);
-
-  React.useEffect(() => {
-    if (activeUnitId) {
-      setForm((current) => ({ ...current, unitId: current.unitId || activeUnitId }));
-    }
-  }, [activeUnitId]);
 
   React.useEffect(() => {
     void loadOptions(formUnitId);
@@ -1314,7 +1352,29 @@ function CRMPipeline() {
       </section>
 
       {filtersOpen ? (
-        <div className="grid gap-4 rounded-[24px] border border-[#16006C]/10 bg-white p-5 shadow-card md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 rounded-[24px] border border-[#16006C]/10 bg-white p-5 shadow-card md:grid-cols-2 xl:grid-cols-5">
+          <div className="space-y-2">
+            <Label>Turma</Label>
+            <Select
+              value={filters.attendanceId}
+              onValueChange={(value) =>
+                setFilters((current) => ({ ...current, attendanceId: value }))
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Todas as turmas" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={FILTER_ALL}>Todas as turmas</SelectItem>
+                {attendances.map((attendance) => (
+                  <SelectItem key={attendance.id} value={attendance.id}>
+                    {attendance.displayName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="space-y-2">
             <Label>Curso</Label>
             <Select
@@ -1503,20 +1563,21 @@ function CRMPipeline() {
                             displayValue={pipelineDisplayValue(lead, session?.user.role)}
                             canViewAcquisitionChannel={canViewAcquisitionChannel}
                             canViewLeadAge={canViewLeadAge}
-                            canViewOwner={canTransferUnitLeads}
+                            canViewOwner
                             canRemove={canRemoveLeads}
                             canOpen={
                               canOperatePipeline &&
-                              !(session?.user.role === "CONSULTOR" && isSharedLeadQueueEntry(lead))
+                              (!isConsultant ||
+                                canConsultantOpenPipelineLead(lead, session?.user.id ?? ""))
                             }
                             canDrag={
                               canOperatePipeline &&
-                              (!isSharedLeadQueueEntry(lead) || session?.user.role === "CONSULTOR")
+                              (!isConsultant
+                                ? !isSharedLeadQueueEntry(lead)
+                                : canConsultantMovePipelineLead(lead, session?.user.id ?? ""))
                             }
                             onClaim={
-                              session?.user.role === "CONSULTOR" &&
-                              isSharedLeadQueueEntry(lead) &&
-                              firstClaimColumn
+                              isConsultant && isSharedLeadQueueEntry(lead) && firstClaimColumn
                                 ? () => void updateLeadStage(lead, firstClaimColumn)
                                 : undefined
                             }
@@ -1800,7 +1861,7 @@ function LeadPipelineCard({
           <div className="mt-3 rounded-xl border border-[#377DFE]/20 bg-[#EAF1FF]/75 p-2.5">
             <div className="flex items-center gap-2 text-[11px] font-bold text-[#224C99]">
               <UsersRound className="h-4 w-4 shrink-0" />
-              Disponível para os consultores da turma
+              Disponível para todos os consultores da unidade
             </div>
             {onClaim ? (
               <Button

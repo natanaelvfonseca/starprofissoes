@@ -43,8 +43,6 @@ type Attendance = {
   state: string;
   classDate: string;
   displayName: string;
-  consultantIds: Array<string>;
-  consultantNames: Array<string>;
 };
 type ParsedCsv = { headers: Array<string>; rows: Array<Array<string>> };
 
@@ -196,11 +194,6 @@ function LeadImporter() {
     }
     if (!attendanceId) {
       toast.error("Selecione a turma dos leads.");
-      return;
-    }
-    const selectedAttendance = attendances.find((attendance) => attendance.id === attendanceId);
-    if (!selectedAttendance?.consultantIds.length) {
-      toast.error("Cadastre ao menos um consultor ativo nesta turma.");
       return;
     }
     setImporting(true);
@@ -369,38 +362,13 @@ function LeadImporter() {
             <CardContent className="space-y-4">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <UsersRound className="h-4 w-4" />
-                Os leads entrarão na fila compartilhada dos consultores cadastrados na turma.
+                Os leads entrarão na fila compartilhada de todos os consultores da unidade.
               </div>
-              {loading ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : attendanceId ? (
-                attendances.find((attendance) => attendance.id === attendanceId)?.consultantNames
-                  .length ? (
-                  <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                    {attendances
-                      .find((attendance) => attendance.id === attendanceId)
-                      ?.consultantNames.map((consultantName) => (
-                        <div
-                          key={consultantName}
-                          className="flex items-center gap-3 rounded-lg border border-[#224C99]/15 bg-[#EAF1FF]/60 p-3"
-                        >
-                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#224C99] text-xs font-bold text-white">
-                            {consultantName.charAt(0).toUpperCase()}
-                          </div>
-                          <span className="font-medium text-[#07154C]">{consultantName}</span>
-                        </div>
-                      ))}
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-                    Esta turma ainda não possui consultores ativos selecionados.
-                  </div>
-                )
-              ) : (
+              {!attendanceId ? (
                 <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                  Selecione a turma para visualizar quem terá acesso aos novos leads.
+                  Selecione a turma que organizará os novos leads.
                 </div>
-              )}
+              ) : null}
               <Label className="flex items-center gap-3">
                 <Checkbox
                   checked={skipDuplicates}
@@ -453,13 +421,7 @@ function LeadImporter() {
               ) : null}
               <Button
                 onClick={() => void importLeads()}
-                disabled={
-                  importing ||
-                  !courseId ||
-                  !attendanceId ||
-                  !attendances.find((attendance) => attendance.id === attendanceId)?.consultantIds
-                    .length
-                }
+                disabled={importing || !courseId || !attendanceId}
               >
                 {importing ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

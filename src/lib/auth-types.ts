@@ -190,6 +190,10 @@ export function canViewAllUnitLeads(role: UserRole) {
   return canTransferLeads(role) || role === "MARKETING";
 }
 
+export function canViewAllUnitPipelineLeads(role: UserRole) {
+  return canViewAllUnitLeads(role) || role === "CONSULTOR";
+}
+
 export function canViewBrandPlenHistory(role: UserRole) {
   return isMasterRole(role) || isExecutiveRole(role) || role === "DIRETOR" || role === "GERENTE";
 }

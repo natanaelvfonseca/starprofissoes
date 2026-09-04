@@ -124,21 +124,6 @@ export async function ensureCourseAttendanceSchema() {
       on app_leads (attendance_id, created_at desc)
       where shared_queue = true and stage = 'Novo lead';
 
-    update app_leads lead
-    set shared_queue = true,
-        created_by = null,
-        updated_at = now()
-    where lead.stage = 'Novo lead'
-      and lead.attendance_id is not null
-      and not lead.shared_queue
-      and exists (
-        select 1
-        from app_course_attendance_consultants attendance_consultant
-        inner join app_users consultant on consultant.id = attendance_consultant.user_id
-        where attendance_consultant.attendance_id = lead.attendance_id
-          and consultant.role = 'CONSULTOR'
-          and consultant.status = 'active'
-      );
   `,
   )
     .then(() => undefined)
@@ -263,7 +248,7 @@ function parseInput(input: AttendanceInput) {
           ),
         ),
       )
-    : [];
+    : null;
 
   if (id && !isUuid(id)) {
     throw new Error("Atendimento inválido.");
@@ -277,10 +262,6 @@ function parseInput(input: AttendanceInput) {
     !/^\d{4}-\d{2}-\d{2}$/.test(classDate)
   ) {
     throw new Error("Informe curso, cidade, UF e data válidos.");
-  }
-
-  if (!consultantIds.length) {
-    throw new Error("Selecione ao menos um responsável.");
   }
 
   return {
@@ -310,27 +291,29 @@ export async function saveCourseAttendance(input: AttendanceInput) {
       throw new Error("Curso indisponível para esta unidade.");
     }
 
-    const validConsultants = await client.query<{ id: string }>(
-      `
-        select u.id
-        from app_users u
-        where u.id = any($2::uuid[])
-          and u.role in ('CONSULTOR', 'GERENTE', 'DIRETOR')
-          and u.status = 'active'
-          and (
-            u.primary_unit_id = $1
-            or exists (
-              select 1
-              from app_user_units uu
-              where uu.user_id = u.id and uu.unit_id = $1
+    if (data.consultantIds) {
+      const validConsultants = await client.query<{ id: string }>(
+        `
+          select u.id
+          from app_users u
+          where u.id = any($2::uuid[])
+            and u.role in ('CONSULTOR', 'GERENTE', 'DIRETOR')
+            and u.status = 'active'
+            and (
+              u.primary_unit_id = $1
+              or exists (
+                select 1
+                from app_user_units uu
+                where uu.user_id = u.id and uu.unit_id = $1
+              )
             )
-          )
-      `,
-      [data.unitId, data.consultantIds],
-    );
+        `,
+        [data.unitId, data.consultantIds],
+      );
 
-    if (validConsultants.rows.length !== data.consultantIds.length) {
-      throw new Error("Há responsáveis inválidos ou fora da unidade.");
+      if (validConsultants.rows.length !== data.consultantIds.length) {
+        throw new Error("Há responsáveis inválidos ou fora da unidade.");
+      }
     }
 
     const result = data.id
@@ -382,18 +365,20 @@ export async function saveCourseAttendance(input: AttendanceInput) {
       throw new Error("Atendimento não encontrado.");
     }
 
-    await client.query(`delete from app_course_attendance_consultants where attendance_id = $1`, [
-      attendance.id,
-    ]);
+    if (data.consultantIds) {
+      await client.query(`delete from app_course_attendance_consultants where attendance_id = $1`, [
+        attendance.id,
+      ]);
 
-    for (const consultantId of data.consultantIds) {
-      await client.query(
-        `
-          insert into app_course_attendance_consultants (attendance_id, user_id)
-          values ($1, $2)
-        `,
-        [attendance.id, consultantId],
-      );
+      for (const consultantId of data.consultantIds) {
+        await client.query(
+          `
+            insert into app_course_attendance_consultants (attendance_id, user_id)
+            values ($1, $2)
+          `,
+          [attendance.id, consultantId],
+        );
+      }
     }
 
     if (data.status === "inactive") {
@@ -551,35 +536,4 @@ export async function findCampaignAttendance(
   }
 
   return { attendance: matches[0], error: null } as const;
-}
-
-export async function getAttendanceConsultants(
-  client: PoolClient,
-  attendance: {
-    id: string;
-    unit_id: string;
-  },
-) {
-  const candidates = await client.query<CandidateRow>(
-    `
-      select u.id, u.name
-      from app_course_attendance_consultants ac
-      inner join app_users u on u.id = ac.user_id
-      where ac.attendance_id = $1
-        and u.role = 'CONSULTOR'
-        and u.status = 'active'
-        and (
-          u.primary_unit_id = $2
-          or exists (
-            select 1
-            from app_user_units uu
-            where uu.user_id = u.id and uu.unit_id = $2
-          )
-        )
-      order by u.name asc
-    `,
-    [attendance.id, attendance.unit_id],
-  );
-
-  return candidates.rows;
 }

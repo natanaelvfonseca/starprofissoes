@@ -8,7 +8,12 @@ import {
   getUnitFromRequest,
   isUuid,
 } from "@/lib/server/commercial-schema";
-import { canOperateCrm, canViewAllUnitLeads, canViewStudents } from "@/lib/auth-types";
+import {
+  canOperateCrm,
+  canViewAllUnitLeads,
+  canViewAllUnitPipelineLeads,
+  canViewStudents,
+} from "@/lib/auth-types";
 import { getSessionFromRequest } from "@/lib/server/auth";
 import {
   ensureCourseAttendanceSchema,
@@ -80,7 +85,6 @@ type AttendanceSnapshotRow = QueryResultRow & {
   course_value: string;
   city: string;
   state: string;
-  has_consultants: boolean;
 };
 
 type MetaLeadCampaignRow = QueryResultRow & {
@@ -402,7 +406,10 @@ export const Route = createFileRoute("/api/crm/leads")({
           );
         }
 
-        const canManageUnitLeads = canViewAllUnitLeads(session.user.role);
+        const canManageUnitLeads =
+          listView === "pipeline"
+            ? canViewAllUnitPipelineLeads(session.user.role)
+            : canViewAllUnitLeads(session.user.role);
         const exposeAcquisitionChannel = session.user.role !== "CONSULTOR";
         const [result, columnsResult] = await Promise.all([
           queryDb<LeadRow>(
@@ -453,17 +460,6 @@ export const Route = createFileRoute("/api/crm/leads")({
               and (
                 $4::boolean
                 or l.created_by = $2
-                or (
-                  $5::boolean
-                  and l.shared_queue = true
-                  and l.stage = 'Novo lead'
-                  and exists (
-                    select 1
-                    from app_course_attendance_consultants attendance_consultant
-                    where attendance_consultant.attendance_id = l.attendance_id
-                      and attendance_consultant.user_id = $2
-                  )
-                )
               )
               and (
                 ($3 = 'students' and l.stage = 'Matriculado')
@@ -471,13 +467,7 @@ export const Route = createFileRoute("/api/crm/leads")({
               )
             order by l.created_at desc
           `,
-            [
-              unit.id,
-              session.user.id,
-              listView,
-              canManageUnitLeads,
-              session.user.role === "CONSULTOR",
-            ],
+            [unit.id, session.user.id, listView, canManageUnitLeads],
           ),
           queryDb<PipelineColumnRow>(
             `
@@ -537,15 +527,7 @@ export const Route = createFileRoute("/api/crm/leads")({
         const attendanceResult = await queryDb<AttendanceSnapshotRow>(
           `
             select a.id, a.unit_id, a.course_id, c.name as course_name, c.value::text as course_value,
-              a.city, a.state,
-              exists (
-                select 1
-                from app_course_attendance_consultants attendance_consultant
-                inner join app_users consultant on consultant.id = attendance_consultant.user_id
-                where attendance_consultant.attendance_id = a.id
-                  and consultant.role = 'CONSULTOR'
-                  and consultant.status = 'active'
-              ) as has_consultants
+              a.city, a.state
             from app_course_attendances a
             inner join app_courses c on c.id = a.course_id
             where a.id = $1 and a.unit_id = $2 and a.status = 'active' and c.status = 'active'
@@ -560,13 +542,6 @@ export const Route = createFileRoute("/api/crm/leads")({
             { status: 400 },
           );
         }
-        if (!attendance.has_consultants) {
-          return Response.json(
-            { ok: false, error: "Selecione ao menos um consultor ativo no cadastro desta turma." },
-            { status: 400 },
-          );
-        }
-
         const channelResult = await getChannelSnapshot(payload.acquisitionChannelId, unit.id);
 
         if (channelResult.error) {

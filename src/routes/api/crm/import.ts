@@ -24,8 +24,6 @@ type AttendanceRow = QueryResultRow & {
   state: string;
   classDate: string;
   displayName: string;
-  consultantIds: Array<string>;
-  consultantNames: Array<string>;
 };
 type ImportRow = {
   fullName: string;
@@ -106,30 +104,10 @@ async function listAttendances(unitId: string) {
     state: string;
     class_date: string;
     display_name: string;
-    consultant_ids: Array<string>;
-    consultant_names: Array<string>;
   }>(
     `
     select a.id, a.course_id, a.city, a.state, a.class_date::text,
-      concat(c.name, ' · ', a.city, '/', a.state, ' · ', to_char(a.class_date, 'DD/MM/YYYY')) as display_name,
-      array(
-        select consultant.id::text
-        from app_course_attendance_consultants attendance_consultant
-        inner join app_users consultant on consultant.id = attendance_consultant.user_id
-        where attendance_consultant.attendance_id = a.id
-          and consultant.role = 'CONSULTOR'
-          and consultant.status = 'active'
-        order by consultant.name
-      ) as consultant_ids,
-      array(
-        select consultant.name
-        from app_course_attendance_consultants attendance_consultant
-        inner join app_users consultant on consultant.id = attendance_consultant.user_id
-        where attendance_consultant.attendance_id = a.id
-          and consultant.role = 'CONSULTOR'
-          and consultant.status = 'active'
-        order by consultant.name
-      ) as consultant_names
+      concat(c.name, ' · ', a.city, '/', a.state, ' · ', to_char(a.class_date, 'DD/MM/YYYY')) as display_name
     from app_course_attendances a
     inner join app_courses c on c.id = a.course_id
     where a.unit_id = $1 and a.status = 'active' and c.status = 'active'
@@ -145,8 +123,6 @@ async function listAttendances(unitId: string) {
       state: row.state,
       classDate: row.class_date,
       displayName: row.display_name,
-      consultantIds: row.consultant_ids,
-      consultantNames: row.consultant_names,
     }),
   );
 }
@@ -209,29 +185,9 @@ export const Route = createFileRoute("/api/crm/import")({
           value: string;
           city: string;
           state: string;
-          consultant_ids: Array<string>;
-          consultant_names: Array<string>;
         }>(
           `
-          select c.id, c.name, c.value::text, a.city, a.state,
-            array(
-              select consultant.id::text
-              from app_course_attendance_consultants attendance_consultant
-              inner join app_users consultant on consultant.id = attendance_consultant.user_id
-              where attendance_consultant.attendance_id = a.id
-                and consultant.role = 'CONSULTOR'
-                and consultant.status = 'active'
-              order by consultant.name
-            ) as consultant_ids,
-            array(
-              select consultant.name
-              from app_course_attendance_consultants attendance_consultant
-              inner join app_users consultant on consultant.id = attendance_consultant.user_id
-              where attendance_consultant.attendance_id = a.id
-                and consultant.role = 'CONSULTOR'
-                and consultant.status = 'active'
-              order by consultant.name
-            ) as consultant_names
+          select c.id, c.name, c.value::text, a.city, a.state
           from app_course_attendances a
           inner join app_courses c on c.id = a.course_id
           where a.id = $1 and a.course_id = $2 and a.unit_id = $3
@@ -244,11 +200,6 @@ export const Route = createFileRoute("/api/crm/import")({
         if (!course)
           return Response.json(
             { error: "A turma não pertence ao curso ou à unidade selecionada." },
-            { status: 400 },
-          );
-        if (!course.consultant_ids.length)
-          return Response.json(
-            { error: "Selecione ao menos um consultor ativo no cadastro desta turma." },
             { status: 400 },
           );
         const city = `${course.city} - ${course.state}`;
@@ -337,7 +288,6 @@ export const Route = createFileRoute("/api/crm/import")({
             imported,
             updated,
             duplicates,
-            sharedConsultants: course.consultant_names,
           };
         });
         return Response.json({ ok: true, ...result });

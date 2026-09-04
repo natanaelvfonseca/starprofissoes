@@ -41,26 +41,27 @@ export class LeadPipelineMoveError extends Error {
   }
 }
 
-async function hasActiveAttendanceConsultant(
-  client: PoolClient,
-  attendanceId: string | null,
-  userId?: string,
-) {
-  if (!attendanceId) return false;
-
+async function hasActiveUnitConsultant(client: PoolClient, unitId: string, userId?: string) {
   const result = await client.query<{ allowed: boolean }>(
     `
       select exists (
         select 1
-        from app_course_attendance_consultants attendance_consultant
-        inner join app_users consultant on consultant.id = attendance_consultant.user_id
-        where attendance_consultant.attendance_id = $1
-          and consultant.role = 'CONSULTOR'
+        from app_users consultant
+        where consultant.role = 'CONSULTOR'
           and consultant.status = 'active'
           and ($2::uuid is null or consultant.id = $2)
+          and (
+            consultant.primary_unit_id = $1
+            or exists (
+              select 1
+              from app_user_units user_unit
+              where user_unit.user_id = consultant.id
+                and user_unit.unit_id = $1
+            )
+          )
       ) as allowed
     `,
-    [attendanceId, userId ?? null],
+    [unitId, userId ?? null],
   );
 
   return result.rows[0]?.allowed === true;
@@ -133,11 +134,11 @@ export async function moveLeadToPipelineColumn(params: {
           400,
         );
       }
-      if (
-        !claimUserId ||
-        !(await hasActiveAttendanceConsultant(client, lead.attendance_id, claimUserId))
-      ) {
-        throw new LeadPipelineMoveError("Um consultor da turma deve assumir este lead.", 403);
+      if (!claimUserId || !(await hasActiveUnitConsultant(client, lead.unit_id, claimUserId))) {
+        throw new LeadPipelineMoveError(
+          "Um consultor ativo da unidade deve assumir este lead.",
+          403,
+        );
       }
 
       const claimed = await client.query<{ id: string }>(
@@ -175,8 +176,7 @@ export async function moveLeadToPipelineColumn(params: {
     }
 
     const releaseToSharedQueue =
-      column.semantic_stage === "Novo lead" &&
-      (await hasActiveAttendanceConsultant(client, lead.attendance_id));
+      column.semantic_stage === "Novo lead" && Boolean(lead.attendance_id);
 
     await client.query(
       `

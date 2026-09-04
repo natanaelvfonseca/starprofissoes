@@ -76,3 +76,17 @@ export function isSharedLeadQueueEntry(
 ) {
   return lead.sharedQueue && lead.stage === "Novo lead" && Boolean(lead.attendanceId);
 }
+
+export function canConsultantOpenPipelineLead(
+  lead: Pick<LeadRecord, "createdById" | "sharedQueue" | "stage" | "attendanceId">,
+  userId: string,
+) {
+  return !isSharedLeadQueueEntry(lead) && lead.createdById === userId;
+}
+
+export function canConsultantMovePipelineLead(
+  lead: Pick<LeadRecord, "createdById" | "sharedQueue" | "stage" | "attendanceId">,
+  userId: string,
+) {
+  return isSharedLeadQueueEntry(lead) || lead.createdById === userId;
+}

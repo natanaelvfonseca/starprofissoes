@@ -4,6 +4,7 @@ import {
   canReturnStudentToLead,
   canTransferLeads,
   canViewAllUnitLeads,
+  canViewAllUnitPipelineLeads,
   canViewGrowth,
   canViewSalesAi,
   canViewStudents,
@@ -14,8 +15,9 @@ test("consultor acessa alunos, mas não acessa relatórios", () => {
   assert.equal(canViewGrowth("CONSULTOR"), false);
 });
 
-test("consultor permanece limitado aos próprios leads e alunos", () => {
+test("consultor vê o pipeline da unidade, mas alunos permanecem limitados", () => {
   assert.equal(canViewAllUnitLeads("CONSULTOR"), false);
+  assert.equal(canViewAllUnitPipelineLeads("CONSULTOR"), true);
   assert.equal(canTransferLeads("CONSULTOR"), false);
   assert.equal(canReturnStudentToLead("CONSULTOR"), true);
 });
