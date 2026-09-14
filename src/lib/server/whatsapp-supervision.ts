@@ -20,6 +20,7 @@ import {
   whatsappPhoneFromJid,
 } from "@/lib/whatsapp-conversation-identity";
 import type { WhatsappDeliveryStatus } from "@/lib/whatsapp-message-status";
+import { describeOutgoingWhatsappFile } from "@/lib/whatsapp-outgoing-media";
 import { ensureRuntimeSchema, queryDb, withTransaction } from "@/lib/server/db";
 import { EvolutionRequestError, requestEvolution } from "@/lib/server/evolution-client";
 
@@ -1001,6 +1002,144 @@ export async function sendLeadershipReply(
       `
       update app_whatsapp_interventions set status = $2, error_message = $3, updated_at = now()
       where id = $1 returning *`,
+      [
+        intervention.id,
+        definitive ? "failed" : "pending",
+        error instanceof Error ? error.message.slice(0, 500) : "Falha ao enviar",
+      ],
+    );
+    return updated.rows[0];
+  }
+}
+
+export async function sendLeadershipMedia(
+  session: AuthSession,
+  input: {
+    conversationId: string;
+    clientRequestId: string;
+    file: File;
+    caption: string;
+    voiceNote: boolean;
+  },
+) {
+  const conversation = await accessibleConversation(session, input.conversationId, true);
+  if (!conversation) return null;
+  if (conversation.instance_status !== "connected") {
+    throw new Error("O WhatsApp do consultor não está conectado.");
+  }
+  const { fileName, mimeType, mediaType } = describeOutgoingWhatsappFile(input.file);
+  if (input.voiceNote && mediaType !== "audio") {
+    throw new Error("Somente áudio pode ser enviado como mensagem de voz.");
+  }
+  const caption = input.caption.trim();
+  if (caption.length > 1_000) {
+    throw new Error("A legenda do arquivo deve ter até 1.000 caracteres.");
+  }
+  if (input.voiceNote && caption) {
+    throw new Error("Envie o texto separadamente da gravação de voz.");
+  }
+  const requestId = input.clientRequestId.trim().slice(0, 160);
+  if (!requestId) throw new Error("Identificador de envio ausente.");
+  const label = { image: "Imagem", audio: "Áudio", video: "Vídeo", document: "Documento" }[
+    mediaType
+  ];
+  const content = caption || `[${mediaType}]`;
+
+  const claimed = await withTransaction(async (client) => {
+    await client.query(`select pg_advisory_xact_lock(hashtext($1))`, [
+      `${session.user.id}:${requestId}`,
+    ]);
+    const existing = await client.query<ConversationRow>(
+      `select * from app_whatsapp_interventions where actor_user_id = $1 and client_request_id = $2 limit 1`,
+      [session.user.id, requestId],
+    );
+    if (existing.rows[0]) return { intervention: existing.rows[0], shouldSend: false };
+    const inserted = await client.query<ConversationRow>(
+      `insert into app_whatsapp_interventions
+        (unit_id, consultant_id, conversation_id, actor_user_id, client_request_id, content)
+       values ($1, $2, $3, $4, $5, $6) returning *`,
+      [
+        conversation.unit_id,
+        conversation.consultant_id,
+        conversation.id,
+        session.user.id,
+        requestId,
+        caption || `[${label}: ${fileName}]`,
+      ],
+    );
+    return { intervention: inserted.rows[0], shouldSend: true };
+  });
+  const intervention = claimed.intervention;
+  if (!claimed.shouldSend) return intervention;
+
+  const number = conversation.canonical_phone || conversation.primary_remote_jid;
+  const form = new FormData();
+  form.set("number", number);
+  form.set("file", new File([input.file], fileName, { type: mimeType }));
+  const path = input.voiceNote ? "sendWhatsAppAudio" : "sendMedia";
+  if (!input.voiceNote) {
+    form.set("mediatype", mediaType);
+    form.set("mimetype", mimeType);
+    form.set("fileName", fileName);
+    if (caption) form.set("caption", caption);
+  }
+
+  try {
+    const payload = await requestEvolution(
+      `/message/${path}/${encodeURIComponent(conversation.instance_name)}`,
+      { method: "POST", body: form, signal: AbortSignal.timeout(60_000) },
+    );
+    const messageId = extractProviderMessageId(payload);
+    const updated = await queryDb<ConversationRow>(
+      `update app_whatsapp_interventions set status = 'sent', evolution_message_id = $2,
+        sent_at = now(), error_message = null, updated_at = now() where id = $1 returning *`,
+      [intervention.id, messageId],
+    );
+    await queryDb(
+      `insert into app_whatsapp_notifications (user_id, intervention_id, conversation_id)
+       values ($1, $2, $3) on conflict (user_id, intervention_id) do nothing`,
+      [conversation.consultant_id, intervention.id, conversation.id],
+    );
+    if (messageId) {
+      await queryDb(
+        `insert into app_whatsapp_messages (
+          unit_id, user_id, instance_id, conversation_id, evolution_message_id, remote_jid, phone,
+          contact_name, direction, message_type, content, media_mime_type, media_file_name,
+          delivery_status, sent_at
+        ) values ($1,$2,$3,$4,$5,$6,$7,$8,'outbound',$9,$10,$11,$12,'sent',now())
+        on conflict (instance_id, evolution_message_id) do nothing`,
+        [
+          conversation.unit_id,
+          conversation.consultant_id,
+          conversation.instance_id,
+          conversation.id,
+          messageId,
+          conversation.primary_remote_jid,
+          conversation.canonical_phone || "",
+          conversation.contact_name,
+          mediaType,
+          content,
+          mimeType,
+          fileName,
+        ],
+      );
+      await upsertCanonicalConversationForMessage({
+        instanceId: conversation.instance_id,
+        unitId: conversation.unit_id,
+        consultantId: conversation.consultant_id,
+        remoteJid: conversation.primary_remote_jid,
+        phone: conversation.canonical_phone,
+        contactName: conversation.contact_name,
+        messageId,
+      });
+    }
+    return updated.rows[0];
+  } catch (error) {
+    const definitive =
+      error instanceof EvolutionRequestError && error.status >= 400 && error.status < 500;
+    const updated = await queryDb<ConversationRow>(
+      `update app_whatsapp_interventions set status = $2, error_message = $3, updated_at = now()
+       where id = $1 returning *`,
       [
         intervention.id,
         definitive ? "failed" : "pending",

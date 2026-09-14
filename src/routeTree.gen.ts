@@ -81,6 +81,7 @@ import { Route as ApiGestaoCoursesIdRouteImport } from './routes/api/gestao/cour
 import { Route as ApiWebhooksMakeMetaLeadRouteImport } from './routes/api/webhooks/make/meta-lead'
 import { Route as ApiWhatsappSupervisionConversationsIdRouteImport } from './routes/api/whatsapp-supervision.conversations.$id'
 import { Route as ApiCrmLeadsIdAssumeRouteImport } from './routes/api/crm/leads.$id.assume'
+import { Route as ApiWhatsappSupervisionConversationsIdMediaRouteImport } from './routes/api/whatsapp-supervision.conversations.$id.media'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -454,6 +455,12 @@ const ApiCrmLeadsIdAssumeRoute = ApiCrmLeadsIdAssumeRouteImport.update({
   path: '/assume',
   getParentRoute: () => ApiCrmLeadsIdRoute,
 } as any)
+const ApiWhatsappSupervisionConversationsIdMediaRoute =
+  ApiWhatsappSupervisionConversationsIdMediaRouteImport.update({
+    id: '/media',
+    path: '/media',
+    getParentRoute: () => ApiWhatsappSupervisionConversationsIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -526,8 +533,9 @@ export interface FileRoutesByFullPath {
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
   '/api/webhooks/make/meta-lead': typeof ApiWebhooksMakeMetaLeadRoute
-  '/api/whatsapp-supervision/conversations/$id': typeof ApiWhatsappSupervisionConversationsIdRoute
+  '/api/whatsapp-supervision/conversations/$id': typeof ApiWhatsappSupervisionConversationsIdRouteWithChildren
   '/api/crm/leads/$id/assume': typeof ApiCrmLeadsIdAssumeRoute
+  '/api/whatsapp-supervision/conversations/$id/media': typeof ApiWhatsappSupervisionConversationsIdMediaRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -600,8 +608,9 @@ export interface FileRoutesByTo {
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
   '/api/webhooks/make/meta-lead': typeof ApiWebhooksMakeMetaLeadRoute
-  '/api/whatsapp-supervision/conversations/$id': typeof ApiWhatsappSupervisionConversationsIdRoute
+  '/api/whatsapp-supervision/conversations/$id': typeof ApiWhatsappSupervisionConversationsIdRouteWithChildren
   '/api/crm/leads/$id/assume': typeof ApiCrmLeadsIdAssumeRoute
+  '/api/whatsapp-supervision/conversations/$id/media': typeof ApiWhatsappSupervisionConversationsIdMediaRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -675,8 +684,9 @@ export interface FileRoutesById {
   '/api/gestao/channels/$id': typeof ApiGestaoChannelsIdRoute
   '/api/gestao/courses/$id': typeof ApiGestaoCoursesIdRoute
   '/api/webhooks/make/meta-lead': typeof ApiWebhooksMakeMetaLeadRoute
-  '/api/whatsapp-supervision/conversations/$id': typeof ApiWhatsappSupervisionConversationsIdRoute
+  '/api/whatsapp-supervision/conversations/$id': typeof ApiWhatsappSupervisionConversationsIdRouteWithChildren
   '/api/crm/leads/$id/assume': typeof ApiCrmLeadsIdAssumeRoute
+  '/api/whatsapp-supervision/conversations/$id/media': typeof ApiWhatsappSupervisionConversationsIdMediaRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -753,6 +763,7 @@ export interface FileRouteTypes {
     | '/api/webhooks/make/meta-lead'
     | '/api/whatsapp-supervision/conversations/$id'
     | '/api/crm/leads/$id/assume'
+    | '/api/whatsapp-supervision/conversations/$id/media'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -827,6 +838,7 @@ export interface FileRouteTypes {
     | '/api/webhooks/make/meta-lead'
     | '/api/whatsapp-supervision/conversations/$id'
     | '/api/crm/leads/$id/assume'
+    | '/api/whatsapp-supervision/conversations/$id/media'
   id:
     | '__root__'
     | '/'
@@ -901,6 +913,7 @@ export interface FileRouteTypes {
     | '/api/webhooks/make/meta-lead'
     | '/api/whatsapp-supervision/conversations/$id'
     | '/api/crm/leads/$id/assume'
+    | '/api/whatsapp-supervision/conversations/$id/media'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1470,6 +1483,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCrmLeadsIdAssumeRouteImport
       parentRoute: typeof ApiCrmLeadsIdRoute
     }
+    '/api/whatsapp-supervision/conversations/$id/media': {
+      id: '/api/whatsapp-supervision/conversations/$id/media'
+      path: '/media'
+      fullPath: '/api/whatsapp-supervision/conversations/$id/media'
+      preLoaderRoute: typeof ApiWhatsappSupervisionConversationsIdMediaRouteImport
+      parentRoute: typeof ApiWhatsappSupervisionConversationsIdRoute
+    }
   }
 }
 
@@ -1523,10 +1543,25 @@ const ApiTrainingRouteWithChildren = ApiTrainingRoute._addFileChildren(
   ApiTrainingRouteChildren,
 )
 
+interface ApiWhatsappSupervisionConversationsIdRouteChildren {
+  ApiWhatsappSupervisionConversationsIdMediaRoute: typeof ApiWhatsappSupervisionConversationsIdMediaRoute
+}
+
+const ApiWhatsappSupervisionConversationsIdRouteChildren: ApiWhatsappSupervisionConversationsIdRouteChildren =
+  {
+    ApiWhatsappSupervisionConversationsIdMediaRoute:
+      ApiWhatsappSupervisionConversationsIdMediaRoute,
+  }
+
+const ApiWhatsappSupervisionConversationsIdRouteWithChildren =
+  ApiWhatsappSupervisionConversationsIdRoute._addFileChildren(
+    ApiWhatsappSupervisionConversationsIdRouteChildren,
+  )
+
 interface ApiWhatsappSupervisionRouteChildren {
   ApiWhatsappSupervisionAccessRoute: typeof ApiWhatsappSupervisionAccessRoute
   ApiWhatsappSupervisionNotificationsRoute: typeof ApiWhatsappSupervisionNotificationsRoute
-  ApiWhatsappSupervisionConversationsIdRoute: typeof ApiWhatsappSupervisionConversationsIdRoute
+  ApiWhatsappSupervisionConversationsIdRoute: typeof ApiWhatsappSupervisionConversationsIdRouteWithChildren
 }
 
 const ApiWhatsappSupervisionRouteChildren: ApiWhatsappSupervisionRouteChildren =
@@ -1535,7 +1570,7 @@ const ApiWhatsappSupervisionRouteChildren: ApiWhatsappSupervisionRouteChildren =
     ApiWhatsappSupervisionNotificationsRoute:
       ApiWhatsappSupervisionNotificationsRoute,
     ApiWhatsappSupervisionConversationsIdRoute:
-      ApiWhatsappSupervisionConversationsIdRoute,
+      ApiWhatsappSupervisionConversationsIdRouteWithChildren,
   }
 
 const ApiWhatsappSupervisionRouteWithChildren =

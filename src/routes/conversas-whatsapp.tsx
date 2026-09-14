@@ -10,15 +10,19 @@ import {
   Download,
   FileText,
   Loader2,
+  Mic,
   MessageCircleMore,
+  Paperclip,
   RefreshCw,
   Search,
   Send,
   ShieldCheck,
   Smartphone,
+  Square,
   UserRound,
   Wifi,
   WifiOff,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -51,6 +55,7 @@ import {
   formatConversationLastMessageParts,
 } from "@/lib/whatsapp-conversation-time";
 import { resolveWhatsappMediaPresentation } from "@/lib/whatsapp-conversation-media";
+import { describeOutgoingWhatsappFile } from "@/lib/whatsapp-outgoing-media";
 import {
   mergeRecentConversations,
   WHATSAPP_CONVERSATION_PAGE_SIZE,
@@ -177,6 +182,11 @@ function LeadershipInbox() {
   const [conversationId, setConversationId] = React.useState("");
   const [search, setSearch] = React.useState("");
   const [reply, setReply] = React.useState("");
+  const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
+  const [recordedAudio, setRecordedAudio] = React.useState(false);
+  const [recording, setRecording] = React.useState(false);
+  const [recordingSeconds, setRecordingSeconds] = React.useState(0);
+  const [filePreviewUrl, setFilePreviewUrl] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [loadingConversations, setLoadingConversations] = React.useState(false);
   const [loadingMoreConversations, setLoadingMoreConversations] = React.useState(false);
@@ -199,12 +209,21 @@ function LeadershipInbox() {
   const [roles, setRoles] = React.useState<Array<{ role: UserRole; enabled: boolean }>>([]);
   const [selectedUnitId, setSelectedUnitId] = React.useState(session?.activeUnit?.id || "");
   const messagesRequestRef = React.useRef(0);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const mediaRequestIdRef = React.useRef("");
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const microphoneStreamRef = React.useRef<MediaStream | null>(null);
+  const discardRecordingRef = React.useRef(false);
+  const recordingTimerRef = React.useRef<number | null>(null);
+  const recordingTickerRef = React.useRef<number | null>(null);
   const conversationsRequestRef = React.useRef(0);
   const conversationsInFlightScopeRef = React.useRef("");
   const loadedMoreConversationsRef = React.useRef(false);
   const chatViewportRef = React.useRef<HTMLDivElement>(null);
   const stickToBottomRef = React.useRef(true);
   const previousConversationRef = React.useRef("");
+  const activeConversationIdRef = React.useRef(conversationId);
+  activeConversationIdRef.current = conversationId;
 
   const selectedConversation = conversations.find((item) => item.id === conversationId) ?? null;
   const selectedConsultant = consultants.find(
@@ -463,26 +482,179 @@ function LeadershipInbox() {
     }
   }, [conversationId, messages, scrollToBottom]);
 
+  React.useEffect(() => {
+    setSelectedFile(null);
+    setRecordedAudio(false);
+    mediaRequestIdRef.current = "";
+    return () => {
+      discardRecordingRef.current = true;
+      if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop();
+      microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
+      if (recordingTimerRef.current !== null) window.clearTimeout(recordingTimerRef.current);
+      if (recordingTickerRef.current !== null) window.clearInterval(recordingTickerRef.current);
+    };
+  }, [conversationId]);
+
+  React.useEffect(() => {
+    if (
+      !selectedFile ||
+      (!selectedFile.type.startsWith("audio/") && !selectedFile.type.startsWith("image/"))
+    ) {
+      setFilePreviewUrl("");
+      return;
+    }
+    const url = URL.createObjectURL(selectedFile);
+    setFilePreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [selectedFile]);
+
+  function selectAttachment(file: File | undefined) {
+    if (!file) return;
+    try {
+      describeOutgoingWhatsappFile(file);
+      setSelectedFile(file);
+      setRecordedAudio(false);
+      mediaRequestIdRef.current = crypto.randomUUID();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Arquivo não suportado.");
+    }
+  }
+
+  async function startRecording() {
+    if (recording || mediaRecorderRef.current || !conversationId) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      toast.error("Este navegador não permite gravar áudio aqui.");
+      return;
+    }
+    const targetConversationId = conversationId;
+    let stream: MediaStream | null = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recordingStream = stream;
+      if (activeConversationIdRef.current !== targetConversationId) {
+        recordingStream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      const supportedType = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"].find(
+        (type) => MediaRecorder.isTypeSupported(type),
+      );
+      const recorder = new MediaRecorder(
+        recordingStream,
+        supportedType ? { mimeType: supportedType } : undefined,
+      );
+      const chunks: Array<Blob> = [];
+      discardRecordingRef.current = false;
+      microphoneStreamRef.current = recordingStream;
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size) chunks.push(event.data);
+      };
+      recorder.onerror = () => {
+        discardRecordingRef.current = true;
+        if (recorder.state === "recording") recorder.stop();
+        toast.error("A gravação falhou. Tente novamente.");
+      };
+      recorder.onstop = () => {
+        recordingStream.getTracks().forEach((track) => track.stop());
+        microphoneStreamRef.current = null;
+        mediaRecorderRef.current = null;
+        if (recordingTimerRef.current !== null) window.clearTimeout(recordingTimerRef.current);
+        if (recordingTickerRef.current !== null) window.clearInterval(recordingTickerRef.current);
+        recordingTimerRef.current = null;
+        recordingTickerRef.current = null;
+        setRecording(false);
+        if (discardRecordingRef.current) return;
+        const mimeType = recorder.mimeType || supportedType || "audio/webm";
+        const extension = mimeType.includes("mp4")
+          ? "m4a"
+          : mimeType.includes("ogg")
+            ? "ogg"
+            : "webm";
+        const file = new File(chunks, `audio-${Date.now()}.${extension}`, { type: mimeType });
+        try {
+          describeOutgoingWhatsappFile(file);
+          setSelectedFile(file);
+          setRecordedAudio(true);
+          mediaRequestIdRef.current = crypto.randomUUID();
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : "Áudio inválido.");
+        }
+      };
+      recorder.start(1_000);
+      setRecordingSeconds(0);
+      setRecording(true);
+      const startedAt = Date.now();
+      recordingTickerRef.current = window.setInterval(
+        () => setRecordingSeconds(Math.floor((Date.now() - startedAt) / 1_000)),
+        1_000,
+      );
+      recordingTimerRef.current = window.setTimeout(() => {
+        if (recorder.state === "recording") recorder.stop();
+      }, 120_000);
+    } catch {
+      stream?.getTracks().forEach((track) => track.stop());
+      toast.error("Não foi possível acessar o microfone.");
+    }
+  }
+
+  function cancelRecording() {
+    discardRecordingRef.current = true;
+    if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop();
+    microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
+    setRecording(false);
+  }
+
   async function sendReply(event: React.FormEvent) {
     event.preventDefault();
-    if (!conversationId || !reply.trim()) return;
+    if (!conversationId || (!reply.trim() && !selectedFile) || recording) return;
+    if (selectedFile && !recordedAudio && reply.trim().length > 1_000) {
+      toast.error("A legenda do arquivo deve ter até 1.000 caracteres.");
+      return;
+    }
     setSending(true);
     stickToBottomRef.current = true;
     try {
-      const data = await requestJson<{ intervention: { status: string } }>(
-        `/api/whatsapp-supervision/conversations/${conversationId}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ clientRequestId: crypto.randomUUID(), text: reply.trim() }),
-        },
-      );
-      setReply("");
+      const file = selectedFile;
+      const data = file
+        ? await (async () => {
+            const form = new FormData();
+            form.set("file", file);
+            form.set("clientRequestId", mediaRequestIdRef.current || crypto.randomUUID());
+            form.set("caption", recordedAudio ? "" : reply.trim());
+            form.set("voiceNote", String(recordedAudio));
+            return requestJson<{ intervention: { status: string } }>(
+              `/api/whatsapp-supervision/conversations/${conversationId}/media`,
+              { method: "POST", body: form },
+            );
+          })()
+        : await requestJson<{ intervention: { status: string } }>(
+            `/api/whatsapp-supervision/conversations/${conversationId}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ clientRequestId: crypto.randomUUID(), text: reply.trim() }),
+            },
+          );
+      if (data.intervention.status === "failed") {
+        mediaRequestIdRef.current = crypto.randomUUID();
+        toast.error("A Evolution rejeitou o arquivo. Confira o formato e tente novamente.");
+        return;
+      }
+      if (file) {
+        setSelectedFile(null);
+        setRecordedAudio(false);
+        mediaRequestIdRef.current = "";
+      }
+      if (!recordedAudio) setReply("");
       await Promise.all([loadMessages({ silent: true }), loadConversations({ silent: true })]);
       if (data.intervention.status === "pending") {
         toast.info("Envio aguardando confirmação da Evolution; ele não será repetido.");
       } else {
-        toast.success("Mensagem enviada e intervenção registrada.");
+        toast.success(
+          file
+            ? "Arquivo enviado e intervenção registrada."
+            : "Mensagem enviada e intervenção registrada.",
+        );
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao enviar.");
@@ -801,10 +973,125 @@ function LeadershipInbox() {
                 ) : null}
               </div>
               <form onSubmit={sendReply} className="border-t bg-background p-3">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt"
+                  onChange={(event) => {
+                    selectAttachment(event.currentTarget.files?.[0]);
+                    event.currentTarget.value = "";
+                  }}
+                />
+                {recording ? (
+                  <div className="mb-2 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-red-600" />
+                    <span className="flex-1 font-medium">
+                      Gravando áudio · {String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:
+                      {String(recordingSeconds % 60).padStart(2, "0")}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => mediaRecorderRef.current?.stop()}
+                    >
+                      <Square className="h-3 w-3" /> Concluir
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={cancelRecording}
+                      aria-label="Cancelar gravação"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : null}
+                {selectedFile ? (
+                  <div className="mb-2 flex items-center gap-3 rounded-xl border bg-muted/30 px-3 py-2 text-xs">
+                    {filePreviewUrl && selectedFile.type.startsWith("image/") ? (
+                      <img
+                        src={filePreviewUrl}
+                        alt="Prévia do anexo"
+                        className="h-12 w-12 rounded-lg object-cover"
+                      />
+                    ) : (
+                      <FileText className="h-6 w-6 shrink-0 text-primary" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold">{selectedFile.name}</p>
+                      <p className="text-muted-foreground">
+                        {recordedAudio ? "Mensagem de voz" : "Anexo"} ·{" "}
+                        {(selectedFile.size / 1_048_576).toFixed(1)} MB
+                      </p>
+                      {filePreviewUrl && selectedFile.type.startsWith("audio/") ? (
+                        <audio
+                          controls
+                          preload="metadata"
+                          src={filePreviewUrl}
+                          className="mt-1 h-8 w-full max-w-64"
+                        />
+                      ) : null}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0"
+                      disabled={sending}
+                      onClick={() => {
+                        setSelectedFile(null);
+                        setRecordedAudio(false);
+                        mediaRequestIdRef.current = "";
+                      }}
+                      aria-label="Remover anexo"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : null}
                 <div className="flex items-end gap-2 rounded-2xl border bg-muted/25 p-2 focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-10 w-10 shrink-0"
+                    disabled={
+                      sending ||
+                      recording ||
+                      Boolean(selectedFile) ||
+                      selectedConsultant?.status !== "connected"
+                    }
+                    onClick={() => fileInputRef.current?.click()}
+                    title="Anexar imagem, PDF ou arquivo"
+                    aria-label="Anexar arquivo"
+                  >
+                    <Paperclip className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-10 w-10 shrink-0"
+                    disabled={
+                      sending ||
+                      recording ||
+                      Boolean(selectedFile) ||
+                      selectedConsultant?.status !== "connected"
+                    }
+                    onClick={() => void startRecording()}
+                    title="Gravar áudio"
+                    aria-label="Gravar áudio"
+                  >
+                    <Mic className="h-4 w-4" />
+                  </Button>
                   <Textarea
                     value={reply}
                     onChange={(event) => setReply(event.target.value)}
+                    disabled={recordedAudio || recording}
                     onKeyDown={(event) => {
                       if (
                         event.key === "Enter" &&
@@ -815,9 +1102,9 @@ function LeadershipInbox() {
                         event.currentTarget.form?.requestSubmit();
                       }
                     }}
-                    maxLength={4000}
+                    maxLength={selectedFile ? 1000 : 4000}
                     rows={1}
-                    placeholder="Digite uma mensagem"
+                    placeholder={selectedFile ? "Legenda opcional" : "Digite uma mensagem"}
                     className="max-h-32 min-h-10 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
                   />
                   <Button
@@ -825,11 +1112,16 @@ function LeadershipInbox() {
                     size="icon"
                     className="h-10 w-10 shrink-0 rounded-full"
                     disabled={
-                      sending || !reply.trim() || selectedConsultant?.status !== "connected"
+                      sending ||
+                      recording ||
+                      (!reply.trim() && !selectedFile) ||
+                      selectedConsultant?.status !== "connected"
                     }
                     title={
                       selectedConsultant?.status === "connected"
-                        ? "Enviar mensagem"
+                        ? selectedFile
+                          ? "Enviar arquivo"
+                          : "Enviar mensagem"
                         : "WhatsApp do consultor desconectado"
                     }
                   >
@@ -842,7 +1134,10 @@ function LeadershipInbox() {
                 </div>
                 <div className="mt-1.5 flex justify-between gap-3 px-1 text-[10px] text-muted-foreground">
                   <span>Enter envia · Shift + Enter quebra a linha</span>
-                  <span>{reply.length}/4000 · intervenção identificada internamente</span>
+                  <span>
+                    {reply.length}/{selectedFile ? 1000 : 4000} · intervenção identificada
+                    internamente
+                  </span>
                 </div>
               </form>
             </>

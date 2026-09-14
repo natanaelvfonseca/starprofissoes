@@ -36,7 +36,7 @@ export async function requestEvolution(path: string, init: RequestInit = {}) {
     signal: init.signal ?? AbortSignal.timeout(20_000),
     headers: {
       apikey: apiKey,
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...(typeof init.body === "string" ? { "Content-Type": "application/json" } : {}),
       ...init.headers,
     },
   });
