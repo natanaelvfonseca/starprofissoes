@@ -46,6 +46,8 @@ import type {
   WhatsappSupervisionConversation,
   WhatsappSupervisionMessage,
 } from "@/lib/whatsapp-supervision-types";
+import { formatConversationLastMessageAt } from "@/lib/whatsapp-conversation-time";
+import { resolveWhatsappMediaPresentation } from "@/lib/whatsapp-conversation-media";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/conversas-whatsapp")({
@@ -71,16 +73,7 @@ function validDate(value: string | null) {
 }
 
 function listTime(value: string | null) {
-  const date = validDate(value);
-  if (!date) return "";
-  const now = new Date();
-  if (date.toDateString() === now.toDateString()) {
-    return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(date);
-  }
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  if (date.toDateString() === yesterday.toDateString()) return "Ontem";
-  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(date);
+  return formatConversationLastMessageAt(value);
 }
 
 function messageTime(value: string) {
@@ -842,7 +835,7 @@ function ConversationItem({
               {conversation.contactName}
             </span>
             <span className="shrink-0 text-[10px] text-muted-foreground">
-              {listTime(conversation.lastMessageAt)}
+              {conversation.lastMessageAt ? listTime(conversation.lastMessageAt) : "Sem mensagens"}
             </span>
           </div>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -1050,25 +1043,29 @@ function DeliveryIcon({ status }: { status: WhatsappDeliveryStatus | null }) {
 
 function MessageMedia({ message }: { message: WhatsappSupervisionMessage }) {
   const [failed, setFailed] = React.useState(false);
+  const [imageLoading, setImageLoading] = React.useState(true);
   if (!message.mediaUrl) return null;
+  const { mediaType, isPdf } = resolveWhatsappMediaPresentation(
+    message.type,
+    message.mimeType,
+    message.fileName,
+  );
   if (failed) {
     return (
-      <a
-        href={message.mediaUrl}
-        target="_blank"
-        rel="noreferrer"
-        className="mb-2 flex items-center gap-2 rounded-lg border bg-background/70 p-3 text-xs underline"
-      >
-        <Download className="h-4 w-4" /> Abrir {mediaLabel(message.type).toLowerCase()}
-      </a>
+      <div role="status" className="mb-2 rounded-lg border bg-background/70 p-3 text-xs">
+        <span>Mídia indisponível no momento.</span>{" "}
+        <a href={message.mediaUrl} target="_blank" rel="noreferrer" className="underline">
+          Tentar abrir novamente
+        </a>
+      </div>
     );
   }
-  if (message.type === "audio") {
+  if (mediaType === "audio") {
     return (
       <div className="mb-1.5 min-w-[240px] rounded-xl bg-background/65 p-2">
         <audio
           controls
-          preload="metadata"
+          preload="none"
           className="h-10 w-full max-w-[320px]"
           onError={() => setFailed(true)}
         >
@@ -1078,24 +1075,30 @@ function MessageMedia({ message }: { message: WhatsappSupervisionMessage }) {
       </div>
     );
   }
-  if (message.type === "image") {
+  if (mediaType === "image") {
     return (
       <a href={message.mediaUrl} target="_blank" rel="noreferrer" className="mb-1.5 block">
+        {imageLoading ? (
+          <span className="mb-1 block rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+            Carregando imagem...
+          </span>
+        ) : null}
         <img
           src={message.mediaUrl}
           alt={message.fileName || "Imagem recebida pelo WhatsApp"}
           loading="lazy"
+          onLoad={() => setImageLoading(false)}
           onError={() => setFailed(true)}
           className="max-h-80 w-auto max-w-full rounded-xl object-contain"
         />
       </a>
     );
   }
-  if (message.type === "video") {
+  if (mediaType === "video") {
     return (
       <video
         controls
-        preload="metadata"
+        preload="none"
         className="mb-1.5 max-h-80 w-full max-w-md rounded-xl bg-black"
         onError={() => setFailed(true)}
       >
@@ -1116,9 +1119,11 @@ function MessageMedia({ message }: { message: WhatsappSupervisionMessage }) {
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-xs font-semibold">
-          {message.fileName || "Documento"}
+          {message.fileName || (isPdf ? "Arquivo PDF" : "Arquivo")}
         </span>
-        <span className="text-[10px] text-muted-foreground">Abrir ou baixar arquivo</span>
+        <span className="text-[10px] text-muted-foreground">
+          {isPdf ? "PDF · Abrir documento" : "Abrir ou baixar arquivo"}
+        </span>
       </span>
       <Download className="h-4 w-4 shrink-0" />
     </a>
@@ -1141,7 +1146,7 @@ function MessageBubble({ message }: { message: WhatsappSupervisionMessage }) {
           message.deletedAt && "opacity-60",
         )}
       >
-        <MessageMedia message={message} />
+        {message.deletedAt ? null : <MessageMedia key={message.mediaUrl} message={message} />}
         {message.deletedAt ? (
           <p className="flex items-center gap-1.5 text-xs italic text-muted-foreground">
             <AlertCircle className="h-3.5 w-3.5" /> Mensagem apagada

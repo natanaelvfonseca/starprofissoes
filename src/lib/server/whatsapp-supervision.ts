@@ -823,7 +823,10 @@ export async function listSupervisionMessages(
     content: row.deleted_at ? "Mensagem apagada" : row.content || "[Mensagem]",
     sentAt: row.sent_at,
     mediaUrl:
-      normalizeType(row.message_type) !== "text" && normalizeType(row.message_type) !== "unknown"
+      !row.deleted_at &&
+      row.evolution_message_id &&
+      (normalizeType(row.message_type) !== "text" ||
+        Boolean(row.media_mime_type || row.media_file_name))
         ? `/api/atendimentos/midia?${new URLSearchParams({
             consultantId: String(conversation.consultant_id),
             unitId: String(conversation.unit_id),

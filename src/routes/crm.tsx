@@ -395,18 +395,10 @@ function getAgeHours(value: string) {
 }
 
 function formatLeadCreatedTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Horário indisponível";
-  const time = new Intl.DateTimeFormat("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: "America/Sao_Paulo",
-  }).format(date);
-  return `Criado às ${time}`;
+  return `Criado em ${formatLeadDateTime(value)}`;
 }
 
-function formatLeadUpdatedAt(value: string) {
+function formatLeadDateTime(value: string) {
   const date = new Date(value);
 
   return Number.isNaN(date.getTime())
@@ -1979,9 +1971,10 @@ function LeadPipelineList({
             <TableRow>
               <TableHead>Nome</TableHead>
               <TableHead>Telefone</TableHead>
+              <TableHead>Turma</TableHead>
               <TableHead>Etapa</TableHead>
               <TableHead>Responsável</TableHead>
-              <TableHead>Última atualização</TableHead>
+              <TableHead>Entrada</TableHead>
               <TableHead className="text-right">Ação</TableHead>
             </TableRow>
           </TableHeader>
@@ -2011,6 +2004,9 @@ function LeadPipelineList({
                     </button>
                   </TableCell>
                   <TableCell className="whitespace-nowrap">{lead.phone}</TableCell>
+                  <TableCell className="min-w-48">
+                    {lead.attendanceName ?? "Turma não vinculada"}
+                  </TableCell>
                   <TableCell>
                     <Badge variant="secondary">{column?.name ?? lead.stage}</Badge>
                   </TableCell>
@@ -2018,7 +2014,7 @@ function LeadPipelineList({
                     {lead.createdByName ?? "Fila compartilhada"}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-muted-foreground">
-                    {formatLeadUpdatedAt(lead.updatedAt)}
+                    {formatLeadDateTime(lead.createdAt)}
                   </TableCell>
                   <TableCell className="min-w-44 text-right">
                     {canClaim ? (
