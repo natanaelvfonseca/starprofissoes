@@ -398,6 +398,10 @@ function formatLeadCreatedTime(value: string) {
   return `Criado em ${formatLeadDateTime(value)}`;
 }
 
+function formatKanbanAttendanceName(lead: LeadRecord) {
+  return lead.attendanceName?.replace(/\s*·\s*\d{2}\/\d{2}\/\d{4}$/, "") ?? lead.courseName;
+}
+
 function formatLeadDateTime(value: string) {
   const date = new Date(value);
 
@@ -2104,6 +2108,7 @@ function LeadPipelineCard({
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join("");
+  const attendanceName = formatKanbanAttendanceName(lead);
 
   return (
     <Card
@@ -2185,12 +2190,12 @@ function LeadPipelineCard({
         </div>
 
         <div className="mt-3 flex flex-wrap gap-1.5">
-          {lead.attendanceName || lead.courseName ? (
+          {attendanceName ? (
             <Badge
               variant="secondary"
               className="h-auto max-w-full whitespace-normal border border-[#F4B728]/20 bg-[#F4B728]/15 text-left text-[#8A6100] [overflow-wrap:anywhere]"
             >
-              {lead.attendanceName ?? lead.courseName}
+              {attendanceName}
             </Badge>
           ) : null}
           {canViewAcquisitionChannel && lead.acquisitionChannelName ? (
