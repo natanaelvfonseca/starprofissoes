@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import {
   AlertCircle,
   AlertTriangle,
+  ArrowLeft,
   Bot,
   Check,
   CheckCheck,
@@ -180,6 +181,7 @@ function LeadershipInbox() {
   const [messages, setMessages] = React.useState<Array<WhatsappSupervisionMessage>>([]);
   const [consultantId, setConsultantId] = React.useState("");
   const [conversationId, setConversationId] = React.useState("");
+  const [mobileView, setMobileView] = React.useState<"contacts" | "conversation">("contacts");
   const [search, setSearch] = React.useState("");
   const [reply, setReply] = React.useState("");
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
@@ -702,6 +704,7 @@ function LeadershipInbox() {
                   setSelectedUnitId(value);
                   setConsultantId("");
                   setConversationId("");
+                  setMobileView("contacts");
                 }}
               >
                 <SelectTrigger className="w-56 bg-background">
@@ -749,76 +752,48 @@ function LeadershipInbox() {
         </Card>
       ) : null}
 
-      <div className="overflow-hidden rounded-2xl border bg-card shadow-sm xl:grid xl:h-[calc(100vh-190px)] xl:min-h-[680px] xl:max-h-[920px] xl:grid-cols-[250px_340px_minmax(440px,1fr)]">
-        <section className="flex min-h-0 flex-col border-b xl:border-r xl:border-b-0">
-          <div className="border-b px-4 py-3.5">
-            <div className="flex items-center justify-between gap-2">
+      <div className="h-[calc(100dvh-190px)] min-h-[580px] overflow-hidden rounded-2xl border bg-card shadow-sm lg:grid lg:h-[calc(100vh-190px)] lg:min-h-[680px] lg:max-h-[920px] lg:grid-cols-[minmax(290px,350px)_minmax(0,1fr)]">
+        <section
+          className={cn(
+            "h-full min-h-0 flex-col lg:border-r",
+            mobileView === "contacts" ? "flex" : "hidden lg:flex",
+          )}
+        >
+          <div className="space-y-3 border-b p-3">
+            <div className="flex items-center justify-between gap-2 px-1">
               <div>
-                <h2 className="text-sm font-bold">Equipe</h2>
-                <p className="text-xs text-muted-foreground">{consultants.length} consultores</p>
+                <h2 className="text-sm font-bold">Contatos</h2>
+                <p className="text-[11px] text-muted-foreground">
+                  {consultants.length} consultores disponíveis
+                </p>
               </div>
               <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-sky-500" /> Ao vivo
               </span>
             </div>
-          </div>
-          <ScrollArea className="h-[230px] xl:h-auto xl:flex-1">
-            <div className="space-y-1.5 p-2">
-              {loading ? (
-                <Loader2 className="mx-auto my-10 h-5 w-5 animate-spin text-muted-foreground" />
-              ) : consultants.length ? (
-                consultants.map((item) => {
-                  const active = consultantId === item.id;
-                  const connected = item.status === "connected";
-                  return (
-                    <button
-                      key={`${item.unitId}:${item.id}`}
-                      type="button"
-                      onClick={() => {
-                        setConsultantId(item.id);
-                        setConversationId("");
-                        setSearch("");
-                      }}
-                      className={cn(
-                        "group flex w-full items-center gap-3 rounded-xl border border-transparent p-3 text-left transition-colors hover:bg-muted/70",
-                        active && "border-primary/15 bg-primary/8",
-                      )}
-                    >
-                      <div className="relative">
-                        <Avatar className="h-10 w-10 border bg-background">
-                          <AvatarImage src={item.avatarUrl || undefined} />
-                          <AvatarFallback>{getInitials(item.name)}</AvatarFallback>
-                        </Avatar>
-                        <span
-                          className={cn(
-                            "absolute right-0 bottom-0 h-3 w-3 rounded-full border-2 border-card",
-                            connected ? "bg-sky-500" : "bg-slate-300",
-                          )}
-                        />
-                      </div>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-semibold">{item.name}</span>
-                        <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                          {item.conversationCount} conversas ·{" "}
-                          {connected ? "Conectado" : "Desconectado"}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })
-              ) : (
-                <EmptyPanel
-                  icon={Smartphone}
-                  title="Nenhum consultor conectado"
-                  description="Conecte uma instância Star nesta unidade para iniciar."
+            <Select
+              value={consultantId || undefined}
+              disabled={loading || !consultants.length}
+              onValueChange={(value) => {
+                setConsultantId(value);
+                setConversationId("");
+                setSearch("");
+                setMobileView("contacts");
+              }}
+            >
+              <SelectTrigger className="w-full bg-background" aria-label="Selecionar consultor">
+                <SelectValue
+                  placeholder={loading ? "Carregando consultores..." : "Selecionar consultor"}
                 />
-              )}
-            </div>
-          </ScrollArea>
-        </section>
-
-        <section className="flex min-h-0 flex-col border-b xl:border-r xl:border-b-0">
-          <div className="space-y-2 border-b p-3">
+              </SelectTrigger>
+              <SelectContent>
+                {consultants.map((item) => (
+                  <SelectItem key={`${item.unitId}:${item.id}`} value={item.id}>
+                    {item.name} · {item.conversationCount} conversas
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <div className="relative">
               <Search className="absolute top-2.5 left-3 h-4 w-4 text-muted-foreground" />
               <Input
@@ -838,12 +813,18 @@ function LeadershipInbox() {
                 </button>
               ) : null}
             </div>
-            <div className="flex items-center justify-between px-1 text-[11px] text-muted-foreground">
-              <span>{selectedConsultant?.name || "Selecione um consultor"}</span>
-              <span>{conversations.length} contatos exibidos</span>
+            <div className="flex items-center justify-between gap-2 px-1 text-[11px] text-muted-foreground">
+              <span className="truncate">
+                {!selectedConsultant
+                  ? "Selecione um consultor"
+                  : selectedConsultant.status === "connected"
+                    ? "WhatsApp conectado"
+                    : "WhatsApp desconectado"}
+              </span>
+              <span className="shrink-0">{conversations.length} contatos exibidos</span>
             </div>
           </div>
-          <ScrollArea className="h-[330px] xl:h-auto xl:flex-1">
+          <ScrollArea className="min-h-0 flex-1">
             {loadingConversations ? (
               <Loader2 className="mx-auto mt-16 h-5 w-5 animate-spin text-muted-foreground" />
             ) : conversations.length ? (
@@ -856,6 +837,7 @@ function LeadershipInbox() {
                     onClick={() => {
                       stickToBottomRef.current = true;
                       setConversationId(item.id);
+                      setMobileView("conversation");
                     }}
                   />
                 ))}
@@ -904,7 +886,22 @@ function LeadershipInbox() {
           </ScrollArea>
         </section>
 
-        <section className="flex min-h-[680px] min-w-0 flex-col bg-slate-50/50 xl:min-h-0">
+        <section
+          className={cn(
+            "h-full min-h-0 min-w-0 flex-col bg-slate-50/50",
+            mobileView === "conversation" ? "flex" : "hidden lg:flex",
+          )}
+        >
+          <div className="border-b bg-background px-3 py-2 lg:hidden">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setMobileView("contacts")}
+            >
+              <ArrowLeft className="h-4 w-4" /> Voltar aos contatos
+            </Button>
+          </div>
           {selectedConversation ? (
             <>
               <ConversationHeader
@@ -1227,7 +1224,7 @@ function ConversationItem({
                     : undefined
                 }
                 title={lastMessageTime.full}
-                className="flex shrink-0 flex-col text-right tabular-nums text-muted-foreground"
+                className="flex w-14 shrink-0 flex-col rounded-md bg-muted/60 px-1.5 py-1 text-right tabular-nums text-foreground"
               >
                 <span className="text-[10px] leading-3">{lastMessageTime.date}</span>
                 <span className="text-xs font-semibold leading-4">{lastMessageTime.time}</span>
