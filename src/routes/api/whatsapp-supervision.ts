@@ -31,6 +31,7 @@ export const Route = createFileRoute("/api/whatsapp-supervision")({
         consultantId: url.searchParams.get("consultantId") || "",
         unitId: url.searchParams.get("unitId"), search: url.searchParams.get("search"),
         before: url.searchParams.get("before"), limit: Number(url.searchParams.get("limit")),
+        beforeId: url.searchParams.get("beforeId"),
       });
       if (!conversations) return Response.json({ ok: false, error: "Escopo inválido." }, { status: 403 });
       return Response.json({ ok: true, conversations }, { headers: { "Cache-Control": "no-store" } });

@@ -46,8 +46,15 @@ import type {
   WhatsappSupervisionConversation,
   WhatsappSupervisionMessage,
 } from "@/lib/whatsapp-supervision-types";
-import { formatConversationLastMessageAt } from "@/lib/whatsapp-conversation-time";
+import {
+  formatConversationLastMessageAt,
+  formatConversationLastMessageParts,
+} from "@/lib/whatsapp-conversation-time";
 import { resolveWhatsappMediaPresentation } from "@/lib/whatsapp-conversation-media";
+import {
+  mergeRecentConversations,
+  WHATSAPP_CONVERSATION_PAGE_SIZE,
+} from "@/lib/whatsapp-conversation-pagination";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/conversas-whatsapp")({
@@ -172,6 +179,9 @@ function LeadershipInbox() {
   const [reply, setReply] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [loadingConversations, setLoadingConversations] = React.useState(false);
+  const [loadingMoreConversations, setLoadingMoreConversations] = React.useState(false);
+  const [hasMoreConversations, setHasMoreConversations] = React.useState(false);
+  const [conversationsError, setConversationsError] = React.useState("");
   const [loadingConversation, setLoadingConversation] = React.useState(false);
   const [loadingOlderMessages, setLoadingOlderMessages] = React.useState(false);
   const [hasOlderMessages, setHasOlderMessages] = React.useState(false);
@@ -190,6 +200,8 @@ function LeadershipInbox() {
   const [selectedUnitId, setSelectedUnitId] = React.useState(session?.activeUnit?.id || "");
   const messagesRequestRef = React.useRef(0);
   const conversationsRequestRef = React.useRef(0);
+  const conversationsInFlightScopeRef = React.useRef("");
+  const loadedMoreConversationsRef = React.useRef(false);
   const chatViewportRef = React.useRef<HTMLDivElement>(null);
   const stickToBottomRef = React.useRef(true);
   const previousConversationRef = React.useRef("");
@@ -235,34 +247,72 @@ function LeadershipInbox() {
   );
 
   const loadConversations = React.useCallback(
-    async (options: { silent?: boolean } = {}) => {
+    async (
+      options: {
+        silent?: boolean;
+        cursor?: { id: string; lastMessageAt: string | null };
+      } = {},
+    ) => {
       if (!consultantId) {
         setConversations([]);
+        setHasMoreConversations(false);
         return;
       }
+      const scope = `${consultantId}|${selectedUnitId}|${search.trim()}`;
+      if (conversationsInFlightScopeRef.current === scope) return;
+      conversationsInFlightScopeRef.current = scope;
       const requestId = ++conversationsRequestRef.current;
-      if (!options.silent) setLoadingConversations(true);
-      const params = new URLSearchParams({ view: "conversations", consultantId, limit: "100" });
+      if (options.cursor) setLoadingMoreConversations(true);
+      else if (!options.silent) setLoadingConversations(true);
+      const params = new URLSearchParams({
+        view: "conversations",
+        consultantId,
+        limit: String(WHATSAPP_CONVERSATION_PAGE_SIZE + 1),
+      });
       if (selectedUnitId) params.set("unitId", selectedUnitId);
       if (search.trim()) params.set("search", search.trim());
+      if (options.cursor) {
+        params.set("beforeId", options.cursor.id);
+        if (options.cursor.lastMessageAt) params.set("before", options.cursor.lastMessageAt);
+      }
       try {
         const data = await requestJson<{
           conversations: Array<WhatsappSupervisionConversation>;
         }>(`/api/whatsapp-supervision?${params}`);
         if (requestId !== conversationsRequestRef.current) return;
-        setConversations(data.conversations);
-        setConversationId((current) =>
-          data.conversations.some((item) => item.id === current)
-            ? current
-            : data.conversations[0]?.id || "",
-        );
+        setConversationsError("");
+        const page = data.conversations.slice(0, WHATSAPP_CONVERSATION_PAGE_SIZE);
+        if (options.cursor) {
+          loadedMoreConversationsRef.current = true;
+          setConversations((current) => mergeRecentConversations(current, page));
+        } else {
+          setConversations((current) =>
+            loadedMoreConversationsRef.current ? mergeRecentConversations(current, page) : page,
+          );
+          setConversationId((current) =>
+            current &&
+            (loadedMoreConversationsRef.current || page.some((item) => item.id === current))
+              ? current
+              : page[0]?.id || "",
+          );
+        }
+        if (options.cursor || !loadedMoreConversationsRef.current) {
+          setHasMoreConversations(data.conversations.length > WHATSAPP_CONVERSATION_PAGE_SIZE);
+        }
       } catch (error) {
+        if (requestId === conversationsRequestRef.current) {
+          setConversationsError(
+            error instanceof Error ? error.message : "Falha ao carregar conversas.",
+          );
+        }
         if (!options.silent) {
           toast.error(error instanceof Error ? error.message : "Falha ao carregar conversas.");
         }
       } finally {
-        if (!options.silent && requestId === conversationsRequestRef.current) {
+        if (requestId === conversationsRequestRef.current) {
+          conversationsInFlightScopeRef.current = "";
           setLoadingConversations(false);
+          setLoadingMoreConversations(false);
         }
       }
     },
@@ -363,9 +413,18 @@ function LeadershipInbox() {
   }, [loadConsultants]);
 
   React.useEffect(() => {
+    conversationsRequestRef.current += 1;
+    conversationsInFlightScopeRef.current = "";
+    loadedMoreConversationsRef.current = false;
+    setConversations([]);
+    setConversationId("");
+    setHasMoreConversations(false);
+    setConversationsError("");
+    setLoadingMoreConversations(false);
+    setLoadingConversations(Boolean(consultantId));
     const timer = window.setTimeout(() => void loadConversations(), 250);
     return () => window.clearTimeout(timer);
-  }, [loadConversations]);
+  }, [consultantId, loadConversations]);
 
   React.useEffect(() => {
     stickToBottomRef.current = true;
@@ -609,7 +668,7 @@ function LeadershipInbox() {
             </div>
             <div className="flex items-center justify-between px-1 text-[11px] text-muted-foreground">
               <span>{selectedConsultant?.name || "Selecione um consultor"}</span>
-              <span>{conversations.length} contatos</span>
+              <span>{conversations.length} contatos exibidos</span>
             </div>
           </div>
           <ScrollArea className="h-[330px] xl:h-auto xl:flex-1">
@@ -628,6 +687,36 @@ function LeadershipInbox() {
                     }}
                   />
                 ))}
+                {hasMoreConversations ? (
+                  <div className="p-3 text-center">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={loadingMoreConversations || loadingConversations}
+                      onClick={() => {
+                        const last = conversations.at(-1);
+                        if (last) void loadConversations({ cursor: last });
+                      }}
+                    >
+                      {loadingMoreConversations ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : null}
+                      + carregar mais 10 contatos
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            ) : conversationsError ? (
+              <div className="text-center">
+                <EmptyPanel
+                  icon={AlertCircle}
+                  title="Não foi possível carregar contatos"
+                  description={conversationsError}
+                />
+                <Button type="button" variant="outline" onClick={() => void loadConversations()}>
+                  Tentar novamente
+                </Button>
               </div>
             ) : (
               <EmptyPanel
@@ -818,6 +907,7 @@ function ConversationItem({
   active: boolean;
   onClick: () => void;
 }) {
+  const lastMessageTime = formatConversationLastMessageParts(conversation.lastMessageAt);
   return (
     <button
       type="button"
@@ -830,13 +920,26 @@ function ConversationItem({
       <div className="flex items-start gap-3">
         <ContactAvatar conversation={conversation} className="h-11 w-11 shrink-0" />
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
             <span className="min-w-0 flex-1 truncate text-sm font-semibold">
               {conversation.contactName}
             </span>
-            <span className="shrink-0 text-[10px] text-muted-foreground">
-              {conversation.lastMessageAt ? listTime(conversation.lastMessageAt) : "Sem mensagens"}
-            </span>
+            {lastMessageTime ? (
+              <time
+                dateTime={
+                  conversation.lastMessageAt
+                    ? new Date(conversation.lastMessageAt).toISOString()
+                    : undefined
+                }
+                title={lastMessageTime.full}
+                className="flex shrink-0 flex-col text-right tabular-nums text-muted-foreground"
+              >
+                <span className="text-[10px] leading-3">{lastMessageTime.date}</span>
+                <span className="text-xs font-semibold leading-4">{lastMessageTime.time}</span>
+              </time>
+            ) : (
+              <span className="text-[10px] text-muted-foreground">Sem mensagens</span>
+            )}
           </div>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {conversationPreview(conversation)}

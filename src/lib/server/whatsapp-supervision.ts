@@ -306,17 +306,6 @@ async function refreshSupervisionContactMetadata(
   const instance = instanceResult.rows[0];
   if (!instance || instance.status !== "connected") return;
 
-  const selfNameResult = await queryDb<{ contact_name: string } & QueryResultRow>(
-    `select contact_name from app_whatsapp_messages
-     where instance_id = $1 and direction = 'outbound'
-       and nullif(trim(contact_name), '') is not null
-     group by contact_name having count(distinct remote_jid) > 1`,
-    [instance.id],
-  );
-  const selfNames = new Set(
-    selfNameResult.rows.map((row) => normalizeWhatsappContactName(row.contact_name)),
-  );
-
   await queryDb(
     `insert into app_whatsapp_sync_checkpoints (instance_id)
     values ($1) on conflict (instance_id) do nothing`,
@@ -333,6 +322,16 @@ async function refreshSupervisionContactMetadata(
   if (!claimed.rowCount) return;
 
   try {
+    const selfNameResult = await queryDb<{ contact_name: string } & QueryResultRow>(
+      `select contact_name from app_whatsapp_messages
+       where instance_id = $1 and direction = 'outbound'
+         and nullif(trim(contact_name), '') is not null
+       group by contact_name having count(distinct remote_jid) > 1`,
+      [instance.id],
+    );
+    const selfNames = new Set(
+      selfNameResult.rows.map((row) => normalizeWhatsappContactName(row.contact_name)),
+    );
     const [chatsPayload, contactsPayload] = await Promise.all([
       requestEvolution(`/chat/findChats/${encodeURIComponent(instance.instance_name)}`, {
         method: "POST",
@@ -689,16 +688,35 @@ export async function listSupervisionConversations(
     search?: string | null;
     limit?: number;
     before?: string | null;
+    beforeId?: string | null;
   },
 ) {
   if (!(await canUseWhatsappSupervision(session))) return null;
   const units = allowedUnitIds(session);
   if (params.unitId && !units.includes(params.unitId)) return null;
-  await refreshSupervisionContactMetadata(session, params.consultantId, params.unitId);
   const limit = Math.min(Math.max(Number(params.limit) || 30, 1), 100);
+  const beforeId = /^[0-9a-f-]{36}$/i.test(params.beforeId ?? "") ? params.beforeId : null;
+  const before = params.before && !Number.isNaN(Date.parse(params.before)) ? params.before : null;
+  const cursorClause = beforeId
+    ? before
+      ? `and ((conversation.last_message_at, conversation.id) < ($3::timestamptz, $4::uuid)
+          or conversation.last_message_at is null)`
+      : `and conversation.last_message_at is null and conversation.id < $3::uuid`
+    : before
+      ? `and (conversation.last_message_at < $3::timestamptz or conversation.last_message_at is null)`
+      : "";
+  const cursorValues = beforeId
+    ? before
+      ? [before, beforeId]
+      : [beforeId]
+    : before
+      ? [before]
+      : [];
+  const searchParameter = `$${3 + cursorValues.length}`;
+  const limitParameter = `$${4 + cursorValues.length}`;
   const result = await queryDb<ConversationRow>(
     `
-    select conversation.*,
+    select conversation.*, conversation.last_message_at::text as last_message_at,
       consultant.name consultant_name,
       lead.full_name lead_name, coalesce(course.name, lead.course_name_snapshot) course_name,
       inbound_contact.contact_name inbound_contact_name,
@@ -735,19 +753,24 @@ export async function listSupervisionConversations(
       and conversation.merged_into_id is null
       and conversation.unit_id = any($2::uuid[])
       and left(instance.instance_name, 5) = 'star_'
-      and ($3::text is null or conversation.last_message_at < $3::timestamptz)
-      and ($4::text = '' or concat_ws(' ', lead.full_name, inbound_contact.contact_name,
+      ${cursorClause}
+      and (${searchParameter}::text = '' or concat_ws(' ', lead.full_name, inbound_contact.contact_name,
         conversation.contact_name, conversation.canonical_phone, conversation.primary_remote_jid)
-        ilike '%' || $4 || '%')
-    order by conversation.last_message_at desc nulls last limit $5`,
+        ilike '%' || ${searchParameter} || '%')
+    order by conversation.last_message_at desc nulls last, conversation.id desc limit ${limitParameter}`,
     [
       params.consultantId,
       params.unitId ? [params.unitId] : units,
-      params.before || null,
+      ...cursorValues,
       params.search?.trim() || "",
       limit,
     ],
   );
+  if (!beforeId && !before) {
+    void refreshSupervisionContactMetadata(session, params.consultantId, params.unitId).catch(() =>
+      console.warn("[WhatsApp supervision] Falha ao atualizar metadados de contatos."),
+    );
+  }
   return result.rows.map<WhatsappSupervisionConversation>((row) => ({
     id: row.id,
     consultantId: row.consultant_id,
