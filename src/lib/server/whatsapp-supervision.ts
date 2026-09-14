@@ -717,7 +717,9 @@ export async function listSupervisionConversations(
   const limitParameter = `$${4 + cursorValues.length}`;
   const result = await queryDb<ConversationRow>(
     `
-    select conversation.*, conversation.last_message_at::text as last_message_at,
+    select conversation.*,
+      to_char(conversation.last_message_at at time zone 'UTC',
+        'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as last_message_at,
       consultant.name consultant_name,
       lead.full_name lead_name, coalesce(course.name, lead.course_name_snapshot) course_name,
       inbound_contact.contact_name inbound_contact_name,
