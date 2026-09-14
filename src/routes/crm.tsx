@@ -1974,7 +1974,7 @@ function LeadPipelineList({
           <TableHeader>
             <TableRow>
               <TableHead>Nome</TableHead>
-              <TableHead>Telefone</TableHead>
+              <TableHead>Telefones</TableHead>
               <TableHead>Turma</TableHead>
               <TableHead>Etapa</TableHead>
               <TableHead>Responsável</TableHead>
@@ -2007,7 +2007,20 @@ function LeadPipelineList({
                       {lead.fullName}
                     </button>
                   </TableCell>
-                  <TableCell className="whitespace-nowrap">{lead.phone}</TableCell>
+                  <TableCell className="min-w-44 whitespace-nowrap">
+                    <div className="flex flex-col gap-1">
+                      <span>
+                        <span className="text-xs text-muted-foreground">1 · </span>
+                        {lead.phone}
+                      </span>
+                      {lead.phone2?.trim() ? (
+                        <span>
+                          <span className="text-xs text-muted-foreground">2 · </span>
+                          {lead.phone2}
+                        </span>
+                      ) : null}
+                    </div>
+                  </TableCell>
                   <TableCell className="min-w-48">
                     {lead.attendanceName ?? "Turma não vinculada"}
                   </TableCell>
