@@ -271,7 +271,8 @@ type PipelineFilters = {
   channelId: string;
   ownerId: string;
   city: string;
-  createdDate: string;
+  startDate: string;
+  endDate: string;
 };
 
 function emptyPipelineFilters(): PipelineFilters {
@@ -281,20 +282,26 @@ function emptyPipelineFilters(): PipelineFilters {
     channelId: FILTER_ALL,
     ownerId: FILTER_ALL,
     city: FILTER_ALL,
-    createdDate: "",
+    startDate: "",
+    endDate: "",
   };
 }
 
-function leadMatchesCreatedDate(lead: LeadRecord, createdDate: string) {
-  if (!createdDate) return true;
+function dateFilterValue(date: Date) {
+  const parts = leadDateFilterFormatter.formatToParts(date);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+function leadMatchesCreatedRange(lead: LeadRecord, startDate: string, endDate: string) {
+  if (!startDate && !endDate) return true;
 
   const date = new Date(lead.createdAt);
   if (Number.isNaN(date.getTime())) return false;
 
-  const parts = leadDateFilterFormatter.formatToParts(date);
-  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const leadDate = dateFilterValue(date);
 
-  return `${value.year}-${value.month}-${value.day}` === createdDate;
+  return (!startDate || leadDate >= startDate) && (!endDate || leadDate <= endDate);
 }
 
 function leadMatchesSearch(lead: LeadRecord, search: string) {
@@ -539,13 +546,21 @@ function CRMPipeline() {
   const canViewAcquisitionChannel = session?.user.role !== "CONSULTOR";
   const canViewLeadAge = session?.user.role !== "CONSULTOR";
   const selectedTransferCount = selectedTransferLeadIds.size;
+  const todayFilterValue = dateFilterValue(new Date());
+  const dateViewMode =
+    !filters.startDate && !filters.endDate
+      ? "all"
+      : filters.startDate === todayFilterValue && filters.endDate === todayFilterValue
+        ? "today"
+        : "period";
   const activeFilterCount = [
     filters.attendanceId,
     filters.courseId,
     filters.channelId,
     filters.ownerId,
     filters.city,
-  ].filter((value) => value !== FILTER_ALL).length + (filters.createdDate ? 1 : 0);
+  ].filter((value) => value !== FILTER_ALL).length +
+    (filters.startDate || filters.endDate ? 1 : 0);
   const scopedLeads = loadedLeadsUnitId === activeUnitId ? leads : EMPTY_LEADS;
   const ownerOptions = React.useMemo(() => {
     const map = new Map<string, string>();
@@ -579,7 +594,7 @@ function CRMPipeline() {
           (filters.channelId === FILTER_ALL || lead.acquisitionChannelId === filters.channelId) &&
           (filters.ownerId === FILTER_ALL || lead.createdById === filters.ownerId) &&
           (filters.city === FILTER_ALL || lead.city === filters.city) &&
-          leadMatchesCreatedDate(lead, filters.createdDate),
+          leadMatchesCreatedRange(lead, filters.startDate, filters.endDate),
       ),
     [consultantScope, filters, isConsultant, scopedLeads, search, session?.user.id],
   );
@@ -1525,7 +1540,7 @@ function CRMPipeline() {
       </section>
 
       {filtersOpen ? (
-        <div className="grid gap-4 rounded-[24px] border border-[#16006C]/10 bg-white p-5 shadow-card md:grid-cols-2 xl:grid-cols-6">
+        <div className="grid gap-4 rounded-[24px] border border-[#16006C]/10 bg-white p-5 shadow-card md:grid-cols-2 xl:grid-cols-4">
           <div className="space-y-2">
             <Label>Turma</Label>
             <Select
@@ -1629,13 +1644,54 @@ function CRMPipeline() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="lead-created-date-filter">Data de entrada</Label>
+            <Label>Período</Label>
+            <Select
+              value={dateViewMode}
+              onValueChange={(value) => {
+                if (value === "all") {
+                  setFilters((current) => ({ ...current, startDate: "", endDate: "" }));
+                } else if (value === "today") {
+                  setFilters((current) => ({
+                    ...current,
+                    startDate: todayFilterValue,
+                    endDate: todayFilterValue,
+                  }));
+                }
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os leads</SelectItem>
+                <SelectItem value="today">Somente hoje</SelectItem>
+                <SelectItem value="period">Período personalizado</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="lead-start-date-filter">Data inicial</Label>
             <Input
-              id="lead-created-date-filter"
+              id="lead-start-date-filter"
               type="date"
-              value={filters.createdDate}
+              max={filters.endDate || undefined}
+              value={filters.startDate}
               onChange={(event) =>
-                setFilters((current) => ({ ...current, createdDate: event.target.value }))
+                setFilters((current) => ({ ...current, startDate: event.target.value }))
+              }
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="lead-end-date-filter">Data final</Label>
+            <Input
+              id="lead-end-date-filter"
+              type="date"
+              min={filters.startDate || undefined}
+              value={filters.endDate}
+              onChange={(event) =>
+                setFilters((current) => ({ ...current, endDate: event.target.value }))
               }
             />
           </div>
