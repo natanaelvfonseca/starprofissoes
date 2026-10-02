@@ -164,6 +164,12 @@ const FILTER_ALL = "__all__";
 const PIPELINE_STAGE_PAGE_SIZE = 15;
 const CONSULTANT_PIPELINE_VALUE = 130;
 const EMPTY_LEADS: Array<LeadRecord> = [];
+const leadDateFilterFormatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/Sao_Paulo",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 
 const stages: Array<LeadStage> = [
   "Novo lead",
@@ -265,6 +271,7 @@ type PipelineFilters = {
   channelId: string;
   ownerId: string;
   city: string;
+  createdDate: string;
 };
 
 function emptyPipelineFilters(): PipelineFilters {
@@ -274,7 +281,20 @@ function emptyPipelineFilters(): PipelineFilters {
     channelId: FILTER_ALL,
     ownerId: FILTER_ALL,
     city: FILTER_ALL,
+    createdDate: "",
   };
+}
+
+function leadMatchesCreatedDate(lead: LeadRecord, createdDate: string) {
+  if (!createdDate) return true;
+
+  const date = new Date(lead.createdAt);
+  if (Number.isNaN(date.getTime())) return false;
+
+  const parts = leadDateFilterFormatter.formatToParts(date);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+
+  return `${value.year}-${value.month}-${value.day}` === createdDate;
 }
 
 function leadMatchesSearch(lead: LeadRecord, search: string) {
@@ -525,7 +545,7 @@ function CRMPipeline() {
     filters.channelId,
     filters.ownerId,
     filters.city,
-  ].filter((value) => value !== FILTER_ALL).length;
+  ].filter((value) => value !== FILTER_ALL).length + (filters.createdDate ? 1 : 0);
   const scopedLeads = loadedLeadsUnitId === activeUnitId ? leads : EMPTY_LEADS;
   const ownerOptions = React.useMemo(() => {
     const map = new Map<string, string>();
@@ -558,7 +578,8 @@ function CRMPipeline() {
           (filters.courseId === FILTER_ALL || lead.courseId === filters.courseId) &&
           (filters.channelId === FILTER_ALL || lead.acquisitionChannelId === filters.channelId) &&
           (filters.ownerId === FILTER_ALL || lead.createdById === filters.ownerId) &&
-          (filters.city === FILTER_ALL || lead.city === filters.city),
+          (filters.city === FILTER_ALL || lead.city === filters.city) &&
+          leadMatchesCreatedDate(lead, filters.createdDate),
       ),
     [consultantScope, filters, isConsultant, scopedLeads, search, session?.user.id],
   );
@@ -1504,7 +1525,7 @@ function CRMPipeline() {
       </section>
 
       {filtersOpen ? (
-        <div className="grid gap-4 rounded-[24px] border border-[#16006C]/10 bg-white p-5 shadow-card md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-4 rounded-[24px] border border-[#16006C]/10 bg-white p-5 shadow-card md:grid-cols-2 xl:grid-cols-6">
           <div className="space-y-2">
             <Label>Turma</Label>
             <Select
@@ -1605,6 +1626,18 @@ function CRMPipeline() {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="lead-created-date-filter">Data de entrada</Label>
+            <Input
+              id="lead-created-date-filter"
+              type="date"
+              value={filters.createdDate}
+              onChange={(event) =>
+                setFilters((current) => ({ ...current, createdDate: event.target.value }))
+              }
+            />
           </div>
         </div>
       ) : null}
