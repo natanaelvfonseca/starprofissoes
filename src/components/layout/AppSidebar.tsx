@@ -2,7 +2,6 @@ import * as React from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Building2,
-  Cable,
   ChartNoAxesCombined,
   ClipboardPenLine,
   ContactRound,
@@ -46,7 +45,6 @@ import { useAuth } from "@/lib/auth";
 import {
   canAccessMetaAdsScreen,
   canAccessSystemFeedback,
-  canManageMetaAds,
   canManageUnits,
   canSwitchActiveUnit,
   canViewGrowth,
@@ -175,9 +173,6 @@ export function AppSidebar() {
     }))
     .filter((group) => group.items.length > 0);
   const administrationItems: Array<NavigationItem> = [
-    ...(user && canManageMetaAds(user.role)
-      ? [{ title: "Integrações de Leads", url: "/integracoes-leads", icon: Cable }]
-      : []),
     ...(user && canAccessMetaAdsScreen(user.email)
       ? [{ title: "Meta Ads", url: "/meta-ads", icon: Megaphone }]
       : []),

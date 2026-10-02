@@ -161,6 +161,7 @@ type MetaState = {
 };
 
 type MetaConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
+type FormVisibility = "connected" | "attention" | "all";
 
 type HistoricalImportSummary = {
   formsChecked: number;
@@ -275,6 +276,7 @@ function MetaAdsPage() {
   const [search, setSearch] = React.useState("");
   const [appliedSearch, setAppliedSearch] = React.useState("");
   const [formSearch, setFormSearch] = React.useState("");
+  const [formVisibility, setFormVisibility] = React.useState<FormVisibility>("connected");
   const [metaConnectionStatus, setMetaConnectionStatus] =
     React.useState<MetaConnectionStatus>("disconnected");
   const [formDialogOpen, setFormDialogOpen] = React.useState(false);
@@ -364,7 +366,7 @@ function MetaAdsPage() {
     [stopMetaOAuthPopupMonitor],
   );
 
-  if (session && !canManageMetaConnection) return <Navigate to="/integracoes-leads" />;
+  if (session && !canManageMetaConnection) return <Navigate to="/" />;
 
   async function runAction(
     action: string,
@@ -584,13 +586,31 @@ function MetaAdsPage() {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLocaleLowerCase("pt-BR");
-  const filteredForms = (data?.forms ?? []).filter((form) =>
+  const connectedForms = (data?.forms ?? []).filter(
+    (form) => form.status === "active" && Boolean(form.attendance_id),
+  );
+  const pendingFormIds = new Set((data?.pendingEvents ?? []).map((event) => event.form_id));
+  const attentionForms = (data?.forms ?? []).filter(
+    (form) =>
+      pendingFormIds.has(form.meta_form_id) &&
+      !(form.status === "active" && Boolean(form.attendance_id)),
+  );
+  const visibleForms =
+    formVisibility === "connected"
+      ? connectedForms
+      : formVisibility === "attention"
+        ? attentionForms
+        : (data?.forms ?? []);
+  const filteredForms = visibleForms.filter((form) =>
     form.form_name
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .toLocaleLowerCase("pt-BR")
       .includes(normalizedFormSearch),
   );
+  const latestEvent = [...(data?.processedEvents ?? []), ...(data?.pendingEvents ?? [])].sort(
+    (left, right) => new Date(right.received_at).getTime() - new Date(left.received_at).getTime(),
+  )[0];
   const lastSynchronization = data
     ? mostRecentDate([
         ...data.forms.map((form) => form.synced_at),
@@ -670,18 +690,36 @@ function MetaAdsPage() {
               <div>
                 <CardTitle className="text-base">Formulários de leads</CardTitle>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Cada formulário ativo deve apontar para uma turma ativa.
+                  {connectedForms.length} formulário(s) conectado(s) às turmas. Os demais são o
+                  histórico retornado pelas páginas da Meta.
                 </p>
               </div>
-              <div className="relative w-full sm:w-64">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={formSearch}
-                  onChange={(event) => setFormSearch(event.target.value)}
-                  placeholder="Pesquisar formulário"
-                  aria-label="Pesquisar formulário pelo nome"
-                  className="h-9 bg-background pl-9"
-                />
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                <Select
+                  value={formVisibility}
+                  onValueChange={(value) => setFormVisibility(value as FormVisibility)}
+                >
+                  <SelectTrigger className="h-9 w-full bg-background sm:w-52">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="connected">Conectados ({connectedForms.length})</SelectItem>
+                    <SelectItem value="attention">
+                      Precisam de atenção ({attentionForms.length})
+                    </SelectItem>
+                    <SelectItem value="all">Todos da Meta ({data?.forms.length ?? 0})</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="relative w-full sm:w-64">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={formSearch}
+                    onChange={(event) => setFormSearch(event.target.value)}
+                    placeholder="Pesquisar formulário"
+                    aria-label="Pesquisar formulário pelo nome"
+                    className="h-9 bg-background pl-9"
+                  />
+                </div>
               </div>
             </CardHeader>
             <CardContent className="p-0">
@@ -774,8 +812,12 @@ function MetaAdsPage() {
                       text={
                         formSearch.trim()
                           ? "Nenhum formulário encontrado com esse nome."
-                          : data?.pages.length
-                            ? "Sincronize uma página para trazer os formulários."
+                          : formVisibility === "attention"
+                            ? "Nenhum formulário recebendo leads precisa de configuração."
+                            : formVisibility === "connected"
+                              ? "Nenhum formulário conectado nesta unidade."
+                              : data?.pages.length
+                                ? "Sincronize uma página para trazer os formulários."
                             : "Conecte a Meta para trazer os formulários."
                       }
                     />
@@ -787,6 +829,10 @@ function MetaAdsPage() {
         </TabsContent>
 
         <TabsContent value="events" className="space-y-4">
+          <div className="rounded-xl border border-primary/10 bg-primary/5 px-4 py-3 text-sm">
+            <span className="font-semibold">Último evento recebido:</span>{" "}
+            {latestEvent ? `${dateTime(latestEvent.received_at)} · ${latestEvent.status}` : "—"}
+          </div>
           <form
             className="flex max-w-xl gap-2"
             onSubmit={(event) => {
@@ -806,6 +852,14 @@ function MetaAdsPage() {
             </Button>
           </form>
           <EventTable
+            title="Eventos processados"
+            events={data?.processedEvents ?? []}
+            loading={loading}
+            canManage={false}
+            workingKey={workingKey}
+            onReprocess={() => undefined}
+          />
+          <EventTable
             title="Pendentes de configuração"
             events={data?.pendingEvents ?? []}
             loading={loading}
@@ -819,14 +873,6 @@ function MetaAdsPage() {
                 `event-${event.id}`,
               )
             }
-          />
-          <EventTable
-            title="Eventos processados"
-            events={data?.processedEvents ?? []}
-            loading={loading}
-            canManage={false}
-            workingKey={workingKey}
-            onReprocess={() => undefined}
           />
         </TabsContent>
       </Tabs>
