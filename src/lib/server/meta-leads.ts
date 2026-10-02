@@ -289,7 +289,7 @@ export async function ensureMetaLeadSchema() {
       app_id text,
       app_secret text,
       verify_token text,
-      graph_api_version text not null default 'v23.0',
+      graph_api_version text not null default 'v26.0',
       status text not null default 'inactive' check (status in ('active', 'inactive')),
       callback_url text,
       last_communication_at timestamptz,
@@ -600,7 +600,7 @@ export async function ensureMetaIntegration(createdBy?: string) {
         nullif($1, ''),
         nullif($2, ''),
         nullif($3, ''),
-        coalesce(nullif($4, ''), 'v23.0'),
+        coalesce(nullif($4, ''), 'v26.0'),
         'inactive',
         nullif($5, ''),
         $6
@@ -612,7 +612,7 @@ export async function ensureMetaIntegration(createdBy?: string) {
       process.env.META_APP_ID ?? "",
       process.env.META_APP_SECRET ?? "",
       process.env.META_VERIFY_TOKEN ?? "",
-      process.env.META_GRAPH_API_VERSION ?? "v23.0",
+      process.env.META_GRAPH_API_VERSION ?? "v26.0",
       process.env.META_CALLBACK_URL ?? "",
       createdBy ?? null,
     ],
@@ -654,7 +654,7 @@ function withMetaEnvironment(integration: MetaIntegrationRow) {
     app_secret: integration.app_secret || process.env.META_APP_SECRET || null,
     verify_token: integration.verify_token || process.env.META_VERIFY_TOKEN || null,
     graph_api_version:
-      integration.graph_api_version || process.env.META_GRAPH_API_VERSION || "v23.0",
+      integration.graph_api_version || process.env.META_GRAPH_API_VERSION || "v26.0",
     callback_url: integration.callback_url || process.env.META_CALLBACK_URL || null,
   };
 }
@@ -1215,7 +1215,7 @@ export async function fetchMetaLeadDetails(
   token: string,
   integration: MetaIntegrationRow,
 ) {
-  const version = integration.graph_api_version || "v23.0";
+  const version = integration.graph_api_version || "v26.0";
   const params = new URLSearchParams({
     fields:
       "id,created_time,field_data,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,form_id",
@@ -1567,7 +1567,7 @@ export async function upsertMetaIntegration(input: Record<string, unknown>, user
       stringOrNull(input.appId) ?? "",
       stringOrNull(input.appSecret) ?? "",
       stringOrNull(input.verifyToken) ?? "",
-      stringOrNull(input.graphApiVersion) ?? "v23.0",
+      stringOrNull(input.graphApiVersion) ?? "v26.0",
       input.status,
       stringOrNull(input.callbackUrl) ?? "",
     ],
@@ -1890,7 +1890,7 @@ export async function syncFormsForPage(pageDbId: string) {
     throw new Error("Token da página ausente.");
   }
 
-  const version = integration.graph_api_version || "v23.0";
+  const version = integration.graph_api_version || "v26.0";
   try {
     const params = new URLSearchParams({
       fields: "id,name,status,created_time",
@@ -1967,7 +1967,7 @@ export async function validateMetaPageToken(pageDbId: string) {
   }
 
   const token = decryptPageToken(page.page_access_token_encrypted);
-  const version = integration.graph_api_version || "v23.0";
+  const version = integration.graph_api_version || "v26.0";
   let valid = false;
   let errorMessage: string | null = null;
 
@@ -2014,7 +2014,7 @@ export async function subscribeMetaPage(pageDbId: string) {
   }
 
   const token = decryptPageToken(page.page_access_token_encrypted);
-  const version = integration.graph_api_version || "v23.0";
+  const version = integration.graph_api_version || "v26.0";
   const appId = integration.app_id;
 
   if (!token) throw new Error("Token da Página ausente.");
@@ -2128,7 +2128,7 @@ export async function disconnectMetaPage(pageDbId: string, expectedUnitId: strin
 
     const { alreadyDisconnected } = await unsubscribeMetaPage(
       page,
-      integration.graph_api_version || "v23.0",
+      integration.graph_api_version || "v26.0",
     );
 
     await client.query(
@@ -2289,7 +2289,7 @@ export async function resetMetaConnection(expectedUnitId: string) {
 
   for (const page of pagesResult.rows) {
     try {
-      await unsubscribeMetaPage(page, integration.graph_api_version || "v23.0");
+      await unsubscribeMetaPage(page, integration.graph_api_version || "v26.0");
     } catch (error) {
       unsubscribeFailures.push({ pageId: page.page_id, name: page.page_name });
       console.error("[Meta Ads] Reset continuará somente com a limpeza local", {
@@ -3398,7 +3398,7 @@ export async function importHistoricalMetaLeads(
         limit: "100",
       });
       const history = await fetchAllMetaGraphPages<MetaLeadPayload>(
-        `https://graph.facebook.com/${integration.graph_api_version || "v23.0"}/${encodeURIComponent(form.meta_form_id)}/leads?${params}`,
+        `https://graph.facebook.com/${integration.graph_api_version || "v26.0"}/${encodeURIComponent(form.meta_form_id)}/leads?${params}`,
         { token, appSecret: integration.app_secret },
       );
       summary.leadsFound += history.items.length;

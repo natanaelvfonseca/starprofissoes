@@ -3,7 +3,7 @@ create table if not exists app_meta_integrations (
   app_id text,
   app_secret text,
   verify_token text,
-  graph_api_version text not null default 'v23.0',
+  graph_api_version text not null default 'v26.0',
   status text not null default 'inactive' check (status in ('active', 'inactive')),
   callback_url text,
   last_communication_at timestamptz,
