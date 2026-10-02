@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { handleMakeMetaLeadRequest } from "@/lib/server/make-meta-bridge";
+import { archiveMakeMetaLead } from "@/lib/server/make-meta-archive";
+import { handleMakeMetaLeadRequest, makeMetaBridgeMode } from "@/lib/server/make-meta-bridge";
 import { receiveMakeMetaLead } from "@/lib/server/meta-leads";
 
 export const Route = createFileRoute("/api/webhooks/make/meta-lead")({
@@ -15,7 +16,11 @@ export const Route = createFileRoute("/api/webhooks/make/meta-lead")({
           );
         }
 
-        const result = await handleMakeMetaLeadRequest(request, secret, receiveMakeMetaLead);
+        const processor =
+          makeMetaBridgeMode(process.env.MAKE_META_BRIDGE_MODE) === "archive"
+            ? archiveMakeMetaLead
+            : receiveMakeMetaLead;
+        const result = await handleMakeMetaLeadRequest(request, secret, processor);
         return Response.json(result.body, { status: result.status });
       },
     },

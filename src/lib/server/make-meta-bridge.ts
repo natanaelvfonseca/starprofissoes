@@ -27,6 +27,10 @@ type MakeMetaProcessorResult = {
 
 type MakeMetaProcessor = (payload: MakeMetaLeadPayload) => Promise<MakeMetaProcessorResult>;
 
+export function makeMetaBridgeMode(value: string | undefined) {
+  return value?.trim().toLowerCase() === "archive" ? ("archive" as const) : ("process" as const);
+}
+
 function stringValue(value: unknown, required = false) {
   if (typeof value !== "string") return required ? null : "";
   const normalized = value.trim();

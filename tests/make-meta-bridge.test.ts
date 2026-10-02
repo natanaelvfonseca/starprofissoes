@@ -2,9 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   handleMakeMetaLeadRequest,
+  makeMetaBridgeMode,
   parseMakeMetaLeadPayload,
   verifyMakeMetaBearer,
 } from "../src/lib/server/make-meta-bridge.ts";
+
+test("modo archive precisa ser explícito e o padrão continua processando", () => {
+  assert.equal(makeMetaBridgeMode("archive"), "archive");
+  assert.equal(makeMetaBridgeMode(" ARCHIVE "), "archive");
+  assert.equal(makeMetaBridgeMode(undefined), "process");
+  assert.equal(makeMetaBridgeMode("process"), "process");
+});
 
 const secret = "make-bridge-test-secret";
 const payload = {
