@@ -1,12 +1,44 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  applyLeadOwnerAssignment,
   canConsultantAssumePipelineLead,
   canConsultantMovePipelineLead,
   canConsultantOpenPipelineLead,
   isSharedLeadQueueEntry,
   leadMatchesConsultantScope,
 } from "../src/lib/commercial-types.ts";
+
+test("atribuição atualiza imediatamente o nome do responsável no card", () => {
+  const lead = {
+    createdById: null,
+    createdByName: null,
+    sharedQueue: true,
+  };
+
+  assert.deepEqual(
+    applyLeadOwnerAssignment(lead, {
+      createdById: "consultor-1",
+      createdByName: "Maria Consultora",
+      sharedQueue: false,
+    }),
+    {
+      createdById: "consultor-1",
+      createdByName: "Maria Consultora",
+      sharedQueue: false,
+    },
+  );
+});
+
+test("mudança de responsável não mantém o nome anterior no card", () => {
+  const lead = {
+    createdById: "consultor-1",
+    createdByName: "Maria Consultora",
+    sharedQueue: false,
+  };
+
+  assert.equal(applyLeadOwnerAssignment(lead, { createdById: "consultor-2" }).createdByName, null);
+});
 
 test("lead novo de uma turma pode permanecer na fila compartilhada", () => {
   assert.equal(

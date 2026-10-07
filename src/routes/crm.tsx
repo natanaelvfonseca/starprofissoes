@@ -32,6 +32,7 @@ import type {
   PipelineColumn,
 } from "@/lib/commercial-types";
 import {
+  applyLeadOwnerAssignment,
   canConsultantMovePipelineLead,
   canConsultantOpenPipelineLead,
   canConsultantAssumePipelineLead,
@@ -553,13 +554,14 @@ function CRMPipeline() {
       : filters.startDate === todayFilterValue && filters.endDate === todayFilterValue
         ? "today"
         : "period";
-  const activeFilterCount = [
-    filters.attendanceId,
-    filters.courseId,
-    filters.channelId,
-    filters.ownerId,
-    filters.city,
-  ].filter((value) => value !== FILTER_ALL).length +
+  const activeFilterCount =
+    [
+      filters.attendanceId,
+      filters.courseId,
+      filters.channelId,
+      filters.ownerId,
+      filters.city,
+    ].filter((value) => value !== FILTER_ALL).length +
     (filters.startDate || filters.endDate ? 1 : 0);
   const scopedLeads = loadedLeadsUnitId === activeUnitId ? leads : EMPTY_LEADS;
   const ownerOptions = React.useMemo(() => {
@@ -1097,12 +1099,14 @@ function CRMPipeline() {
     );
 
     try {
-      await readJson<{
+      const moved = await readJson<{
         ok: true;
         stage: LeadStage;
         pipelineColumnId: string;
         claimed?: boolean;
-        sharedQueue?: boolean;
+        createdById: string | null;
+        createdByName?: string;
+        sharedQueue: boolean;
       }>(
         await fetch(`/api/crm/leads/${lead.id}`, {
           method: "PATCH",
@@ -1113,6 +1117,21 @@ function CRMPipeline() {
           },
           body: JSON.stringify({ pipelineColumnId: column.id }),
         }),
+      );
+
+      setLeads((current) =>
+        current.map((item) =>
+          item.id === lead.id
+            ? applyLeadOwnerAssignment(
+                {
+                  ...item,
+                  pipelineColumnId: moved.pipelineColumnId,
+                  stage: moved.stage,
+                },
+                moved,
+              )
+            : item,
+        ),
       );
 
       broadcastChannelRef.current?.postMessage({
@@ -1150,7 +1169,11 @@ function CRMPipeline() {
     setSyncingLeadId(pendingAssumeLead.id);
 
     try {
-      await readJson<{ ok: true; createdById: string; createdByName: string }>(
+      const assignment = await readJson<{
+        ok: true;
+        createdById: string;
+        createdByName: string;
+      }>(
         await fetch(`/api/crm/leads/${pendingAssumeLead.id}/assume`, {
           method: "POST",
           credentials: "same-origin",
@@ -1163,6 +1186,14 @@ function CRMPipeline() {
             expectedOwnerId: pendingAssumeLead.createdById,
           }),
         }),
+      );
+
+      setLeads((current) =>
+        current.map((item) =>
+          item.id === pendingAssumeLead.id
+            ? applyLeadOwnerAssignment(item, { ...assignment, sharedQueue: false })
+            : item,
+        ),
       );
 
       setPendingAssumeLead(null);
@@ -2286,7 +2317,10 @@ function LeadPipelineCard({
           {canViewOwner && lead.createdByName ? (
             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
               <UserCheck className="h-3.5 w-3.5 shrink-0 text-[#224C99]" />
-              <span className="truncate">{lead.createdByName}</span>
+              <span className="truncate">
+                Responsável:{" "}
+                <strong className="font-bold text-[#07154C]">{lead.createdByName}</strong>
+              </span>
             </div>
           ) : null}
         </div>

@@ -74,6 +74,36 @@ export type LeadRecord = {
 
 export type ConsultantPipelineScope = "mine" | "all";
 
+type LeadOwnerSnapshot = Pick<LeadRecord, "createdById" | "createdByName" | "sharedQueue">;
+
+export function applyLeadOwnerAssignment<T extends LeadOwnerSnapshot>(
+  lead: T,
+  assignment: {
+    createdById?: string | null;
+    createdByName?: string | null;
+    sharedQueue?: boolean;
+  },
+): T {
+  const createdById =
+    assignment.createdById === undefined ? lead.createdById : assignment.createdById;
+  const ownerChanged = createdById !== lead.createdById;
+  const createdByName =
+    createdById === null
+      ? null
+      : assignment.createdByName !== undefined
+        ? assignment.createdByName
+        : ownerChanged
+          ? null
+          : lead.createdByName;
+
+  return {
+    ...lead,
+    createdById,
+    createdByName,
+    sharedQueue: assignment.sharedQueue ?? lead.sharedQueue,
+  };
+}
+
 export function isSharedLeadQueueEntry(
   lead: Pick<LeadRecord, "sharedQueue" | "stage" | "attendanceId">,
 ) {
