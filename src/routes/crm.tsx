@@ -41,6 +41,7 @@ import {
 } from "@/lib/commercial-types";
 import type { ConsultantPipelineScope } from "@/lib/commercial-types";
 import type { CrmLeadTask } from "@/lib/crm-task-types";
+import { formatLeadCardCreatedAt } from "@/lib/lead-time";
 import { useAuth } from "@/lib/auth";
 import { canAccessLeadTransferCenter, canOperateCrm, canTransferLeads } from "@/lib/auth-types";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -422,10 +423,6 @@ function getAgeHours(value: string) {
   return Math.max(0, Math.floor((Date.now() - createdAt) / 3_600_000));
 }
 
-function formatLeadCreatedTime(value: string) {
-  return `Criado em ${formatLeadDateTime(value)}`;
-}
-
 function formatKanbanAttendanceName(lead: LeadRecord) {
   return lead.attendanceName?.replace(/\s*·\s*\d{2}\/\d{2}\/\d{4}$/, "") ?? lead.courseName;
 }
@@ -545,7 +542,6 @@ function CRMPipeline() {
   const isConsultant = session?.user.role === "CONSULTOR";
   const canRemoveLeads = canTransferUnitLeads;
   const canViewAcquisitionChannel = session?.user.role !== "CONSULTOR";
-  const canViewLeadAge = session?.user.role !== "CONSULTOR";
   const selectedTransferCount = selectedTransferLeadIds.size;
   const todayFilterValue = dateFilterValue(new Date());
   const dateViewMode =
@@ -1827,7 +1823,6 @@ function CRMPipeline() {
                               syncing={syncingLeadId === lead.id}
                               displayValue={pipelineDisplayValue(lead, session?.user.role)}
                               canViewAcquisitionChannel={canViewAcquisitionChannel}
-                              canViewLeadAge={canViewLeadAge}
                               canViewOwner
                               canRemove={canRemoveLeads}
                               canOpen={
@@ -2178,7 +2173,6 @@ function LeadPipelineCard({
   syncing,
   displayValue,
   canViewAcquisitionChannel,
-  canViewLeadAge,
   canViewOwner,
   canRemove,
   canOpen,
@@ -2197,7 +2191,6 @@ function LeadPipelineCard({
   syncing: boolean;
   displayValue: number | null;
   canViewAcquisitionChannel: boolean;
-  canViewLeadAge: boolean;
   canViewOwner: boolean;
   canRemove: boolean;
   canOpen: boolean;
@@ -2361,23 +2354,17 @@ function LeadPipelineCard({
         ) : null}
       </div>
 
-      {displayValue !== null || canViewLeadAge ? (
-        <div className="flex items-center justify-between gap-3 border-t border-[#16006C]/8 bg-[#FBFBFD] px-3.5 py-2.5">
-          {canViewLeadAge ? (
-            <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold text-[#224C99]">
-              <Clock3 className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">{formatLeadCreatedTime(lead.createdAt)}</span>
-            </div>
-          ) : (
-            <span />
-          )}
-          {displayValue !== null ? (
-            <div className="shrink-0 text-xs font-black text-[#16006C]">
-              {currencyFormatter.format(displayValue)}
-            </div>
-          ) : null}
+      <div className="flex items-center justify-between gap-3 border-t border-[#16006C]/8 bg-[#FBFBFD] px-3.5 py-2.5">
+        <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold text-[#224C99]">
+          <Clock3 className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{formatLeadCardCreatedAt(lead.createdAt)}</span>
         </div>
-      ) : null}
+        {displayValue !== null ? (
+          <div className="shrink-0 text-xs font-black text-[#16006C]">
+            {currencyFormatter.format(displayValue)}
+          </div>
+        ) : null}
+      </div>
     </Card>
   );
 }
