@@ -86,16 +86,55 @@ test("lead assumido fica editável somente para o responsável", () => {
 
 test("visão Meus leads mostra somente o responsável atual", () => {
   assert.equal(
-    leadMatchesConsultantScope({ createdById: "consultor-1" }, "consultor-1", "mine"),
+    leadMatchesConsultantScope(
+      {
+        createdById: "consultor-1",
+        sharedQueue: false,
+        stage: "Em contato",
+        attendanceId: "turma-1",
+      },
+      "consultor-1",
+      "mine",
+    ),
     true,
   );
   assert.equal(
-    leadMatchesConsultantScope({ createdById: "consultor-2" }, "consultor-1", "mine"),
+    leadMatchesConsultantScope(
+      {
+        createdById: "consultor-2",
+        sharedQueue: false,
+        stage: "Em contato",
+        attendanceId: "turma-1",
+      },
+      "consultor-1",
+      "mine",
+    ),
     false,
   );
-  assert.equal(leadMatchesConsultantScope({ createdById: null }, "consultor-1", "mine"), false);
   assert.equal(
-    leadMatchesConsultantScope({ createdById: "consultor-2" }, "consultor-1", "all"),
+    leadMatchesConsultantScope(
+      {
+        createdById: null,
+        sharedQueue: true,
+        stage: "Novo lead",
+        attendanceId: "turma-1",
+      },
+      "consultor-1",
+      "mine",
+    ),
+    true,
+  );
+  assert.equal(
+    leadMatchesConsultantScope(
+      {
+        createdById: "consultor-2",
+        sharedQueue: false,
+        stage: "Em contato",
+        attendanceId: "turma-1",
+      },
+      "consultor-1",
+      "all",
+    ),
     true,
   );
 });

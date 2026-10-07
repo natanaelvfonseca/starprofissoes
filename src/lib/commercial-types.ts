@@ -125,11 +125,11 @@ export function canConsultantMovePipelineLead(
 }
 
 export function leadMatchesConsultantScope(
-  lead: Pick<LeadRecord, "createdById">,
+  lead: Pick<LeadRecord, "createdById" | "sharedQueue" | "stage" | "attendanceId">,
   userId: string,
   scope: ConsultantPipelineScope,
 ) {
-  return scope === "all" || lead.createdById === userId;
+  return scope === "all" || isSharedLeadQueueEntry(lead) || lead.createdById === userId;
 }
 
 export function canConsultantAssumePipelineLead(

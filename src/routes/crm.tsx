@@ -1405,12 +1405,14 @@ function CRMPipeline() {
             <div className="grid grid-cols-3 gap-2 sm:min-w-[430px]">
               <div className="rounded-2xl border border-white/10 bg-white/[0.07] px-3 py-3 backdrop-blur-sm">
                 <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/50">
-                  Na visão
+                  {isConsultant ? "Minha visão" : "Visão geral"}
                 </div>
                 <div className="mt-1 text-xl font-black text-white">
                   {loadingLeads ? "—" : filteredLeads.length}
                 </div>
-                <div className="text-[10px] text-white/45">oportunidades</div>
+                <div className="text-[10px] text-white/45">
+                  {isConsultant ? "fila + carteira" : "oportunidades da unidade"}
+                </div>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/[0.07] px-3 py-3 backdrop-blur-sm">
                 <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/50">
@@ -1443,33 +1445,9 @@ function CRMPipeline() {
             </div>
             <div className="flex flex-wrap gap-2">
               {isConsultant ? (
-                <div className="flex rounded-xl border border-white/20 bg-white/10 p-1">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setConsultantScope("mine")}
-                    className={`h-9 px-3 text-xs font-bold ${
-                      consultantScope === "mine"
-                        ? "bg-white text-[#16006C] hover:bg-white"
-                        : "text-white hover:bg-white/15 hover:text-white"
-                    }`}
-                  >
-                    Meus leads
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setConsultantScope("all")}
-                    className={`h-9 px-3 text-xs font-bold ${
-                      consultantScope === "all"
-                        ? "bg-white text-[#16006C] hover:bg-white"
-                        : "text-white hover:bg-white/15 hover:text-white"
-                    }`}
-                  >
-                    Todos os atendimentos
-                  </Button>
+                <div className="flex h-11 items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 text-xs font-bold text-white">
+                  <UsersRound className="h-4 w-4 text-[#F4B728]" />
+                  Fila disponível + minha carteira
                 </div>
               ) : null}
               <TooltipProvider delayDuration={150}>

@@ -463,6 +463,12 @@ export const Route = createFileRoute("/api/crm/leads")({
               and (
                 $4::boolean
                 or l.created_by = $2
+                or (
+                  $3 = 'pipeline'
+                  and l.shared_queue = true
+                  and l.stage = 'Novo lead'
+                  and l.attendance_id is not null
+                )
               )
               and (
                 ($3 = 'students' and l.stage = 'Matriculado')
