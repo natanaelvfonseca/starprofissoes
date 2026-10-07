@@ -2119,117 +2119,110 @@ function LeadPipelineList({
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-[#16006C]/10 bg-white">
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nome</TableHead>
-              <TableHead>Telefones</TableHead>
-              <TableHead>E-mail</TableHead>
-              <TableHead>Curso</TableHead>
-              <TableHead>Status do atendimento</TableHead>
-              <TableHead>Responsável</TableHead>
-              <TableHead>Entrada</TableHead>
-              <TableHead className="text-right">Ação</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {leads.map((lead) => {
-              const column = resolveLeadPipelineColumn(lead, columns);
-              const canOpen =
-                canOperate && (!isConsultant || canConsultantOpenPipelineLead(lead, consultantId));
-              const canClaim =
-                isConsultant && isSharedLeadQueueEntry(lead) && Boolean(firstClaimColumn);
-              const canAssume =
-                isConsultant &&
-                consultantScope === "all" &&
-                canConsultantAssumePipelineLead(lead, consultantId);
-              const syncing = syncingLeadId === lead.id;
+    <div className="divide-y divide-[#16006C]/10 overflow-hidden rounded-2xl border border-[#16006C]/10 bg-white">
+      {leads.map((lead) => {
+        const column = resolveLeadPipelineColumn(lead, columns);
+        const canOpen =
+          canOperate && (!isConsultant || canConsultantOpenPipelineLead(lead, consultantId));
+        const canClaim = isConsultant && isSharedLeadQueueEntry(lead) && Boolean(firstClaimColumn);
+        const canAssume =
+          isConsultant &&
+          consultantScope === "all" &&
+          canConsultantAssumePipelineLead(lead, consultantId);
+        const syncing = syncingLeadId === lead.id;
 
-              return (
-                <TableRow key={lead.id}>
-                  <TableCell className="min-w-52 font-bold text-[#07154C]">
-                    <button
-                      type="button"
-                      disabled={!canOpen}
-                      onClick={canOpen ? () => onOpen(lead) : undefined}
-                      className={canOpen ? "text-left hover:text-[#224C99]" : "text-left"}
-                    >
-                      {lead.fullName}
-                    </button>
-                  </TableCell>
-                  <TableCell className="min-w-44 whitespace-nowrap">
-                    <div className="flex flex-col gap-1">
-                      <span>
-                        <span className="text-xs text-muted-foreground">1 · </span>
-                        {lead.phone}
-                      </span>
-                      {lead.phone2?.trim() ? (
-                        <span>
-                          <span className="text-xs text-muted-foreground">2 · </span>
-                          {lead.phone2}
-                        </span>
-                      ) : null}
-                    </div>
-                  </TableCell>
-                  <TableCell className="min-w-52 text-muted-foreground">
-                    {lead.email ?? "E-mail não informado"}
-                  </TableCell>
-                  <TableCell className="min-w-56">
-                    <div className="font-semibold text-[#07154C]">
-                      {lead.courseName ?? "Curso não informado"}
-                    </div>
-                    {lead.attendanceName ? (
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {lead.attendanceName}
-                      </div>
-                    ) : null}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{column?.name ?? lead.stage}</Badge>
-                  </TableCell>
-                  <TableCell className="min-w-44">
-                    {lead.createdByName ?? "Fila compartilhada"}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">
-                    {formatLeadDateTime(lead.createdAt)}
-                  </TableCell>
-                  <TableCell className="min-w-44 text-right">
-                    {canClaim ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={syncing}
-                        onClick={() => onClaim(lead)}
-                      >
-                        {syncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Pegar atendimento
-                      </Button>
-                    ) : canAssume ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={syncing}
-                        onClick={() => onAssume(lead)}
-                      >
-                        Assumir atendimento
-                      </Button>
-                    ) : canOpen ? (
-                      <Button type="button" size="sm" variant="ghost" onClick={() => onOpen(lead)}>
-                        Abrir
-                      </Button>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">Somente leitura</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </div>
+        return (
+          <article key={lead.id} className="p-4 transition-colors hover:bg-primary/[0.025]">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={!canOpen}
+                  onClick={canOpen ? () => onOpen(lead) : undefined}
+                  className={`min-w-0 text-left text-base font-black text-[#07154C] ${
+                    canOpen ? "hover:text-[#224C99]" : "cursor-default"
+                  }`}
+                >
+                  {lead.fullName}
+                </button>
+                <Badge variant="secondary">{column?.name ?? lead.stage}</Badge>
+              </div>
+
+              <div className="shrink-0">
+                {canClaim ? (
+                  <Button type="button" size="sm" disabled={syncing} onClick={() => onClaim(lead)}>
+                    {syncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Pegar atendimento
+                  </Button>
+                ) : canAssume ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={syncing}
+                    onClick={() => onAssume(lead)}
+                  >
+                    Assumir atendimento
+                  </Button>
+                ) : canOpen ? (
+                  <Button type="button" size="sm" variant="ghost" onClick={() => onOpen(lead)}>
+                    Abrir
+                  </Button>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Somente leitura</span>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
+              <div className="min-w-0">
+                <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                  Telefones
+                </div>
+                <div className="mt-1 font-medium text-[#07154C]">{lead.phone}</div>
+                {lead.phone2?.trim() ? (
+                  <div className="text-xs text-muted-foreground">{lead.phone2}</div>
+                ) : null}
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                  E-mail
+                </div>
+                <div className="mt-1 break-all text-[#07154C]">{lead.email ?? "Não informado"}</div>
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                  Curso
+                </div>
+                <div className="mt-1 font-semibold text-[#07154C]">
+                  {lead.courseName ?? "Não informado"}
+                </div>
+                {lead.attendanceName ? (
+                  <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                    {lead.attendanceName}
+                  </div>
+                ) : null}
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                  Responsável
+                </div>
+                <div className="mt-1 text-[#07154C]">
+                  {lead.createdByName ?? "Fila compartilhada"}
+                </div>
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                  Entrada
+                </div>
+                <div className="mt-1 whitespace-nowrap text-[#07154C]">
+                  {formatLeadDateTime(lead.createdAt)}
+                </div>
+              </div>
+            </div>
+          </article>
+        );
+      })}
     </div>
   );
 }
