@@ -480,6 +480,9 @@ function CRMPipeline() {
   const [search, setSearch] = React.useState("");
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [filters, setFilters] = React.useState<PipelineFilters>(() => emptyPipelineFilters());
+  const [draftFilters, setDraftFilters] = React.useState<PipelineFilters>(() =>
+    emptyPipelineFilters(),
+  );
   const [consultantScope, setConsultantScope] = React.useState<ConsultantPipelineScope>("mine");
   const [pipelineViewMode, setPipelineViewMode] = React.useState<PipelineViewMode>("kanban");
   const [stageVisibleCounts, setStageVisibleCounts] = React.useState<Record<string, number>>({});
@@ -526,12 +529,12 @@ function CRMPipeline() {
   const canViewAcquisitionChannel = session?.user.role !== "CONSULTOR";
   const selectedTransferCount = selectedTransferLeadIds.size;
   const todayFilterValue = dateFilterValue(new Date());
-  const dateViewMode =
-    !filters.startDate && !filters.endDate
+  const draftDatePreset =
+    !draftFilters.startDate && !draftFilters.endDate
       ? "all"
-      : filters.startDate === todayFilterValue && filters.endDate === todayFilterValue
+      : draftFilters.startDate === todayFilterValue && draftFilters.endDate === todayFilterValue
         ? "today"
-        : "period";
+        : null;
   const activeFilterCount =
     [
       filters.attendanceId,
@@ -594,6 +597,7 @@ function CRMPipeline() {
   React.useEffect(() => {
     setSearch("");
     setFilters(emptyPipelineFilters());
+    setDraftFilters(emptyPipelineFilters());
     setConsultantScope("mine");
     setCourses([]);
     setAttendances([]);
@@ -1349,6 +1353,30 @@ function CRMPipeline() {
   function clearPipelineFilters() {
     setSearch("");
     setFilters(emptyPipelineFilters());
+    setDraftFilters(emptyPipelineFilters());
+  }
+
+  function applyPipelineFilters() {
+    if (
+      draftFilters.startDate &&
+      draftFilters.endDate &&
+      draftFilters.startDate > draftFilters.endDate
+    ) {
+      toast.error("A data inicial não pode ser posterior à data final.");
+      return;
+    }
+
+    setFilters(draftFilters);
+
+    if (
+      isConsultant &&
+      draftFilters.ownerId !== FILTER_ALL &&
+      draftFilters.ownerId !== session?.user.id
+    ) {
+      setConsultantScope("all");
+    }
+
+    setFiltersOpen(false);
   }
 
   function loadMoreStageLeads(stage: string, totalLeads: number) {
@@ -1383,13 +1411,19 @@ function CRMPipeline() {
             <div className="grid grid-cols-3 gap-2 sm:min-w-[430px]">
               <div className="rounded-2xl border border-white/10 bg-white/[0.07] px-3 py-3 backdrop-blur-sm">
                 <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/50">
-                  {isConsultant ? "Minha visão" : "Visão geral"}
+                  {isConsultant
+                    ? consultantScope === "mine"
+                      ? "Minha carteira"
+                      : "Todos os atendimentos"
+                    : "Visão geral"}
                 </div>
                 <div className="mt-1 text-xl font-black text-white">
                   {loadingLeads ? "—" : filteredLeads.length}
                 </div>
                 <div className="text-[10px] text-white/45">
-                  {isConsultant ? "fila + carteira" : "oportunidades da unidade"}
+                  {isConsultant && consultantScope === "mine"
+                    ? "fila + carteira"
+                    : "oportunidades da unidade"}
                 </div>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/[0.07] px-3 py-3 backdrop-blur-sm">
@@ -1423,9 +1457,38 @@ function CRMPipeline() {
             </div>
             <div className="flex flex-wrap gap-2">
               {isConsultant ? (
-                <div className="flex h-11 items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 text-xs font-bold text-white">
-                  <UsersRound className="h-4 w-4 text-[#F4B728]" />
-                  Fila disponível + minha carteira
+                <div className="flex rounded-xl border border-white/20 bg-white/10 p-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setConsultantScope("mine");
+                      setFilters((current) => ({ ...current, ownerId: FILTER_ALL }));
+                      setDraftFilters((current) => ({ ...current, ownerId: FILTER_ALL }));
+                    }}
+                    className={`h-9 px-3 text-xs font-bold ${
+                      consultantScope === "mine"
+                        ? "bg-white text-[#16006C] hover:bg-white"
+                        : "text-white hover:bg-white/15 hover:text-white"
+                    }`}
+                  >
+                    Minha carteira
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setConsultantScope("all")}
+                    className={`h-9 px-3 text-xs font-bold ${
+                      consultantScope === "all"
+                        ? "bg-white text-[#16006C] hover:bg-white"
+                        : "text-white hover:bg-white/15 hover:text-white"
+                    }`}
+                  >
+                    <UsersRound className="mr-1.5 h-4 w-4" />
+                    Outros consultores
+                  </Button>
                 </div>
               ) : null}
               <TooltipProvider delayDuration={150}>
@@ -1473,7 +1536,14 @@ function CRMPipeline() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setFiltersOpen((open) => !open)}
+                onClick={() => {
+                  if (filtersOpen) {
+                    setFiltersOpen(false);
+                  } else {
+                    setDraftFilters(filters);
+                    setFiltersOpen(true);
+                  }
+                }}
                 className={`h-11 flex-1 border-white/20 px-4 md:flex-none ${
                   filtersOpen
                     ? "bg-[#F4B728] text-[#07154C] hover:bg-[#F4B728]/90"
@@ -1531,9 +1601,9 @@ function CRMPipeline() {
           <div className="space-y-2">
             <Label>Turma</Label>
             <Select
-              value={filters.attendanceId}
+              value={draftFilters.attendanceId}
               onValueChange={(value) =>
-                setFilters((current) => ({ ...current, attendanceId: value }))
+                setDraftFilters((current) => ({ ...current, attendanceId: value }))
               }
             >
               <SelectTrigger>
@@ -1553,8 +1623,10 @@ function CRMPipeline() {
           <div className="space-y-2">
             <Label>Curso</Label>
             <Select
-              value={filters.courseId}
-              onValueChange={(value) => setFilters((current) => ({ ...current, courseId: value }))}
+              value={draftFilters.courseId}
+              onValueChange={(value) =>
+                setDraftFilters((current) => ({ ...current, courseId: value }))
+              }
             >
               <SelectTrigger>
                 <SelectValue placeholder="Todos os cursos" />
@@ -1573,8 +1645,10 @@ function CRMPipeline() {
           <div className="space-y-2">
             <Label>Origem</Label>
             <Select
-              value={filters.channelId}
-              onValueChange={(value) => setFilters((current) => ({ ...current, channelId: value }))}
+              value={draftFilters.channelId}
+              onValueChange={(value) =>
+                setDraftFilters((current) => ({ ...current, channelId: value }))
+              }
             >
               <SelectTrigger>
                 <SelectValue placeholder="Todas as origens" />
@@ -1593,8 +1667,10 @@ function CRMPipeline() {
           <div className="space-y-2">
             <Label>Responsável</Label>
             <Select
-              value={filters.ownerId}
-              onValueChange={(value) => setFilters((current) => ({ ...current, ownerId: value }))}
+              value={draftFilters.ownerId}
+              onValueChange={(value) =>
+                setDraftFilters((current) => ({ ...current, ownerId: value }))
+              }
             >
               <SelectTrigger>
                 <SelectValue placeholder="Todos os responsáveis" />
@@ -1613,8 +1689,8 @@ function CRMPipeline() {
           <div className="space-y-2">
             <Label>Cidade</Label>
             <Select
-              value={filters.city}
-              onValueChange={(value) => setFilters((current) => ({ ...current, city: value }))}
+              value={draftFilters.city}
+              onValueChange={(value) => setDraftFilters((current) => ({ ...current, city: value }))}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Todas as cidades" />
@@ -1632,29 +1708,30 @@ function CRMPipeline() {
 
           <div className="space-y-2">
             <Label>Período</Label>
-            <Select
-              value={dateViewMode}
-              onValueChange={(value) => {
-                if (value === "all") {
-                  setFilters((current) => ({ ...current, startDate: "", endDate: "" }));
-                } else if (value === "today") {
-                  setFilters((current) => ({
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant={draftDatePreset === "all" ? "default" : "outline"}
+                onClick={() =>
+                  setDraftFilters((current) => ({ ...current, startDate: "", endDate: "" }))
+                }
+              >
+                Todo período
+              </Button>
+              <Button
+                type="button"
+                variant={draftDatePreset === "today" ? "default" : "outline"}
+                onClick={() =>
+                  setDraftFilters((current) => ({
                     ...current,
                     startDate: todayFilterValue,
                     endDate: todayFilterValue,
-                  }));
+                  }))
                 }
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os leads</SelectItem>
-                <SelectItem value="today">Somente hoje</SelectItem>
-                <SelectItem value="period">Período personalizado</SelectItem>
-              </SelectContent>
-            </Select>
+              >
+                Somente hoje
+              </Button>
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -1662,10 +1739,10 @@ function CRMPipeline() {
             <Input
               id="lead-start-date-filter"
               type="date"
-              max={filters.endDate || undefined}
-              value={filters.startDate}
+              max={draftFilters.endDate || undefined}
+              value={draftFilters.startDate}
               onChange={(event) =>
-                setFilters((current) => ({ ...current, startDate: event.target.value }))
+                setDraftFilters((current) => ({ ...current, startDate: event.target.value }))
               }
             />
           </div>
@@ -1675,12 +1752,22 @@ function CRMPipeline() {
             <Input
               id="lead-end-date-filter"
               type="date"
-              min={filters.startDate || undefined}
-              value={filters.endDate}
+              min={draftFilters.startDate || undefined}
+              value={draftFilters.endDate}
               onChange={(event) =>
-                setFilters((current) => ({ ...current, endDate: event.target.value }))
+                setDraftFilters((current) => ({ ...current, endDate: event.target.value }))
               }
             />
+          </div>
+
+          <div className="flex items-end justify-end gap-2 md:col-span-2 xl:col-span-4">
+            <Button type="button" variant="outline" onClick={clearPipelineFilters}>
+              Limpar filtros
+            </Button>
+            <Button type="button" onClick={applyPipelineFilters}>
+              <Filter className="mr-2 h-4 w-4" />
+              Aplicar filtros
+            </Button>
           </div>
         </div>
       ) : null}
@@ -2039,8 +2126,9 @@ function LeadPipelineList({
             <TableRow>
               <TableHead>Nome</TableHead>
               <TableHead>Telefones</TableHead>
-              <TableHead>Turma</TableHead>
-              <TableHead>Etapa</TableHead>
+              <TableHead>E-mail</TableHead>
+              <TableHead>Curso</TableHead>
+              <TableHead>Status do atendimento</TableHead>
               <TableHead>Responsável</TableHead>
               <TableHead>Entrada</TableHead>
               <TableHead className="text-right">Ação</TableHead>
@@ -2085,8 +2173,18 @@ function LeadPipelineList({
                       ) : null}
                     </div>
                   </TableCell>
-                  <TableCell className="min-w-48">
-                    {lead.attendanceName ?? "Turma não vinculada"}
+                  <TableCell className="min-w-52 text-muted-foreground">
+                    {lead.email ?? "E-mail não informado"}
+                  </TableCell>
+                  <TableCell className="min-w-56">
+                    <div className="font-semibold text-[#07154C]">
+                      {lead.courseName ?? "Curso não informado"}
+                    </div>
+                    {lead.attendanceName ? (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {lead.attendanceName}
+                      </div>
+                    ) : null}
                   </TableCell>
                   <TableCell>
                     <Badge variant="secondary">{column?.name ?? lead.stage}</Badge>
@@ -2612,7 +2710,7 @@ function CreateLeadDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] overflow-y-auto border-primary/20 bg-card p-0 shadow-[0_28px_90px_-38px_rgba(22,0,108,0.85),0_0_34px_rgba(255,138,31,0.22)] sm:max-w-3xl">
         <form onSubmit={onSubmit}>
-          <div className="relative overflow-hidden bg-gradient-hero p-6 text-primary-foreground">
+          <div className="relative overflow-hidden bg-gradient-hero py-6 pl-6 pr-16 text-primary-foreground">
             <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex items-start gap-4">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/12 text-gold ring-1 ring-white/20">

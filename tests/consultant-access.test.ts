@@ -15,9 +15,9 @@ test("consultor acessa alunos, mas não acessa relatórios", () => {
   assert.equal(canViewGrowth("CONSULTOR"), false);
 });
 
-test("consultor vê somente sua carteira e a fila compartilhada tratada pela consulta", () => {
+test("consultor pode alternar entre sua carteira e o pipeline da unidade", () => {
   assert.equal(canViewAllUnitLeads("CONSULTOR"), false);
-  assert.equal(canViewAllUnitPipelineLeads("CONSULTOR"), false);
+  assert.equal(canViewAllUnitPipelineLeads("CONSULTOR"), true);
   assert.equal(canTransferLeads("CONSULTOR"), false);
   assert.equal(canReturnStudentToLead("CONSULTOR"), true);
 });

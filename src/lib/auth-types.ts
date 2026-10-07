@@ -191,7 +191,7 @@ export function canViewAllUnitLeads(role: UserRole) {
 }
 
 export function canViewAllUnitPipelineLeads(role: UserRole) {
-  return canViewAllUnitLeads(role);
+  return canViewAllUnitLeads(role) || role === "CONSULTOR";
 }
 
 export function canViewBrandPlenHistory(role: UserRole) {
