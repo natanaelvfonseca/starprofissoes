@@ -21,6 +21,7 @@ import {
   ensureWhatsappSupervisionSchema,
   upsertCanonicalConversationForMessage,
 } from "@/lib/server/whatsapp-supervision";
+import { resolveWhatsappLeadOnConversationStart } from "@/lib/server/whatsapp-lead-intake";
 
 export { requestEvolution } from "@/lib/server/evolution-client";
 
@@ -552,7 +553,11 @@ async function updateMessageDeliveryStatus(
   );
 }
 
-export async function receiveEvolutionWebhook(payload: unknown, token: string | null) {
+export async function receiveEvolutionWebhook(
+  payload: unknown,
+  token: string | null,
+  options: { enableLeadIntake?: boolean } = {},
+) {
   await ensureEvolutionSchema();
   const payloadRecord = asRecord(payload);
   const dataRecord = asRecord(payloadRecord.data);
@@ -661,6 +666,14 @@ export async function receiveEvolutionWebhook(payload: unknown, token: string | 
           contactName: parsed.contactName,
           messageId: parsed.id,
         });
+        if (!parsed.fromMe && conversationId && options.enableLeadIntake !== false) {
+          await resolveWhatsappLeadOnConversationStart(conversationId).catch((error) => {
+            console.error("[WhatsApp] Falha ao verificar lead no início da conversa", {
+              conversationId,
+              error: error instanceof Error ? error.message : "Erro desconhecido",
+            });
+          });
+        }
         if (parsed.fromMe) {
           await confirmIntervention(
             instance.id,
@@ -769,6 +782,7 @@ export async function syncStarEvolutionHistory() {
           const result = await receiveEvolutionWebhook(
             { event: "messages.upsert", instance: instance.instance_name, data: item },
             instance.webhook_secret,
+            { enableLeadIntake: false },
           );
           if (result.ok) imported += 1;
         }
