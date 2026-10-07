@@ -164,7 +164,6 @@ type TransferSubmitResponse = {
 const NO_SELECTION = "__none__";
 const FILTER_ALL = "__all__";
 const PIPELINE_STAGE_PAGE_SIZE = 15;
-const CONSULTANT_PIPELINE_VALUE = 130;
 const EMPTY_LEADS: Array<LeadRecord> = [];
 const leadDateFilterFormatter = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/Sao_Paulo",
@@ -182,43 +181,34 @@ const stages: Array<LeadStage> = [
   "Recuperação",
 ];
 
-const pipelineStageVisual: Record<
-  string,
-  { accent: string; badge: string; dot: string; surface: string }
-> = {
+const pipelineStageVisual: Record<string, { accent: string; dot: string; surface: string }> = {
   "Novo lead": {
     accent: "bg-[#377DFE]",
-    badge: "border-[#377DFE]/25 bg-[#377DFE]/10 text-[#224C99]",
     dot: "bg-[#377DFE]",
     surface: "from-[#377DFE]/10",
   },
   "Em contato": {
     accent: "bg-[#16006C]",
-    badge: "border-[#16006C]/20 bg-[#16006C]/10 text-[#16006C]",
     dot: "bg-[#16006C]",
     surface: "from-[#16006C]/10",
   },
   Qualificado: {
     accent: "bg-[#F4B728]",
-    badge: "border-[#D99A10]/25 bg-[#F4B728]/15 text-[#8A6100]",
     dot: "bg-[#F4B728]",
     surface: "from-[#F4B728]/15",
   },
   Proposta: {
     accent: "bg-[#FF8A1F]",
-    badge: "border-[#FF8A1F]/25 bg-[#FF8A1F]/10 text-[#B55400]",
     dot: "bg-[#FF8A1F]",
     surface: "from-[#FF8A1F]/10",
   },
   "Pagamento pendente": {
     accent: "bg-emerald-500",
-    badge: "border-emerald-500/25 bg-emerald-500/10 text-emerald-700",
     dot: "bg-emerald-500",
     surface: "from-emerald-500/10",
   },
   Recuperação: {
     accent: "bg-rose-500",
-    badge: "border-rose-500/25 bg-rose-500/10 text-rose-700",
     dot: "bg-rose-500",
     surface: "from-rose-500/10",
   },
@@ -330,14 +320,6 @@ function leadMatchesSearch(lead: LeadRecord, search: string) {
     .join(" ")
     .toLowerCase()
     .includes(query);
-}
-
-function pipelineDisplayValue(lead: LeadRecord, role?: string) {
-  if (role === "CONSULTOR") {
-    return CONSULTANT_PIPELINE_VALUE;
-  }
-
-  return lead.courseValue;
 }
 
 function emptyLeadForm(unitId = ""): LeadFormState {
@@ -1748,10 +1730,6 @@ function CRMPipeline() {
                 const visibleCount = stageVisibleCounts[column.id] ?? PIPELINE_STAGE_PAGE_SIZE;
                 const visibleStageLeads = stageLeads.slice(0, visibleCount);
                 const hiddenCount = Math.max(stageLeads.length - visibleStageLeads.length, 0);
-                const stageValue = stageLeads.reduce(
-                  (sum, lead) => sum + (pipelineDisplayValue(lead, session?.user.role) ?? 0),
-                  0,
-                );
                 const isDropTarget = dropTargetStage === column.id;
                 const stageVisual =
                   pipelineColorVisual[column.color] ?? pipelineStageVisual["Novo lead"];
@@ -1765,7 +1743,7 @@ function CRMPipeline() {
                     }`}
                   >
                     <div className="border-b border-[#16006C]/10 bg-white/75 p-4 backdrop-blur-sm">
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3">
                         <div className="flex min-w-0 items-center gap-3">
                           <div
                             className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-black text-white shadow-sm ${stageVisual.accent}`}
@@ -1782,12 +1760,6 @@ function CRMPipeline() {
                             </div>
                           </div>
                         </div>
-                        <Badge
-                          variant="outline"
-                          className={`shrink-0 border px-2 py-1 text-[10px] font-bold ${stageVisual.badge}`}
-                        >
-                          {currencyFormatter.format(stageValue)}
-                        </Badge>
                       </div>
                     </div>
                     <div
@@ -1821,7 +1793,6 @@ function CRMPipeline() {
                               removing={removingLeadId === lead.id}
                               dragging={draggingLeadId === lead.id}
                               syncing={syncingLeadId === lead.id}
-                              displayValue={pipelineDisplayValue(lead, session?.user.role)}
                               canViewAcquisitionChannel={canViewAcquisitionChannel}
                               canViewOwner
                               canRemove={canRemoveLeads}
@@ -2171,7 +2142,6 @@ function LeadPipelineCard({
   removing,
   dragging,
   syncing,
-  displayValue,
   canViewAcquisitionChannel,
   canViewOwner,
   canRemove,
@@ -2189,7 +2159,6 @@ function LeadPipelineCard({
   removing: boolean;
   dragging: boolean;
   syncing: boolean;
-  displayValue: number | null;
   canViewAcquisitionChannel: boolean;
   canViewOwner: boolean;
   canRemove: boolean;
@@ -2354,16 +2323,11 @@ function LeadPipelineCard({
         ) : null}
       </div>
 
-      <div className="flex items-center justify-between gap-3 border-t border-[#16006C]/8 bg-[#FBFBFD] px-3.5 py-2.5">
+      <div className="border-t border-[#16006C]/8 bg-[#FBFBFD] px-3.5 py-2.5">
         <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold text-[#224C99]">
           <Clock3 className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">{formatLeadCardCreatedAt(lead.createdAt)}</span>
         </div>
-        {displayValue !== null ? (
-          <div className="shrink-0 text-xs font-black text-[#16006C]">
-            {currencyFormatter.format(displayValue)}
-          </div>
-        ) : null}
       </div>
     </Card>
   );
