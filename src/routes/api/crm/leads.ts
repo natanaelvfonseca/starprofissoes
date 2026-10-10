@@ -434,7 +434,7 @@ export const Route = createFileRoute("/api/crm/leads")({
               l.course_name_snapshot,
               l.course_value_snapshot::text,
               l.acquisition_channel_id,
-              l.acquisition_channel_name_snapshot,
+              coalesce(channel.name, l.acquisition_channel_name_snapshot) as acquisition_channel_name_snapshot,
               l.created_by,
               owner.name as created_by_name,
               l.shared_queue,
@@ -448,6 +448,7 @@ export const Route = createFileRoute("/api/crm/leads")({
               l.updated_at::text
             from app_leads l
             inner join app_units un on un.id = l.unit_id
+            left join app_acquisition_channels channel on channel.id = l.acquisition_channel_id and channel.unit_id = l.unit_id
             left join app_users owner on owner.id = l.created_by
             left join app_course_attendances attendance on attendance.id = l.attendance_id
             left join app_courses attendance_course on attendance_course.id = attendance.course_id

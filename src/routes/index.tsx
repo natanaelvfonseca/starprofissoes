@@ -1,3 +1,9 @@
+import {
+  countPipelineLeads,
+  resolveLeadPipelineColumn,
+  pipelineColorHex,
+} from "@/lib/pipeline-configuration";
+import { subscribeCommercialConfiguration } from "@/lib/commercial-refresh";
 import * as React from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
@@ -12,12 +18,16 @@ import {
   Users,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import type { LeadRecord } from "@/lib/commercial-types";
+import type { LeadRecord, PipelineColumn } from "@/lib/commercial-types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
-type LeadsResponse = { leads: Array<LeadRecord>; error?: string };
+type LeadsResponse = {
+  leads: Array<LeadRecord>;
+  pipelineColumns: Array<PipelineColumn>;
+  error?: string;
+};
 
 export const Route = createFileRoute("/")({
   head: () => ({ meta: [{ title: "Dashboard · Star Profissões" }] }),
@@ -28,6 +38,7 @@ function DashboardPage() {
   const { session } = useAuth();
   const activeUnitId = session?.activeUnit?.id ?? "";
   const [leads, setLeads] = React.useState<Array<LeadRecord>>([]);
+  const [pipelineColumns, setPipelineColumns] = React.useState<Array<PipelineColumn>>([]);
   const [students, setStudents] = React.useState<Array<LeadRecord>>([]);
   const [loading, setLoading] = React.useState(true);
 
@@ -38,33 +49,47 @@ function DashboardPage() {
     }
 
     const controller = new AbortController();
+    let latestRequest = 0;
+    const load = () => {
+      const requestId = ++latestRequest;
+      Promise.all([
+        fetch(`/api/crm/leads?unitId=${encodeURIComponent(activeUnitId)}`, {
+          credentials: "same-origin",
+          headers: { Accept: "application/json" },
+          signal: controller.signal,
+        }),
+        fetch(`/api/crm/leads?unitId=${encodeURIComponent(activeUnitId)}&view=students`, {
+          credentials: "same-origin",
+          headers: { Accept: "application/json" },
+          signal: controller.signal,
+        }),
+      ])
+        .then(async ([leadResponse, studentResponse]) => {
+          const leadData = (await leadResponse.json().catch(() => ({}))) as LeadsResponse;
+          const studentData = (await studentResponse.json().catch(() => ({}))) as LeadsResponse;
+          if (!leadResponse.ok) throw new Error(leadData.error ?? "Falha ao carregar o dashboard.");
+          if (controller.signal.aborted || requestId !== latestRequest) return;
+          setPipelineColumns(leadData.pipelineColumns ?? []);
+          setLeads(leadData.leads);
+          setStudents(studentResponse.ok ? studentData.leads : []);
+        })
+        .catch((error) => {
+          if (error instanceof DOMException && error.name === "AbortError") return;
+          setLeads([]);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    };
+    setLeads([]);
+    setPipelineColumns([]);
     setLoading(true);
-    Promise.all([
-      fetch(`/api/crm/leads?unitId=${encodeURIComponent(activeUnitId)}`, {
-        credentials: "same-origin",
-        headers: { Accept: "application/json" },
-        signal: controller.signal,
-      }),
-      fetch(`/api/crm/leads?unitId=${encodeURIComponent(activeUnitId)}&view=students`, {
-        credentials: "same-origin",
-        headers: { Accept: "application/json" },
-        signal: controller.signal,
-      }),
-    ])
-      .then(async ([leadResponse, studentResponse]) => {
-        const leadData = (await leadResponse.json().catch(() => ({}))) as LeadsResponse;
-        const studentData = (await studentResponse.json().catch(() => ({}))) as LeadsResponse;
-        if (!leadResponse.ok) throw new Error(leadData.error ?? "Falha ao carregar o dashboard.");
-        setLeads(leadData.leads);
-        setStudents(studentResponse.ok ? studentData.leads : []);
-      })
-      .catch((error) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        setLeads([]);
-      })
-      .finally(() => setLoading(false));
-
-    return () => controller.abort();
+    load();
+    const unsubscribe = subscribeCommercialConfiguration(activeUnitId, load);
+    return () => {
+      controller.abort();
+      unsubscribe();
+    };
   }, [activeUnitId]);
 
   const qualified = leads.filter((lead) =>
@@ -80,14 +105,7 @@ function DashboardPage() {
   const recentLeads = [...leads]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 6);
-  const stageCounts = [
-    "Novo lead",
-    "Em contato",
-    "Qualificado",
-    "Proposta",
-    "Pagamento pendente",
-    "Recuperação",
-  ].map((stage) => ({ stage, count: leads.filter((lead) => lead.stage === stage).length }));
+  const stageCounts = countPipelineLeads(leads, pipelineColumns);
   const maxStageCount = Math.max(1, ...stageCounts.map((item) => item.count));
 
   return (
@@ -203,16 +221,17 @@ function DashboardPage() {
           <CardContent className="space-y-4 p-5">
             {stageCounts.map((item, index) => (
               <div
-                key={item.stage}
+                key={item.id}
                 className="grid grid-cols-[130px_minmax(0,1fr)_32px] items-center gap-3"
               >
-                <span className="truncate text-xs font-semibold text-[#07154C]">{item.stage}</span>
+                <span className="truncate text-xs font-semibold text-[#07154C]">{item.name}</span>
                 <div className="h-3 overflow-hidden rounded-full bg-[#F1F3F8]">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-[#16006C] to-[#377DFE]"
+                    className="h-full rounded-full"
                     style={{
                       width: `${Math.max(item.count ? 8 : 0, (item.count / maxStageCount) * 100)}%`,
-                      opacity: 1 - index * 0.08,
+                      backgroundColor: pipelineColorHex[item.color] ?? pipelineColorHex.blue,
+                      opacity: Math.max(0.3, 1 - index * 0.06),
                     }}
                   />
                 </div>
@@ -259,7 +278,7 @@ function DashboardPage() {
                     </div>
                   </div>
                   <Badge variant="secondary" className="max-w-28 truncate">
-                    {lead.stage}
+                    {resolveLeadPipelineColumn(lead, pipelineColumns)?.name ?? lead.stage}
                   </Badge>
                 </div>
               ))

@@ -1,3 +1,4 @@
+import { subscribeCommercialConfiguration } from "@/lib/commercial-refresh";
 import * as React from "react";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import {
@@ -337,8 +338,10 @@ function MetaAdsPage() {
   }, [activeUnitId, loadData]);
 
   React.useEffect(() => {
-    if (session && canManageMetaConnection) void loadData();
-  }, [canManageMetaConnection, loadData, session]);
+    if (!session || !canManageMetaConnection) return;
+    void loadData();
+    return subscribeCommercialConfiguration(activeUnitId, () => void loadData());
+  }, [activeUnitId, canManageMetaConnection, loadData, session]);
 
   React.useEffect(() => {
     const handleMetaOAuthMessage = (event: MessageEvent) => {
@@ -818,7 +821,7 @@ function MetaAdsPage() {
                               ? "Nenhum formulário conectado nesta unidade."
                               : data?.pages.length
                                 ? "Sincronize uma página para trazer os formulários."
-                            : "Conecte a Meta para trazer os formulários."
+                                : "Conecte a Meta para trazer os formulários."
                       }
                     />
                   )}

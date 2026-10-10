@@ -1,6 +1,10 @@
 import type { QueryResultRow } from "pg";
 import type { AuthSession, UnitSummary } from "@/lib/auth-types";
 import { ensureRuntimeSchema, queryDb } from "@/lib/server/db";
+import {
+  acquisitionChannelInitializationSql,
+  initializeAcquisitionChannelsSql,
+} from "@/lib/server/acquisition-channel-defaults";
 
 export const DEFAULT_ACQUISITION_CHANNELS = [
   { name: "Meta Ads", type: "Pago" },
@@ -15,6 +19,7 @@ export const DEFAULT_ACQUISITION_CHANNELS = [
 ] as const;
 
 let commercialSchemaPromise: Promise<void> | null = null;
+let configurationDefaultsPromise: Promise<void> | null = null;
 
 export function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -487,14 +492,16 @@ export async function getDefaultMarketingLeadOwner(unitId: string) {
 
 export async function ensureDefaultAcquisitionChannels(unitId: string) {
   await ensureCommercialSchema();
-
-  await queryDb(
-    `
-      insert into app_acquisition_channels (unit_id, name, type, status)
-      select $1, item.name, item.type, 'active'
-      from jsonb_to_recordset($2::jsonb) as item(name text, type text)
-      on conflict do nothing
-    `,
-    [unitId, JSON.stringify(DEFAULT_ACQUISITION_CHANNELS)],
-  );
+  configurationDefaultsPromise ??= ensureRuntimeSchema(
+    "commercial-configuration-defaults",
+    acquisitionChannelInitializationSql,
+  ).catch((error) => {
+    configurationDefaultsPromise = null;
+    throw error;
+  });
+  await configurationDefaultsPromise;
+  await queryDb(initializeAcquisitionChannelsSql, [
+    unitId,
+    JSON.stringify(DEFAULT_ACQUISITION_CHANNELS),
+  ]);
 }

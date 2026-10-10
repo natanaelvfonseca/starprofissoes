@@ -1,3 +1,4 @@
+import { notifyCommercialConfigurationChanged } from "@/lib/commercial-refresh";
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -369,6 +370,7 @@ function CadastroPage() {
           }),
         }),
       );
+      notifyCommercialConfigurationChanged(activeUnitId);
       toast.success(editingPipelineColumnId ? "Coluna atualizada." : "Coluna criada.");
       setPipelineColumnDialogOpen(false);
       await loadData();
@@ -462,6 +464,7 @@ function CadastroPage() {
         }),
       );
 
+      notifyCommercialConfigurationChanged(activeUnitId);
       toast.success(editingChannelId ? "Canal atualizado." : "Canal cadastrado.");
       setChannelDialogOpen(false);
       await loadData();
@@ -546,6 +549,7 @@ function CadastroPage() {
             ? "Canal excluído."
             : "Turma inativada.",
       );
+      if (deleteTarget.kind === "channel") notifyCommercialConfigurationChanged(activeUnitId);
       setDeleteTarget(null);
       await loadData();
     } catch (error) {

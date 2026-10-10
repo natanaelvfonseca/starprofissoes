@@ -1,3 +1,4 @@
+import { subscribeCommercialConfiguration } from "@/lib/commercial-refresh";
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -16,11 +17,7 @@ import {
 import { toast } from "sonner";
 import type { LeadStage } from "@/lib/commercial-types";
 import { useAuth } from "@/lib/auth";
-import {
-  canAccessLeadTransferCenter,
-  ROLE_LABELS,
-  type UserRole,
-} from "@/lib/auth-types";
+import { canAccessLeadTransferCenter, ROLE_LABELS, type UserRole } from "@/lib/auth-types";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +59,7 @@ type TransferLead = {
   courseName: string | null;
   acquisitionChannelName: string | null;
   stage: LeadStage;
+  stageName: string;
   createdAt: string;
   createdById: string | null;
   createdByName: string | null;
@@ -202,7 +200,9 @@ function LeadTransferCenter() {
       setUsers(nextUsers);
       setLeads(data.leads);
       setPolicy(data.policy);
-      setSelectedLeadIds((current) => new Set(Array.from(current).filter((id) => availableIds.has(id))));
+      setSelectedLeadIds(
+        (current) => new Set(Array.from(current).filter((id) => availableIds.has(id))),
+      );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao carregar transferências.");
     } finally {
@@ -212,7 +212,8 @@ function LeadTransferCenter() {
 
   React.useEffect(() => {
     void loadData();
-  }, [loadData]);
+    return subscribeCommercialConfiguration(activeUnitId, () => void loadData());
+  }, [activeUnitId, loadData]);
 
   React.useEffect(() => {
     if (!activeUnitId) {
@@ -255,7 +256,7 @@ function LeadTransferCenter() {
       leads.filter(
         (lead) =>
           ownerFilterMatches(lead, ownerFilter) &&
-          (stageFilter === FILTER_ALL || lead.stage === stageFilter) &&
+          (stageFilter === FILTER_ALL || lead.stageName === stageFilter) &&
           leadMatchesSearch(lead, search),
       ),
     [leads, ownerFilter, search, stageFilter],
@@ -405,8 +406,17 @@ function LeadTransferCenter() {
             <Badge variant="secondary" className="bg-primary/10 text-primary">
               {policy.immediateTransfer ? "Transferência imediata" : "Regra de 48h"}
             </Badge>
-            <Button type="button" variant="outline" onClick={() => void loadData()} disabled={loading}>
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void loadData()}
+              disabled={loading}
+            >
+              {loading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
               Atualizar
             </Button>
           </div>
@@ -458,7 +468,7 @@ function LeadTransferCenter() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={FILTER_ALL}>Todas as etapas</SelectItem>
-                  {Array.from(new Set(leads.map((lead) => lead.stage))).map((stage) => (
+                  {Array.from(new Set(leads.map((lead) => lead.stageName))).map((stage) => (
                     <SelectItem key={stage} value={stage}>
                       {stage}
                     </SelectItem>
@@ -562,7 +572,7 @@ function LeadTransferCenter() {
                               >
                                 {lead.transferable ? "Liberado" : "Aguardando 48h"}
                               </Badge>
-                              <Badge variant="outline">{lead.stage}</Badge>
+                              <Badge variant="outline">{lead.stageName}</Badge>
                             </div>
                             <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
                               <Clock3 className="h-3.5 w-3.5" />
@@ -593,7 +603,9 @@ function LeadTransferCenter() {
               <div>
                 <div className="text-sm font-bold text-primary">Novo responsável</div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {selectedCount ? `${selectedCount} lead(s) prontos para transferência.` : "Nenhum lead selecionado."}
+                  {selectedCount
+                    ? `${selectedCount} lead(s) prontos para transferência.`
+                    : "Nenhum lead selecionado."}
                 </p>
               </div>
 

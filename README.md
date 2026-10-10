@@ -49,3 +49,13 @@ npm run lint
 npm run build
 npm audit
 ```
+
+## Configurações comerciais
+
+As etapas exibidas usam os IDs, nomes, cores e posições de `app_pipeline_columns` da unidade. O significado comercial (`semantic_stage`) permanece separado do nome exibido para preservar fila compartilhada, matrícula e automações. O seletor do card move pela mesma API do Kanban e salva a etapa ao selecionar.
+
+Os nomes de canais vêm de `app_acquisition_channels`; snapshots são apenas fallback para vínculos antigos/removidos. A migration `034_commercial_configuration_defaults.sql` registra a inicialização dos canais por unidade, impedindo recriação de nomes padrão após renomear ou excluir. O runtime aplica somente essa tabela adicional, sem reexecutar o schema comercial.
+
+Alterações de cadastro notificam as telas e outras abas via evento/BroadcastChannel (com fallback de storage); foco, visibilidade e polling atualizam outras sessões. O Kanban usa toda a altura das colunas como destino e rolagem horizontal nas bordas durante o arraste.
+
+`npm test` cobre resolução/contagem por ID, sincronização entre abas e rolagem. O teste de persistência PostgreSQL pode ser executado com `STAR_TEST_DATABASE_URL` definido; ele cria apenas tabelas temporárias com `search_path=pg_temp` e termina com rollback, sem modificar tabelas reais.

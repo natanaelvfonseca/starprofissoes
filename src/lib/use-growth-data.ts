@@ -1,3 +1,4 @@
+import { subscribeCommercialConfiguration } from "@/lib/commercial-refresh";
 import * as React from "react";
 import { toast } from "sonner";
 import type { GrowthResponse } from "@/lib/growth-types";
@@ -69,8 +70,10 @@ export function useGrowthData(
     }
 
     void loadGrowthData();
+    const unsubscribe = subscribeCommercialConfiguration(scopeValue, () => void loadGrowthData());
 
     return () => {
+      unsubscribe();
       ignore = true;
     };
   }, [attendanceId, enabled, periodDays, scopeValue]);

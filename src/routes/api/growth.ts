@@ -21,17 +21,6 @@ import { getSessionFromRequest } from "@/lib/server/auth";
 import { queryDb } from "@/lib/server/db";
 import { ensureMetaLeadSchema } from "@/lib/server/meta-leads";
 
-const funnelStages: Array<LeadStage> = [
-  "Novo lead",
-  "Em contato",
-  "Qualificado",
-  "Proposta",
-  "Pagamento pendente",
-  "Confirmado",
-  "Recuperação",
-  "Matriculado",
-];
-
 type GrowthScopeSelection = {
   mode: "network" | "unit" | "individual";
   label: string;
@@ -90,7 +79,7 @@ type CityRow = QueryResultRow & {
 };
 
 type FunnelRow = QueryResultRow & {
-  stage: LeadStage;
+  stage: string;
   leads: string | number;
 };
 
@@ -357,7 +346,7 @@ function emptyResponse(scope: GrowthScopeSelection) {
     courses: [],
     cities: [],
     units: [],
-    funnel: funnelStages.map((stage) => ({ stage, leads: 0 })),
+    funnel: [],
     trend: [],
     campaigns: [],
     consultants: [],
@@ -506,7 +495,7 @@ export const Route = createFileRoute("/api/growth")({
                 where p.status = 'paid'
                 group by p.lead_id
               )
-              select coalesce(nullif(l.acquisition_channel_name_snapshot, ''), 'Sem origem') as source,
+              select coalesce(channel.name, nullif(l.acquisition_channel_name_snapshot, ''), 'Sem origem') as source,
                      count(*) as leads,
                      count(*) filter (where l.stage = 'Matriculado') as enrollments,
                      coalesce(
@@ -521,6 +510,7 @@ export const Route = createFileRoute("/api/growth")({
                      coalesce(sum(l.course_value_snapshot) filter (where l.stage <> 'Matriculado'), 0) as pipeline_potential
               from scoped_leads l
               left join paid_by_lead p on p.lead_id = l.id
+              left join app_acquisition_channels channel on channel.id = l.acquisition_channel_id and channel.unit_id = l.unit_id
               group by 1
               order by count(*) desc, source asc
               limit 10
@@ -576,7 +566,33 @@ export const Route = createFileRoute("/api/growth")({
             params,
           ),
           queryDb<FunnelRow>(
-            `select stage, count(*) as leads from app_leads where ${scopedWhere} group by stage`,
+            `with scoped_leads as (
+                select * from app_leads where ${scopedWhere}
+              ), resolved as (
+                select chosen.id, count(*) as leads
+                from scoped_leads l
+                cross join lateral (
+                  select c.id from app_pipeline_columns c
+                  where c.unit_id = l.unit_id and c.pipeline_type = 'leads'
+                  order by (c.id = l.pipeline_column_id) desc nulls last,
+                    (c.semantic_stage = case when l.stage = 'Confirmado' then 'Pagamento pendente' else l.stage end) desc nulls last,
+                    c.position, c.created_at, c.name
+                  limit 1
+                ) chosen
+                where l.stage <> 'Matriculado'
+                group by chosen.id
+              ), configured as (
+                select c.name as stage, sum(coalesce(r.leads, 0)) as leads, min(c.position) as position
+                from app_pipeline_columns c
+                left join resolved r on r.id = c.id
+                where c.unit_id = any($1::uuid[]) and c.pipeline_type = 'leads'
+                group by c.name
+              )
+              select stage, leads from (
+                select * from configured
+                union all
+                select 'Matriculado', count(*), 2147483647 from scoped_leads where stage = 'Matriculado'
+              ) funnel order by position, stage`,
             params,
           ),
           queryDb<UnitRow>(
@@ -748,9 +764,6 @@ export const Route = createFileRoute("/api/growth")({
         const enrollments = toNumber(summary?.enrollments);
         const leadsWithSource = toNumber(summary?.leads_with_source);
         const taskSummary = await readTaskSummary(scope.unitIds, scope.consultantId);
-        const funnelCounts = new Map(
-          funnelResult.rows.map((row) => [row.stage, toNumber(row.leads)] as const),
-        );
 
         return Response.json(
           {
@@ -791,9 +804,9 @@ export const Route = createFileRoute("/api/growth")({
             courses: mapCourses(courseResult.rows),
             cities: mapCities(cityResult.rows),
             units: scope.mode === "network" ? mapUnits(unitResult.rows) : [],
-            funnel: funnelStages.map<GrowthFunnelMetric>((stage) => ({
-              stage,
-              leads: funnelCounts.get(stage) ?? 0,
+            funnel: funnelResult.rows.map<GrowthFunnelMetric>((row) => ({
+              stage: row.stage,
+              leads: toNumber(row.leads),
             })),
             trend: trendResult.rows.map((row) => ({
               date: row.date,

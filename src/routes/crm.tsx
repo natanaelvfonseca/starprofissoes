@@ -1,3 +1,8 @@
+import {
+  resolveLeadPipelineColumn,
+  kanbanHorizontalScrollStep,
+} from "@/lib/pipeline-configuration";
+import { subscribeCommercialConfiguration } from "@/lib/commercial-refresh";
 import * as React from "react";
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
@@ -145,6 +150,7 @@ type TransferLead = {
   phone: string;
   courseName: string | null;
   stage: LeadStage;
+  stageName: string;
   createdAt: string;
   createdById: string | null;
   createdByName: string | null;
@@ -171,15 +177,6 @@ const leadDateFilterFormatter = new Intl.DateTimeFormat("en-US", {
   month: "2-digit",
   day: "2-digit",
 });
-
-const stages: Array<LeadStage> = [
-  "Novo lead",
-  "Em contato",
-  "Qualificado",
-  "Proposta",
-  "Pagamento pendente",
-  "Recuperação",
-];
 
 const pipelineStageVisual: Record<string, { accent: string; dot: string; surface: string }> = {
   "Novo lead": {
@@ -214,10 +211,7 @@ const pipelineStageVisual: Record<string, { accent: string; dot: string; surface
   },
 };
 
-const pipelineColorVisual: Record<
-  string,
-  { accent: string; badge: string; dot: string; surface: string }
-> = {
+const pipelineColorVisual: Record<string, { accent: string; dot: string; surface: string }> = {
   blue: pipelineStageVisual["Novo lead"],
   indigo: pipelineStageVisual["Em contato"],
   gold: pipelineStageVisual.Qualificado,
@@ -225,17 +219,6 @@ const pipelineColorVisual: Record<
   green: pipelineStageVisual["Pagamento pendente"],
   rose: pipelineStageVisual.Recuperação,
 };
-
-const fallbackLeadPipelineColumns: Array<PipelineColumn> = stages.map((stage, index) => ({
-  id: `fallback-${index}`,
-  unitId: "",
-  pipelineType: "leads",
-  name: stage,
-  color: ["blue", "indigo", "gold", "orange", "green", "rose"][index],
-  position: (index + 1) * 10,
-  systemKey: null,
-  semanticStage: stage,
-}));
 
 const pollingIntervalMs = 5000;
 
@@ -364,16 +347,6 @@ function leadFormFromLead(lead: LeadRecord): LeadFormState {
 
 function pipelineStage(stage: LeadStage): LeadStage {
   return stage === "Confirmado" ? "Pagamento pendente" : stage;
-}
-
-function resolveLeadPipelineColumn(lead: LeadRecord, columns: Array<PipelineColumn>) {
-  if (lead.pipelineColumnId) {
-    const assigned = columns.find((column) => column.id === lead.pipelineColumnId);
-    if (assigned) return assigned;
-  }
-
-  const semanticStage = pipelineStage(lead.stage);
-  return columns.find((column) => column.semanticStage === semanticStage) ?? columns[0] ?? null;
 }
 
 function localDateTimeToIso(value: string) {
@@ -581,9 +554,7 @@ function CRMPipeline() {
       ),
     [consultantScope, filters, isConsultant, scopedLeads, search, session?.user.id],
   );
-  const displayPipelineColumns = pipelineColumns.length
-    ? pipelineColumns
-    : fallbackLeadPipelineColumns;
+  const displayPipelineColumns = pipelineColumns.filter((column) => column.unitId === activeUnitId);
   const firstClaimColumn =
     displayPipelineColumns.find((column) => column.semanticStage === "Em contato") ??
     displayPipelineColumns.find(
@@ -681,7 +652,7 @@ function CRMPipeline() {
       if (requestId === optionsRequestIdRef.current) {
         setCourses(coursesData.courses.filter((course) => course.status === "active"));
         setAttendances(coursesData.attendances);
-        setChannels(channelsData.channels.filter((channel) => channel.status === "active"));
+        setChannels(channelsData.channels);
       }
     } catch (error) {
       if (requestId === optionsRequestIdRef.current) {
@@ -815,6 +786,44 @@ function CRMPipeline() {
     void loadOptions(formUnitId);
   }, [formUnitId, loadOptions]);
 
+  React.useEffect(
+    () =>
+      subscribeCommercialConfiguration(activeUnitId, () => {
+        void loadLeads({ silent: true });
+        void loadOptions(formUnitId);
+      }),
+    [activeUnitId, formUnitId, loadLeads, loadOptions],
+  );
+
+  const kanbanRef = React.useRef<HTMLDivElement>(null);
+  const dragPointerX = React.useRef<number | null>(null);
+  React.useEffect(() => {
+    if (!draggingLeadId) return;
+    let frame = 0;
+    const scroll = () => {
+      const board = kanbanRef.current;
+      if (board && dragPointerX.current !== null) {
+        board.scrollLeft += kanbanHorizontalScrollStep(
+          dragPointerX.current,
+          board.getBoundingClientRect(),
+          board.scrollLeft,
+          board.scrollWidth - board.clientWidth,
+        );
+      }
+      frame = requestAnimationFrame(scroll);
+    };
+    const trackPointer = (event: DragEvent) => {
+      dragPointerX.current = event.clientX;
+    };
+    window.addEventListener("dragover", trackPointer);
+    frame = requestAnimationFrame(scroll);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("dragover", trackPointer);
+      dragPointerX.current = null;
+    };
+  }, [draggingLeadId]);
+
   function openLeadDialog() {
     const unitId = activeUnitId || session?.units[0]?.id || "";
 
@@ -885,7 +894,7 @@ function CRMPipeline() {
               Accept: "application/json",
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ ...payload, stage: form.stage }),
+            body: JSON.stringify({ ...payload, stage: undefined }),
           }),
         );
 
@@ -914,7 +923,7 @@ function CRMPipeline() {
                   acquisitionChannelId: payload.acquisitionChannelId || null,
                   acquisitionChannelName: channel?.name ?? null,
                   observations: payload.observations || null,
-                  stage: form.stage,
+                  stage: item.stage,
                 }
               : item,
           ),
@@ -1116,6 +1125,19 @@ function CRMPipeline() {
         ),
       );
 
+      setEditingLead((current) =>
+        current?.id === lead.id
+          ? applyLeadOwnerAssignment(
+              { ...current, pipelineColumnId: moved.pipelineColumnId, stage: moved.stage },
+              moved,
+            )
+          : current,
+      );
+      if (editingLead?.id === lead.id && moved.sharedQueue) {
+        setLeadDialogOpen(false);
+        setEditingLead(null);
+      }
+
       broadcastChannelRef.current?.postMessage({
         type: "lead-stage-updated",
         leadId: lead.id,
@@ -1250,11 +1272,17 @@ function CRMPipeline() {
   function handleStageDrop(event: React.DragEvent<HTMLDivElement>, column: PipelineColumn) {
     event.preventDefault();
     const leadId = event.dataTransfer.getData("text/plain");
-    const lead = leads.find((item) => item.id === leadId);
+    const lead = leads.find((item) => item.id === leadId && item.id === draggingLeadId);
 
     setDropTargetStage(null);
 
-    if (!lead) {
+    if (
+      !lead ||
+      !canOperatePipeline ||
+      (isConsultant
+        ? !canConsultantMovePipelineLead(lead, session?.user.id ?? "")
+        : isSharedLeadQueueEntry(lead))
+    ) {
       setDraggingLeadId(null);
       return;
     }
@@ -1807,8 +1835,8 @@ function CRMPipeline() {
             onAssume={setPendingAssumeLead}
           />
         ) : (
-          <div className="overflow-x-auto pb-2">
-            <div className="flex min-w-max gap-3">
+          <div ref={kanbanRef} data-testid="lead-kanban" className="overflow-x-auto pb-2">
+            <div className="flex min-w-max items-stretch gap-3">
               {displayPipelineColumns.map((column, stageIndex) => {
                 const stageLeads = filteredLeads.filter(
                   (lead) =>
@@ -1823,7 +1851,19 @@ function CRMPipeline() {
                 return (
                   <div
                     key={column.id}
-                    className={`w-[310px] flex-shrink-0 overflow-hidden rounded-[22px] border bg-gradient-to-b ${stageVisual.surface} to-white/70 transition-all duration-200 ${
+                    data-pipeline-column={column.id}
+                    onDragOver={(event) => {
+                      if (!draggingLeadId) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                      setDropTargetStage(column.id);
+                    }}
+                    onDragLeave={(event) => {
+                      if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+                        setDropTargetStage((current) => (current === column.id ? null : current));
+                    }}
+                    onDrop={(event) => handleStageDrop(event, column)}
+                    className={`flex w-[310px] flex-shrink-0 flex-col overflow-hidden rounded-[22px] border bg-gradient-to-b ${stageVisual.surface} to-white/70 transition-all duration-200 ${
                       isDropTarget
                         ? "border-[#F4B728] shadow-[0_18px_42px_-28px_rgba(244,183,40,0.95)] ring-2 ring-[#F4B728]/20"
                         : "border-[#16006C]/10"
@@ -1849,21 +1889,7 @@ function CRMPipeline() {
                         </div>
                       </div>
                     </div>
-                    <div
-                      className="min-h-[360px] space-y-3 p-3"
-                      onDragOver={(event) => {
-                        event.preventDefault();
-                        setDropTargetStage(column.id);
-                      }}
-                      onDragEnter={(event) => {
-                        event.preventDefault();
-                        setDropTargetStage(column.id);
-                      }}
-                      onDragLeave={() =>
-                        setDropTargetStage((current) => (current === column.id ? null : current))
-                      }
-                      onDrop={(event) => handleStageDrop(event, column)}
-                    >
+                    <div className="min-h-[360px] flex-1 space-y-3 p-3">
                       {loadingLeads ? (
                         <EmptyState
                           icon={KanbanSquare}
@@ -1952,6 +1978,21 @@ function CRMPipeline() {
         courses={courses}
         attendances={attendances}
         channels={channels}
+        columns={displayPipelineColumns}
+        selectedColumnId={
+          editingLead
+            ? (resolveLeadPipelineColumn(
+                leads.find((lead) => lead.id === editingLead.id) ?? editingLead,
+                displayPipelineColumns,
+              )?.id ?? "")
+            : ""
+        }
+        movingStage={Boolean(syncingLeadId)}
+        onColumnChange={(columnId) => {
+          const column = displayPipelineColumns.find((item) => item.id === columnId);
+          const lead = leads.find((item) => item.id === editingLead?.id);
+          if (column && lead) void updateLeadStage(lead, column);
+        }}
         units={session?.units ?? []}
         selectedCourse={selectedCourse}
         selectedAttendance={selectedAttendance}
@@ -2551,7 +2592,7 @@ function TransferLeadDialog({
                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                           <span>{lead.phone}</span>
                           {lead.courseName ? <span>{lead.courseName}</span> : null}
-                          <span>{lead.stage}</span>
+                          <span>{lead.stageName}</span>
                         </div>
                         <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
                           <span className="flex items-center gap-1 text-primary">
@@ -2644,6 +2685,10 @@ function CreateLeadDialog({
   courses,
   attendances,
   channels,
+  columns,
+  selectedColumnId,
+  movingStage,
+  onColumnChange,
   units,
   selectedCourse,
   selectedAttendance,
@@ -2673,6 +2718,10 @@ function CreateLeadDialog({
   courses: Array<CourseRecord>;
   attendances: Array<AttendanceOption>;
   channels: Array<AcquisitionChannelRecord>;
+  columns: Array<PipelineColumn>;
+  selectedColumnId: string;
+  movingStage: boolean;
+  onColumnChange: (columnId: string) => void;
   units: Array<{ id: string; name: string; slug: string }>;
   selectedCourse: CourseRecord | null;
   selectedAttendance: AttendanceOption | null;
@@ -2725,7 +2774,7 @@ function CreateLeadDialog({
                   <Button
                     type="button"
                     onClick={onConvertToStudent}
-                    disabled={saving || converting}
+                    disabled={saving || converting || movingStage}
                     className="shrink-0 bg-emerald-500 font-bold uppercase tracking-wide text-white shadow-[0_16px_34px_-20px_rgba(16,185,129,0.95)] hover:bg-emerald-600 sm:ml-auto"
                   >
                     <CheckCircle2 className="mr-2 h-4 w-4" />
@@ -2734,22 +2783,22 @@ function CreateLeadDialog({
                   <div className="w-full md:hidden">
                     <Label>Status do lead</Label>
                     <Select
-                      value={form.stage}
-                      onValueChange={(value) =>
-                        onFormChange((current) => ({ ...current, stage: value as LeadStage }))
-                      }
+                      value={selectedColumnId}
+                      onValueChange={onColumnChange}
+                      disabled={movingStage || saving}
                     >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {stages.map((stage) => (
-                          <SelectItem key={stage} value={stage}>
-                            {stage}
+                        {columns.map((column) => (
+                          <SelectItem key={column.id} value={column.id}>
+                            {column.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    <p className="mt-1 text-xs text-white/70">A etapa é salva ao selecionar.</p>
                   </div>
                 </div>
               ) : null}
@@ -2871,11 +2920,16 @@ function CreateLeadDialog({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={NO_SELECTION}>Sem canal definido</SelectItem>
-                    {channels.map((channel) => (
-                      <SelectItem key={channel.id} value={channel.id}>
-                        {channel.name}
-                      </SelectItem>
-                    ))}
+                    {channels
+                      .filter(
+                        (channel) =>
+                          channel.status === "active" || channel.id === form.acquisitionChannelId,
+                      )
+                      .map((channel) => (
+                        <SelectItem key={channel.id} value={channel.id}>
+                          {channel.name}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -2926,22 +2980,22 @@ function CreateLeadDialog({
               <div className="hidden space-y-2 md:col-span-2 md:block">
                 <Label>Status do lead</Label>
                 <Select
-                  value={form.stage}
-                  onValueChange={(value) =>
-                    onFormChange((current) => ({ ...current, stage: value as LeadStage }))
-                  }
+                  value={selectedColumnId}
+                  onValueChange={onColumnChange}
+                  disabled={movingStage || saving}
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {stages.map((stage) => (
-                      <SelectItem key={stage} value={stage}>
-                        {stage}
+                    {columns.map((column) => (
+                      <SelectItem key={column.id} value={column.id}>
+                        {column.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">A etapa é salva ao selecionar.</p>
               </div>
             ) : null}
 
@@ -3124,7 +3178,7 @@ function CreateLeadDialog({
             <Button
               type="submit"
               className="bg-gradient-primary"
-              disabled={saving || converting || !form.unitId}
+              disabled={saving || converting || movingStage || !form.unitId}
             >
               {saving
                 ? isEditMode

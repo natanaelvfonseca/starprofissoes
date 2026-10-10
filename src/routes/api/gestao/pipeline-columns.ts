@@ -1,3 +1,8 @@
+import {
+  readPipelineColumnsSql,
+  createPipelineColumnSql,
+  updatePipelineColumnSql,
+} from "@/lib/server/pipeline-column-store";
 import { createFileRoute } from "@tanstack/react-router";
 import type { QueryResultRow } from "pg";
 import { canViewManagement } from "@/lib/auth-types";
@@ -64,15 +69,7 @@ function parsePayload(body: unknown) {
 }
 
 async function readColumns(unitId: string) {
-  const result = await queryDb<PipelineColumnRow>(
-    `
-      select id, unit_id, pipeline_type, name, color, position, system_key, semantic_stage
-      from app_pipeline_columns
-      where unit_id = $1
-      order by pipeline_type, position, created_at, name
-    `,
-    [unitId],
-  );
+  const result = await queryDb<PipelineColumnRow>(readPipelineColumnsSql, [unitId]);
 
   return result.rows.map(mapColumn);
 }
@@ -131,24 +128,15 @@ export const Route = createFileRoute("/api/gestao/pipeline-columns")({
         }
 
         try {
-          const result = await queryDb<PipelineColumnRow>(
-            `
-              insert into app_pipeline_columns (
-                unit_id, pipeline_type, name, color, position, semantic_stage, created_by
-              )
-              values ($1, $2, $3, $4, $5, $6, $7)
-              returning id, unit_id, pipeline_type, name, color, position, system_key, semantic_stage
-            `,
-            [
-              unit.id,
-              payload.pipelineType,
-              payload.name,
-              payload.color,
-              payload.position,
-              payload.pipelineType === "leads" ? "Em contato" : null,
-              session.user.id,
-            ],
-          );
+          const result = await queryDb<PipelineColumnRow>(createPipelineColumnSql, [
+            unit.id,
+            payload.pipelineType,
+            payload.name,
+            payload.color,
+            payload.position,
+            payload.pipelineType === "leads" ? "Em contato" : null,
+            session.user.id,
+          ]);
           return Response.json({ column: mapColumn(result.rows[0]) }, { status: 201 });
         } catch (error) {
           if (isUniqueError(error)) {
@@ -183,15 +171,13 @@ export const Route = createFileRoute("/api/gestao/pipeline-columns")({
 
         await ensureCommercialSchema();
         try {
-          const result = await queryDb<PipelineColumnRow>(
-            `
-              update app_pipeline_columns
-              set name = $3, color = $4, position = $5, updated_at = now()
-              where id = $1 and unit_id = $2
-              returning id, unit_id, pipeline_type, name, color, position, system_key, semantic_stage
-            `,
-            [payload.id, unit.id, payload.name, payload.color, payload.position],
-          );
+          const result = await queryDb<PipelineColumnRow>(updatePipelineColumnSql, [
+            payload.id,
+            unit.id,
+            payload.name,
+            payload.color,
+            payload.position,
+          ]);
           if (!result.rows[0]) {
             return Response.json({ ok: false, error: "Coluna não encontrada." }, { status: 404 });
           }

@@ -28,6 +28,7 @@ type TransferLeadRow = QueryResultRow & {
   course_name_snapshot: string | null;
   acquisition_channel_name_snapshot: string | null;
   stage: LeadStage;
+  stage_name: string;
   created_at: string;
   created_by: string | null;
   created_by_name: string | null;
@@ -75,6 +76,7 @@ function mapTransferLead(row: TransferLeadRow) {
     courseName: row.course_name_snapshot,
     acquisitionChannelName: row.acquisition_channel_name_snapshot,
     stage: row.stage,
+    stageName: row.stage_name,
     createdAt: row.created_at,
     createdById: row.created_by,
     createdByName: row.created_by_name,
@@ -139,8 +141,9 @@ async function listTransferLeads(
         l.email,
         l.city,
         l.course_name_snapshot,
-        l.acquisition_channel_name_snapshot,
+        coalesce(channel.name, l.acquisition_channel_name_snapshot) as acquisition_channel_name_snapshot,
         l.stage,
+        coalesce(pipeline.name, l.stage) as stage_name,
         l.created_at::text,
         l.created_by,
         owner.name as created_by_name,
@@ -149,7 +152,16 @@ async function listTransferLeads(
         floor(extract(epoch from (now() - l.created_at)) / 3600)::int as age_hours,
         ($2::boolean or l.created_at <= now() - interval '48 hours') as transferable
       from app_leads l
+      left join app_acquisition_channels channel on channel.id = l.acquisition_channel_id and channel.unit_id = l.unit_id
       left join app_users owner on owner.id = l.created_by
+      left join lateral (
+        select c.name from app_pipeline_columns c
+        where c.unit_id = l.unit_id and c.pipeline_type = 'leads'
+        order by (c.id = l.pipeline_column_id) desc nulls last,
+          (c.semantic_stage = case when l.stage = 'Confirmado' then 'Pagamento pendente' else l.stage end) desc nulls last,
+          c.position, c.created_at, c.name
+        limit 1
+      ) pipeline on true
       ${metaJoin}
       where l.unit_id = $1
         and l.stage <> 'Matriculado'

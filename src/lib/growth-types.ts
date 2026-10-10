@@ -71,7 +71,7 @@ export type GrowthUnitMetric = {
 };
 
 export type GrowthFunnelMetric = {
-  stage: LeadStage;
+  stage: string;
   leads: number;
 };
 

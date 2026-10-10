@@ -1,3 +1,4 @@
+import { subscribeCommercialConfiguration } from "@/lib/commercial-refresh";
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -51,39 +52,6 @@ type StudentFilters = {
 };
 
 const FILTER_ALL = "__all__";
-
-const fallbackStudentColumns: Array<PipelineColumn> = [
-  {
-    id: "enrolled",
-    unitId: "",
-    pipelineType: "students",
-    name: "Matrícula confirmada",
-    color: "blue",
-    position: 10,
-    systemKey: "enrolled",
-    semanticStage: null,
-  },
-  {
-    id: "follow-up",
-    unitId: "",
-    pipelineType: "students",
-    name: "Em acompanhamento",
-    color: "gold",
-    position: 20,
-    systemKey: "follow_up",
-    semanticStage: null,
-  },
-  {
-    id: "completed",
-    unitId: "",
-    pipelineType: "students",
-    name: "Concluído",
-    color: "green",
-    position: 30,
-    systemKey: "completed",
-    semanticStage: null,
-  },
-];
 
 const studentColumnStyles: Record<string, { accent: string; surface: string; badge: string }> = {
   blue: {
@@ -167,6 +135,7 @@ function LeadsList() {
   const [dropTargetColumnId, setDropTargetColumnId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
+    let ignored = false;
     async function loadLeads() {
       if (session && !canViewStudentList) {
         setLeads([]);
@@ -189,6 +158,7 @@ function LeadsList() {
           }),
         );
 
+        if (ignored) return;
         setLeads(data.leads);
         setPipelineColumns(data.pipelineColumns ?? []);
       } catch (error) {
@@ -199,6 +169,11 @@ function LeadsList() {
     }
 
     void loadLeads();
+    const unsubscribe = subscribeCommercialConfiguration(activeUnitId, () => void loadLeads());
+    return () => {
+      ignored = true;
+      unsubscribe();
+    };
   }, [activeUnitId, canViewStudentList, session]);
 
   if (session && !canViewStudentList) {
@@ -262,7 +237,7 @@ function LeadsList() {
       (filters.unitId === FILTER_ALL || lead.unitId === filters.unitId)
     );
   });
-  const displayColumns = pipelineColumns.length ? pipelineColumns : fallbackStudentColumns;
+  const displayColumns = pipelineColumns.filter((column) => column.unitId === activeUnitId);
 
   function resolveStudentColumn(lead: LeadRecord) {
     if (lead.studentPipelineColumnId) {
