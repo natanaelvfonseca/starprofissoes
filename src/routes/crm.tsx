@@ -3,6 +3,13 @@ import {
   kanbanHorizontalScrollStep,
 } from "@/lib/pipeline-configuration";
 import { subscribeCommercialConfiguration } from "@/lib/commercial-refresh";
+import {
+  PIPELINE_FILTER_ALL as FILTER_ALL,
+  countActivePipelineFilters,
+  emptyPipelineFilters,
+  filterPipelineLeads,
+} from "@/lib/pipeline-filters";
+import type { PipelineFilters } from "@/lib/pipeline-filters";
 import * as React from "react";
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
@@ -42,11 +49,10 @@ import {
   canConsultantOpenPipelineLead,
   canConsultantAssumePipelineLead,
   isSharedLeadQueueEntry,
-  leadMatchesConsultantScope,
 } from "@/lib/commercial-types";
 import type { ConsultantPipelineScope } from "@/lib/commercial-types";
 import type { CrmLeadTask } from "@/lib/crm-task-types";
-import { formatLeadCardCreatedAt } from "@/lib/lead-time";
+import { formatLeadCardCreatedAt, leadDateFilterValue } from "@/lib/lead-time";
 import { useAuth } from "@/lib/auth";
 import { canAccessLeadTransferCenter, canOperateCrm, canTransferLeads } from "@/lib/auth-types";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -168,15 +174,8 @@ type TransferSubmitResponse = {
 };
 
 const NO_SELECTION = "__none__";
-const FILTER_ALL = "__all__";
 const PIPELINE_STAGE_PAGE_SIZE = 15;
 const EMPTY_LEADS: Array<LeadRecord> = [];
-const leadDateFilterFormatter = new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/Sao_Paulo",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
 
 const pipelineStageVisual: Record<string, { accent: string; dot: string; surface: string }> = {
   "Novo lead": {
@@ -239,71 +238,6 @@ const confettiPieces = Array.from({ length: 72 }, (_, index) => ({
   width: index % 3 === 0 ? 8 : 10,
   height: index % 4 === 0 ? 18 : 12,
 }));
-
-type PipelineFilters = {
-  attendanceId: string;
-  courseId: string;
-  channelId: string;
-  ownerId: string;
-  city: string;
-  startDate: string;
-  endDate: string;
-};
-
-function emptyPipelineFilters(): PipelineFilters {
-  return {
-    attendanceId: FILTER_ALL,
-    courseId: FILTER_ALL,
-    channelId: FILTER_ALL,
-    ownerId: FILTER_ALL,
-    city: FILTER_ALL,
-    startDate: "",
-    endDate: "",
-  };
-}
-
-function dateFilterValue(date: Date) {
-  const parts = leadDateFilterFormatter.formatToParts(date);
-  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${value.year}-${value.month}-${value.day}`;
-}
-
-function leadMatchesCreatedRange(lead: LeadRecord, startDate: string, endDate: string) {
-  if (!startDate && !endDate) return true;
-
-  const date = new Date(lead.createdAt);
-  if (Number.isNaN(date.getTime())) return false;
-
-  const leadDate = dateFilterValue(date);
-
-  return (!startDate || leadDate >= startDate) && (!endDate || leadDate <= endDate);
-}
-
-function leadMatchesSearch(lead: LeadRecord, search: string) {
-  const query = search.trim().toLowerCase();
-
-  if (!query) {
-    return true;
-  }
-
-  return [
-    lead.fullName,
-    lead.phone,
-    lead.phone2,
-    lead.email,
-    lead.city,
-    lead.attendanceName,
-    lead.courseName,
-    lead.acquisitionChannelName,
-    lead.createdByName,
-    lead.unitName,
-    lead.stage,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase()
-    .includes(query);
-}
 
 function emptyLeadForm(unitId = ""): LeadFormState {
   return {
@@ -501,22 +435,14 @@ function CRMPipeline() {
   const canRemoveLeads = canTransferUnitLeads;
   const canViewAcquisitionChannel = session?.user.role !== "CONSULTOR";
   const selectedTransferCount = selectedTransferLeadIds.size;
-  const todayFilterValue = dateFilterValue(new Date());
+  const todayFilterValue = leadDateFilterValue(new Date());
   const draftDatePreset =
     !draftFilters.startDate && !draftFilters.endDate
       ? "all"
       : draftFilters.startDate === todayFilterValue && draftFilters.endDate === todayFilterValue
         ? "today"
         : null;
-  const activeFilterCount =
-    [
-      filters.attendanceId,
-      filters.courseId,
-      filters.channelId,
-      filters.ownerId,
-      filters.city,
-    ].filter((value) => value !== FILTER_ALL).length +
-    (filters.startDate || filters.endDate ? 1 : 0);
+  const activeFilterCount = countActivePipelineFilters(filters, canViewAcquisitionChannel);
   const scopedLeads = loadedLeadsUnitId === activeUnitId ? leads : EMPTY_LEADS;
   const ownerOptions = React.useMemo(() => {
     const map = new Map<string, string>();
@@ -540,19 +466,21 @@ function CRMPipeline() {
   );
   const filteredLeads = React.useMemo(
     () =>
-      scopedLeads.filter(
-        (lead) =>
-          leadMatchesSearch(lead, search) &&
-          (!isConsultant ||
-            leadMatchesConsultantScope(lead, session?.user.id ?? "", consultantScope)) &&
-          (filters.attendanceId === FILTER_ALL || lead.attendanceId === filters.attendanceId) &&
-          (filters.courseId === FILTER_ALL || lead.courseId === filters.courseId) &&
-          (filters.channelId === FILTER_ALL || lead.acquisitionChannelId === filters.channelId) &&
-          (filters.ownerId === FILTER_ALL || lead.createdById === filters.ownerId) &&
-          (filters.city === FILTER_ALL || lead.city === filters.city) &&
-          leadMatchesCreatedRange(lead, filters.startDate, filters.endDate),
-      ),
-    [consultantScope, filters, isConsultant, scopedLeads, search, session?.user.id],
+      filterPipelineLeads(scopedLeads, filters, {
+        search,
+        consultantId: isConsultant ? (session?.user.id ?? "") : undefined,
+        consultantScope,
+        canViewAcquisitionChannel,
+      }),
+    [
+      canViewAcquisitionChannel,
+      consultantScope,
+      filters,
+      isConsultant,
+      scopedLeads,
+      search,
+      session?.user.id,
+    ],
   );
   const displayPipelineColumns = pipelineColumns.filter((column) => column.unitId === activeUnitId);
   const firstClaimColumn =
@@ -1394,7 +1322,10 @@ function CRMPipeline() {
       return;
     }
 
-    setFilters(draftFilters);
+    setFilters({
+      ...draftFilters,
+      channelId: canViewAcquisitionChannel ? draftFilters.channelId : FILTER_ALL,
+    });
 
     if (
       isConsultant &&
@@ -1627,14 +1558,14 @@ function CRMPipeline() {
       {filtersOpen ? (
         <div className="grid gap-4 rounded-[24px] border border-[#16006C]/10 bg-white p-5 shadow-card md:grid-cols-2 xl:grid-cols-4">
           <div className="space-y-2">
-            <Label>Turma</Label>
+            <Label htmlFor="lead-attendance-filter">Turma</Label>
             <Select
               value={draftFilters.attendanceId}
               onValueChange={(value) =>
                 setDraftFilters((current) => ({ ...current, attendanceId: value }))
               }
             >
-              <SelectTrigger>
+              <SelectTrigger id="lead-attendance-filter">
                 <SelectValue placeholder="Todas as turmas" />
               </SelectTrigger>
               <SelectContent>
@@ -1649,14 +1580,14 @@ function CRMPipeline() {
           </div>
 
           <div className="space-y-2">
-            <Label>Curso</Label>
+            <Label htmlFor="lead-course-filter">Curso</Label>
             <Select
               value={draftFilters.courseId}
               onValueChange={(value) =>
                 setDraftFilters((current) => ({ ...current, courseId: value }))
               }
             >
-              <SelectTrigger>
+              <SelectTrigger id="lead-course-filter">
                 <SelectValue placeholder="Todos os cursos" />
               </SelectTrigger>
               <SelectContent>
@@ -1670,37 +1601,39 @@ function CRMPipeline() {
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label>Origem</Label>
-            <Select
-              value={draftFilters.channelId}
-              onValueChange={(value) =>
-                setDraftFilters((current) => ({ ...current, channelId: value }))
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Todas as origens" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={FILTER_ALL}>Todas as origens</SelectItem>
-                {channels.map((channel) => (
-                  <SelectItem key={channel.id} value={channel.id}>
-                    {channel.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {canViewAcquisitionChannel ? (
+            <div className="space-y-2">
+              <Label htmlFor="lead-channel-filter">Origem</Label>
+              <Select
+                value={draftFilters.channelId}
+                onValueChange={(value) =>
+                  setDraftFilters((current) => ({ ...current, channelId: value }))
+                }
+              >
+                <SelectTrigger id="lead-channel-filter">
+                  <SelectValue placeholder="Todas as origens" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={FILTER_ALL}>Todas as origens</SelectItem>
+                  {channels.map((channel) => (
+                    <SelectItem key={channel.id} value={channel.id}>
+                      {channel.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
 
           <div className="space-y-2">
-            <Label>Responsável</Label>
+            <Label htmlFor="lead-owner-filter">Responsável</Label>
             <Select
               value={draftFilters.ownerId}
               onValueChange={(value) =>
                 setDraftFilters((current) => ({ ...current, ownerId: value }))
               }
             >
-              <SelectTrigger>
+              <SelectTrigger id="lead-owner-filter">
                 <SelectValue placeholder="Todos os responsáveis" />
               </SelectTrigger>
               <SelectContent>
@@ -1715,12 +1648,12 @@ function CRMPipeline() {
           </div>
 
           <div className="space-y-2">
-            <Label>Cidade</Label>
+            <Label htmlFor="lead-city-filter">Cidade</Label>
             <Select
               value={draftFilters.city}
               onValueChange={(value) => setDraftFilters((current) => ({ ...current, city: value }))}
             >
-              <SelectTrigger>
+              <SelectTrigger id="lead-city-filter">
                 <SelectValue placeholder="Todas as cidades" />
               </SelectTrigger>
               <SelectContent>
@@ -1817,7 +1750,18 @@ function CRMPipeline() {
           </p>
         </div>
 
-        {pipelineViewMode === "list" ? (
+        {!loadingLeads && !filteredLeads.length && (search || activeFilterCount) ? (
+          <EmptyState
+            icon={Search}
+            title="Nenhum lead corresponde aos filtros"
+            description="Revise os filtros ou limpe a seleção para voltar aos leads desta visão."
+            action={
+              <Button variant="outline" onClick={clearPipelineFilters}>
+                Limpar filtros e busca
+              </Button>
+            }
+          />
+        ) : pipelineViewMode === "list" ? (
           <LeadPipelineList
             leads={filteredLeads}
             columns={displayPipelineColumns}
