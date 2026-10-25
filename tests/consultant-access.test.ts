@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  canClaimLeads,
   canReturnStudentToLead,
   canTransferLeads,
   canViewAllUnitLeads,
@@ -9,6 +10,20 @@ import {
   canViewSalesAi,
   canViewStudents,
 } from "../src/lib/auth-types.ts";
+
+test("todos os perfis ativos podem pegar um lead da fila compartilhada", () => {
+  for (const role of [
+    "DEV",
+    "CEO",
+    "CVO",
+    "DIRETOR",
+    "GERENTE",
+    "MARKETING",
+    "CONSULTOR",
+  ] as const) {
+    assert.equal(canClaimLeads(role), true);
+  }
+});
 
 test("consultor acessa alunos, mas não acessa relatórios", () => {
   assert.equal(canViewStudents("CONSULTOR"), true);

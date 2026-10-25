@@ -63,8 +63,6 @@ export const Route = createFileRoute("/api/gestao/channels")({
           return Response.json({ ok: false, error: "Unidade indisponível." }, { status: 403 });
         }
 
-        await ensureDefaultAcquisitionChannels(unit.id);
-
         const result = await queryDb<ChannelRow>(
           `
             select id, unit_id, name, type, status, created_at::text

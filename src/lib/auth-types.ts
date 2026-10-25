@@ -182,6 +182,10 @@ export function canOperateCrm(role: UserRole) {
   return role !== "MARKETING";
 }
 
+export function canClaimLeads(_role: UserRole) {
+  return true;
+}
+
 export function canReturnStudentToLead(role: UserRole) {
   return canViewStudents(role) && canOperateCrm(role);
 }

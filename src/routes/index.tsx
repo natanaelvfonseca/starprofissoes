@@ -1,8 +1,4 @@
-import {
-  countPipelineLeads,
-  resolveLeadPipelineColumn,
-  pipelineColorHex,
-} from "@/lib/pipeline-configuration";
+import { resolveLeadPipelineColumn, pipelineColorHex } from "@/lib/pipeline-configuration";
 import { subscribeCommercialConfiguration } from "@/lib/commercial-refresh";
 import * as React from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -18,15 +14,42 @@ import {
   Users,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import type { LeadRecord, PipelineColumn } from "@/lib/commercial-types";
+import type { LeadStage, PipelineColumn } from "@/lib/commercial-types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
-type LeadsResponse = {
-  leads: Array<LeadRecord>;
+type DashboardResponse = {
+  stats: {
+    openLeads: number;
+    qualifiedLeads: number;
+    students: number;
+    pipelineValue: number;
+  };
   pipelineColumns: Array<PipelineColumn>;
+  stageBuckets: Array<{
+    pipelineColumnId: string | null;
+    stage: LeadStage;
+    count: number;
+  }>;
+  recentLeads: Array<{
+    id: string;
+    unitId: string;
+    fullName: string;
+    phone: string;
+    courseName: string | null;
+    stage: LeadStage;
+    pipelineColumnId: string | null;
+    createdAt: string;
+  }>;
   error?: string;
+};
+
+const emptyDashboardStats = {
+  openLeads: 0,
+  qualifiedLeads: 0,
+  students: 0,
+  pipelineValue: 0,
 };
 
 export const Route = createFileRoute("/")({
@@ -37,9 +60,10 @@ export const Route = createFileRoute("/")({
 function DashboardPage() {
   const { session } = useAuth();
   const activeUnitId = session?.activeUnit?.id ?? "";
-  const [leads, setLeads] = React.useState<Array<LeadRecord>>([]);
+  const [stats, setStats] = React.useState(emptyDashboardStats);
   const [pipelineColumns, setPipelineColumns] = React.useState<Array<PipelineColumn>>([]);
-  const [students, setStudents] = React.useState<Array<LeadRecord>>([]);
+  const [stageBuckets, setStageBuckets] = React.useState<DashboardResponse["stageBuckets"]>([]);
+  const [recentLeads, setRecentLeads] = React.useState<DashboardResponse["recentLeads"]>([]);
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
@@ -50,39 +74,40 @@ function DashboardPage() {
 
     const controller = new AbortController();
     let latestRequest = 0;
+    let inFlight: Promise<void> | null = null;
     const load = () => {
+      if (inFlight) return inFlight;
       const requestId = ++latestRequest;
-      Promise.all([
-        fetch(`/api/crm/leads?unitId=${encodeURIComponent(activeUnitId)}`, {
-          credentials: "same-origin",
-          headers: { Accept: "application/json" },
-          signal: controller.signal,
-        }),
-        fetch(`/api/crm/leads?unitId=${encodeURIComponent(activeUnitId)}&view=students`, {
-          credentials: "same-origin",
-          headers: { Accept: "application/json" },
-          signal: controller.signal,
-        }),
-      ])
-        .then(async ([leadResponse, studentResponse]) => {
-          const leadData = (await leadResponse.json().catch(() => ({}))) as LeadsResponse;
-          const studentData = (await studentResponse.json().catch(() => ({}))) as LeadsResponse;
-          if (!leadResponse.ok) throw new Error(leadData.error ?? "Falha ao carregar o dashboard.");
+      inFlight = fetch(`/api/crm/dashboard?unitId=${encodeURIComponent(activeUnitId)}`, {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          const data = (await response.json().catch(() => ({}))) as DashboardResponse;
+          if (!response.ok) throw new Error(data.error ?? "Falha ao carregar o dashboard.");
           if (controller.signal.aborted || requestId !== latestRequest) return;
-          setPipelineColumns(leadData.pipelineColumns ?? []);
-          setLeads(leadData.leads);
-          setStudents(studentResponse.ok ? studentData.leads : []);
+          setStats(data.stats ?? emptyDashboardStats);
+          setPipelineColumns(data.pipelineColumns ?? []);
+          setStageBuckets(data.stageBuckets ?? []);
+          setRecentLeads(data.recentLeads ?? []);
         })
         .catch((error) => {
           if (error instanceof DOMException && error.name === "AbortError") return;
-          setLeads([]);
+          setStats(emptyDashboardStats);
+          setStageBuckets([]);
+          setRecentLeads([]);
         })
         .finally(() => {
           if (!controller.signal.aborted) setLoading(false);
+          inFlight = null;
         });
+      return inFlight;
     };
-    setLeads([]);
+    setStats(emptyDashboardStats);
     setPipelineColumns([]);
+    setStageBuckets([]);
+    setRecentLeads([]);
     setLoading(true);
     load();
     const unsubscribe = subscribeCommercialConfiguration(activeUnitId, load);
@@ -92,20 +117,24 @@ function DashboardPage() {
     };
   }, [activeUnitId]);
 
-  const qualified = leads.filter((lead) =>
-    ["Qualificado", "Proposta", "Pagamento pendente", "Confirmado", "Matriculado"].includes(
-      lead.stage,
-    ),
-  );
-  const pipelineValue = leads.reduce((sum, lead) => sum + (lead.courseValue ?? 0), 0);
-  const totalOpportunities = leads.length + students.length;
+  const totalOpportunities = stats.openLeads + stats.students;
   const conversion = totalOpportunities
-    ? Math.round((students.length / totalOpportunities) * 100)
+    ? Math.round((stats.students / totalOpportunities) * 100)
     : 0;
-  const recentLeads = [...leads]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 6);
-  const stageCounts = countPipelineLeads(leads, pipelineColumns);
+  const stageCounts = pipelineColumns.map((column) => ({
+    ...column,
+    count: stageBuckets.reduce(
+      (total, bucket) =>
+        total +
+        (bucket.pipelineColumnId === column.id ||
+        (!bucket.pipelineColumnId &&
+          column.semanticStage ===
+            (bucket.stage === "Confirmado" ? "Pagamento pendente" : bucket.stage))
+          ? bucket.count
+          : 0),
+      0,
+    ),
+  }));
   const maxStageCount = Math.max(1, ...stageCounts.map((item) => item.count));
 
   return (
@@ -162,25 +191,25 @@ function DashboardPage() {
         {[
           {
             label: "Oportunidades abertas",
-            value: leads.length,
+            value: stats.openLeads,
             icon: Users,
             color: "bg-[#377DFE]",
           },
           {
             label: "Em avanço comercial",
-            value: qualified.length,
+            value: stats.qualifiedLeads,
             icon: Target,
             color: "bg-[#16006C]",
           },
           {
             label: "Alunos matriculados",
-            value: students.length,
+            value: stats.students,
             icon: GraduationCap,
             color: "bg-emerald-500",
           },
           {
             label: "Potencial do pipeline",
-            value: pipelineValue.toLocaleString("pt-BR", {
+            value: stats.pipelineValue.toLocaleString("pt-BR", {
               style: "currency",
               currency: "BRL",
               maximumFractionDigits: 0,
@@ -216,7 +245,7 @@ function DashboardPage() {
               </div>
               <h2 className="mt-1 text-xl font-black text-[#07154C]">Temperatura do funil</h2>
             </div>
-            <Badge variant="secondary">{leads.length} leads</Badge>
+            <Badge variant="secondary">{stats.openLeads} leads</Badge>
           </div>
           <CardContent className="space-y-4 p-5">
             {stageCounts.map((item, index) => (

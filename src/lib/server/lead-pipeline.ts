@@ -41,23 +41,23 @@ export class LeadPipelineMoveError extends Error {
   }
 }
 
-async function hasActiveUnitConsultant(client: PoolClient, unitId: string, userId?: string) {
+async function hasActiveUnitUser(client: PoolClient, unitId: string, userId?: string) {
   const result = await client.query<{ allowed: boolean }>(
     `
       select exists (
         select 1
-        from app_users consultant
-        where consultant.role = 'CONSULTOR'
-          and consultant.status = 'active'
-          and ($2::uuid is null or consultant.id = $2)
+        from app_users app_user
+        where app_user.status = 'active'
+          and ($2::uuid is null or app_user.id = $2)
           and (
-            consultant.primary_unit_id = $1
+            app_user.primary_unit_id = $1
             or exists (
               select 1
               from app_user_units user_unit
-              where user_unit.user_id = consultant.id
+              where user_unit.user_id = app_user.id
                 and user_unit.unit_id = $1
             )
+            or app_user.role in ('DEV', 'CEO', 'CVO', 'MARKETING')
           )
       ) as allowed
     `,
@@ -127,7 +127,7 @@ export async function moveLeadToPipelineColumn(params: {
       lead.shared_queue && lead.stage === "Novo lead" && Boolean(lead.attendance_id);
 
     if (params.claimUserId && !isSharedNewLead && lead.created_by !== params.claimUserId) {
-      throw new LeadPipelineMoveError("Este lead já foi assumido por outro consultor.", 409);
+      throw new LeadPipelineMoveError("Este lead já foi assumido por outro usuário.", 409);
     }
 
     if (isSharedNewLead) {
@@ -138,9 +138,9 @@ export async function moveLeadToPipelineColumn(params: {
           400,
         );
       }
-      if (!claimUserId || !(await hasActiveUnitConsultant(client, lead.unit_id, claimUserId))) {
+      if (!claimUserId || !(await hasActiveUnitUser(client, lead.unit_id, claimUserId))) {
         throw new LeadPipelineMoveError(
-          "Um consultor ativo da unidade deve assumir este lead.",
+          "Um usuário ativo com acesso à unidade deve assumir este lead.",
           403,
         );
       }
@@ -165,7 +165,7 @@ export async function moveLeadToPipelineColumn(params: {
       );
 
       if (!claimed.rowCount) {
-        throw new LeadPipelineMoveError("Este lead já foi assumido por outro consultor.", 409);
+        throw new LeadPipelineMoveError("Este lead já foi assumido por outro usuário.", 409);
       }
 
       await client.query(

@@ -54,7 +54,12 @@ import type { ConsultantPipelineScope } from "@/lib/commercial-types";
 import type { CrmLeadTask } from "@/lib/crm-task-types";
 import { formatLeadCardCreatedAt, leadDateFilterValue } from "@/lib/lead-time";
 import { useAuth } from "@/lib/auth";
-import { canAccessLeadTransferCenter, canOperateCrm, canTransferLeads } from "@/lib/auth-types";
+import {
+  canAccessLeadTransferCenter,
+  canClaimLeads,
+  canOperateCrm,
+  canTransferLeads,
+} from "@/lib/auth-types";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -219,7 +224,19 @@ const pipelineColorVisual: Record<string, { accent: string; dot: string; surface
   rose: pipelineStageVisual.Recuperação,
 };
 
-const pollingIntervalMs = 5000;
+const pollingIntervalMs = 15000;
+const leadOptionsCacheTtlMs = 5 * 60_000;
+
+type LeadOptionsData = {
+  courses: Array<CourseRecord>;
+  attendances: Array<AttendanceOption>;
+  channels: Array<AcquisitionChannelRecord>;
+};
+
+const leadOptionsCache = new Map<
+  string,
+  { expiresAt: number; data?: LeadOptionsData; promise?: Promise<LeadOptionsData> }
+>();
 
 const currencyFormatter = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -356,6 +373,42 @@ function unitQuery(unitId: string) {
   return `?unitId=${encodeURIComponent(unitId)}`;
 }
 
+function cachedLeadOptions(unitId: string) {
+  const entry = leadOptionsCache.get(unitId);
+  return entry?.data && entry.expiresAt > Date.now() ? entry.data : null;
+}
+
+async function fetchLeadOptions(unitId: string, force = false): Promise<LeadOptionsData> {
+  const cached = leadOptionsCache.get(unitId);
+  if (!force && cached?.data && cached.expiresAt > Date.now()) return cached.data;
+  if (!force && cached?.promise) return cached.promise;
+
+  const promise = Promise.all([
+    fetch(`/api/gestao/courses${unitQuery(unitId)}`, {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+    }).then((response) => readJson<CoursesResponse>(response)),
+    fetch(`/api/gestao/channels${unitQuery(unitId)}`, {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+    }).then((response) => readJson<ChannelsResponse>(response)),
+  ]).then(([coursesData, channelsData]) => ({
+    courses: coursesData.courses.filter((course) => course.status === "active"),
+    attendances: coursesData.attendances,
+    channels: channelsData.channels,
+  }));
+
+  leadOptionsCache.set(unitId, { expiresAt: 0, promise });
+  try {
+    const data = await promise;
+    leadOptionsCache.set(unitId, { data, expiresAt: Date.now() + leadOptionsCacheTtlMs });
+    return data;
+  } catch (error) {
+    if (leadOptionsCache.get(unitId)?.promise === promise) leadOptionsCache.delete(unitId);
+    throw error;
+  }
+}
+
 export const Route = createFileRoute("/crm")({
   head: () => ({ meta: [{ title: "Leads · Star Profissões" }] }),
   component: CRM,
@@ -427,10 +480,12 @@ function CRMPipeline() {
     attendances.find((attendance) => attendance.id === form.attendanceId) ?? null;
   const broadcastChannelRef = React.useRef<BroadcastChannel | null>(null);
   const leadRequestIdRef = React.useRef(0);
+  const leadLoadRef = React.useRef<{ unitId: string; promise: Promise<void> } | null>(null);
   const optionsRequestIdRef = React.useRef(0);
   const canTransferUnitLeads = session ? canTransferLeads(session.user.role) : false;
   const canAccessTransfers = session ? canAccessLeadTransferCenter(session.user.role) : false;
   const canOperatePipeline = session ? canOperateCrm(session.user.role) : false;
+  const canClaimSharedLeads = session ? canClaimLeads(session.user.role) : false;
   const isConsultant = session?.user.role === "CONSULTOR";
   const canRemoveLeads = canTransferUnitLeads;
   const canViewAcquisitionChannel = session?.user.role !== "CONSULTOR";
@@ -444,6 +499,7 @@ function CRMPipeline() {
         : null;
   const activeFilterCount = countActivePipelineFilters(filters, canViewAcquisitionChannel);
   const scopedLeads = loadedLeadsUnitId === activeUnitId ? leads : EMPTY_LEADS;
+  const deferredSearch = React.useDeferredValue(search);
   const ownerOptions = React.useMemo(() => {
     const map = new Map<string, string>();
 
@@ -467,7 +523,7 @@ function CRMPipeline() {
   const filteredLeads = React.useMemo(
     () =>
       filterPipelineLeads(scopedLeads, filters, {
-        search,
+        search: deferredSearch,
         consultantId: isConsultant ? (session?.user.id ?? "") : undefined,
         consultantScope,
         canViewAcquisitionChannel,
@@ -478,29 +534,42 @@ function CRMPipeline() {
       filters,
       isConsultant,
       scopedLeads,
-      search,
+      deferredSearch,
       session?.user.id,
     ],
   );
-  const displayPipelineColumns = pipelineColumns.filter((column) => column.unitId === activeUnitId);
+  const displayPipelineColumns = React.useMemo(
+    () => pipelineColumns.filter((column) => column.unitId === activeUnitId),
+    [activeUnitId, pipelineColumns],
+  );
   const firstClaimColumn =
     displayPipelineColumns.find((column) => column.semanticStage === "Em contato") ??
     displayPipelineColumns.find(
       (column) => column.semanticStage && column.semanticStage !== "Novo lead",
     );
+  const leadsByColumn = React.useMemo(() => {
+    const grouped = new Map<string, Array<LeadRecord>>();
+    displayPipelineColumns.forEach((column) => grouped.set(column.id, []));
+    filteredLeads.forEach((lead) => {
+      const column = resolveLeadPipelineColumn(lead, displayPipelineColumns);
+      if (column) grouped.get(column.id)?.push(lead);
+    });
+    return grouped;
+  }, [displayPipelineColumns, filteredLeads]);
 
   React.useEffect(() => {
     setStageVisibleCounts({});
-  }, [filters, search]);
+  }, [filters, deferredSearch]);
 
   React.useEffect(() => {
     setSearch("");
     setFilters(emptyPipelineFilters());
     setDraftFilters(emptyPipelineFilters());
     setConsultantScope("mine");
-    setCourses([]);
-    setAttendances([]);
-    setChannels([]);
+    const cachedOptions = cachedLeadOptions(activeUnitId);
+    setCourses(cachedOptions?.courses ?? []);
+    setAttendances(cachedOptions?.attendances ?? []);
+    setChannels(cachedOptions?.channels ?? []);
     setForm(emptyLeadForm(activeUnitId));
     setEditingLead(null);
     setLeadDialogOpen(false);
@@ -509,7 +578,10 @@ function CRMPipeline() {
   }, [activeUnitId]);
 
   const loadLeads = React.useCallback(
-    async (options?: { silent?: boolean }) => {
+    async (options?: { silent?: boolean; force?: boolean }) => {
+      const currentLoad = leadLoadRef.current;
+      if (!options?.force && currentLoad?.unitId === activeUnitId) return currentLoad.promise;
+
       const requestId = ++leadRequestIdRef.current;
 
       if (!activeUnitId) {
@@ -523,33 +595,41 @@ function CRMPipeline() {
         setLoadingLeads(true);
       }
 
-      try {
-        const data = await readJson<LeadsResponse>(
-          await fetch(`/api/crm/leads${unitQuery(activeUnitId)}`, {
-            credentials: "same-origin",
-            headers: { Accept: "application/json" },
-          }),
-        );
+      const promise = (async () => {
+        try {
+          const data = await readJson<LeadsResponse>(
+            await fetch(`/api/crm/leads${unitQuery(activeUnitId)}`, {
+              credentials: "same-origin",
+              headers: { Accept: "application/json" },
+            }),
+          );
 
-        if (requestId === leadRequestIdRef.current) {
-          setLeads(data.leads);
-          setLoadedLeadsUnitId(activeUnitId);
-          setPipelineColumns(data.pipelineColumns ?? []);
+          if (requestId === leadRequestIdRef.current) {
+            setLeads(data.leads);
+            setLoadedLeadsUnitId(activeUnitId);
+            setPipelineColumns(data.pipelineColumns ?? []);
+          }
+        } catch (error) {
+          if (requestId === leadRequestIdRef.current) {
+            toast.error(error instanceof Error ? error.message : "Falha ao carregar leads.");
+          }
+        } finally {
+          if (requestId === leadRequestIdRef.current) {
+            setLoadingLeads(false);
+          }
         }
-      } catch (error) {
-        if (requestId === leadRequestIdRef.current) {
-          toast.error(error instanceof Error ? error.message : "Falha ao carregar leads.");
-        }
+      })();
+      leadLoadRef.current = { unitId: activeUnitId, promise };
+      try {
+        await promise;
       } finally {
-        if (requestId === leadRequestIdRef.current) {
-          setLoadingLeads(false);
-        }
+        if (leadLoadRef.current?.promise === promise) leadLoadRef.current = null;
       }
     },
     [activeUnitId],
   );
 
-  const loadOptions = React.useCallback(async (unitId: string) => {
+  const loadOptions = React.useCallback(async (unitId: string, force = false) => {
     const requestId = ++optionsRequestIdRef.current;
 
     if (!unitId) {
@@ -562,25 +642,12 @@ function CRMPipeline() {
     setLoadingOptions(true);
 
     try {
-      const [coursesData, channelsData] = await Promise.all([
-        readJson<CoursesResponse>(
-          await fetch(`/api/gestao/courses${unitQuery(unitId)}`, {
-            credentials: "same-origin",
-            headers: { Accept: "application/json" },
-          }),
-        ),
-        readJson<ChannelsResponse>(
-          await fetch(`/api/gestao/channels${unitQuery(unitId)}`, {
-            credentials: "same-origin",
-            headers: { Accept: "application/json" },
-          }),
-        ),
-      ]);
+      const data = await fetchLeadOptions(unitId, force);
 
       if (requestId === optionsRequestIdRef.current) {
-        setCourses(coursesData.courses.filter((course) => course.status === "active"));
-        setAttendances(coursesData.attendances);
-        setChannels(channelsData.channels);
+        setCourses(data.courses);
+        setAttendances(data.attendances);
+        setChannels(data.channels);
       }
     } catch (error) {
       if (requestId === optionsRequestIdRef.current) {
@@ -685,7 +752,7 @@ function CRMPipeline() {
     if (channel) {
       channel.onmessage = (event) => {
         if (event.data?.type === "lead-stage-updated" || event.data?.type === "lead-transferred") {
-          void loadLeads({ silent: true });
+          void loadLeads({ silent: true, force: true });
         }
       };
     }
@@ -716,15 +783,45 @@ function CRMPipeline() {
 
   React.useEffect(
     () =>
-      subscribeCommercialConfiguration(activeUnitId, () => {
-        void loadLeads({ silent: true });
-        void loadOptions(formUnitId);
-      }),
+      subscribeCommercialConfiguration(
+        activeUnitId,
+        () => {
+          void loadLeads({ silent: true, force: true });
+          void loadOptions(formUnitId, true);
+        },
+        60000,
+      ),
     [activeUnitId, formUnitId, loadLeads, loadOptions],
   );
 
   const kanbanRef = React.useRef<HTMLDivElement>(null);
+  const [kanbanScroll, setKanbanScroll] = React.useState({ left: 0, max: 0 });
   const dragPointerX = React.useRef<number | null>(null);
+  React.useEffect(() => {
+    const board = kanbanRef.current;
+    if (!board || pipelineViewMode !== "kanban") return undefined;
+
+    const syncScroll = () => {
+      const next = {
+        left: Math.round(board.scrollLeft),
+        max: Math.max(0, Math.round(board.scrollWidth - board.clientWidth)),
+      };
+      setKanbanScroll((current) =>
+        current.left === next.left && current.max === next.max ? current : next,
+      );
+    };
+    const observer = new ResizeObserver(syncScroll);
+    observer.observe(board);
+    if (board.firstElementChild) observer.observe(board.firstElementChild);
+    board.addEventListener("scroll", syncScroll, { passive: true });
+    syncScroll();
+
+    return () => {
+      observer.disconnect();
+      board.removeEventListener("scroll", syncScroll);
+    };
+  }, [displayPipelineColumns.length, filteredLeads.length, pipelineViewMode]);
+
   React.useEffect(() => {
     if (!draggingLeadId) return;
     let frame = 0;
@@ -1072,7 +1169,7 @@ function CRMPipeline() {
         stage: nextStage,
       });
 
-      void loadLeads({ silent: true });
+      void loadLeads({ silent: true, force: true });
 
       toast.success(`Lead movido para ${column.name}.`);
     } catch (error) {
@@ -1083,7 +1180,7 @@ function CRMPipeline() {
             : item,
         ),
       );
-      void loadLeads({ silent: true });
+      void loadLeads({ silent: true, force: true });
       toast.error(error instanceof Error ? error.message : "Falha ao mover lead.");
     } finally {
       setSyncingLeadId(null);
@@ -1134,11 +1231,11 @@ function CRMPipeline() {
         type: "lead-transferred",
         leadIds: [pendingAssumeLead.id],
       });
-      await loadLeads({ silent: true });
+      await loadLeads({ silent: true, force: true });
       toast.success("Atendimento assumido com sucesso.");
     } catch (error) {
       setPendingAssumeLead(null);
-      void loadLeads({ silent: true });
+      void loadLeads({ silent: true, force: true });
       toast.error(error instanceof Error ? error.message : "Falha ao assumir atendimento.");
     } finally {
       setAssumingLead(false);
@@ -1297,7 +1394,7 @@ function CRMPipeline() {
         type: "lead-transferred",
         leadIds: data.transferredIds,
       });
-      void loadLeads({ silent: true });
+      void loadLeads({ silent: true, force: true });
       void loadTransferData();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao transferir leads.");
@@ -1745,8 +1842,8 @@ function CRMPipeline() {
             </h2>
           </div>
           <p className="max-w-md text-xs leading-relaxed text-muted-foreground sm:text-right">
-            Na primeira etapa, os leads ficam disponíveis para todos os consultores da unidade. Ao
-            pegar, o consultor assume o atendimento.
+            Na primeira etapa, os leads ficam disponíveis para a equipe da unidade. Ao pegar, o
+            usuário se torna responsável pelo atendimento.
           </p>
         </div>
 
@@ -1769,6 +1866,7 @@ function CRMPipeline() {
             syncingLeadId={syncingLeadId}
             isConsultant={isConsultant}
             canOperate={canOperatePipeline}
+            canClaimSharedLeads={canClaimSharedLeads}
             consultantId={session?.user.id ?? ""}
             consultantScope={consultantScope}
             firstClaimColumn={firstClaimColumn}
@@ -1779,137 +1877,160 @@ function CRMPipeline() {
             onAssume={setPendingAssumeLead}
           />
         ) : (
-          <div ref={kanbanRef} data-testid="lead-kanban" className="overflow-x-auto pb-2">
-            <div className="flex min-w-max items-stretch gap-3">
-              {displayPipelineColumns.map((column, stageIndex) => {
-                const stageLeads = filteredLeads.filter(
-                  (lead) =>
-                    resolveLeadPipelineColumn(lead, displayPipelineColumns)?.id === column.id,
-                );
-                const visibleCount = stageVisibleCounts[column.id] ?? PIPELINE_STAGE_PAGE_SIZE;
-                const visibleStageLeads = stageLeads.slice(0, visibleCount);
-                const hiddenCount = Math.max(stageLeads.length - visibleStageLeads.length, 0);
-                const isDropTarget = dropTargetStage === column.id;
-                const stageVisual =
-                  pipelineColorVisual[column.color] ?? pipelineStageVisual["Novo lead"];
-                return (
-                  <div
-                    key={column.id}
-                    data-pipeline-column={column.id}
-                    onDragOver={(event) => {
-                      if (!draggingLeadId) return;
-                      event.preventDefault();
-                      event.dataTransfer.dropEffect = "move";
-                      setDropTargetStage(column.id);
-                    }}
-                    onDragLeave={(event) => {
-                      if (!event.currentTarget.contains(event.relatedTarget as Node | null))
-                        setDropTargetStage((current) => (current === column.id ? null : current));
-                    }}
-                    onDrop={(event) => handleStageDrop(event, column)}
-                    className={`flex w-[310px] flex-shrink-0 flex-col overflow-hidden rounded-[22px] border bg-gradient-to-b ${stageVisual.surface} to-white/70 transition-all duration-200 ${
-                      isDropTarget
-                        ? "border-[#F4B728] shadow-[0_18px_42px_-28px_rgba(244,183,40,0.95)] ring-2 ring-[#F4B728]/20"
-                        : "border-[#16006C]/10"
-                    }`}
-                  >
-                    <div className="border-b border-[#16006C]/10 bg-white/75 p-4 backdrop-blur-sm">
-                      <div className="flex items-start gap-3">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <div
-                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-black text-white shadow-sm ${stageVisual.accent}`}
-                          >
-                            {String(stageIndex + 1).padStart(2, "0")}
-                          </div>
-                          <div className="min-w-0">
-                            <h3 className="truncate text-sm font-black text-[#07154C]">
-                              {column.name}
-                            </h3>
-                            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                              <span className={`h-1.5 w-1.5 rounded-full ${stageVisual.dot}`} />
-                              {loadingLeads ? "Carregando" : `${stageLeads.length} oportunidades`}
+          <div className="relative">
+            {kanbanScroll.max > 0 ? (
+              <div className="sticky top-2 z-30 mb-3 rounded-2xl border border-[#16006C]/15 bg-white/95 px-4 py-2 shadow-lg backdrop-blur-md">
+                <div className="mb-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.14em] text-[#224C99]">
+                  <span>Navegar pelas etapas</span>
+                  <span>{Math.round((kanbanScroll.left / kanbanScroll.max) * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={kanbanScroll.max}
+                  step={1}
+                  value={Math.min(kanbanScroll.left, kanbanScroll.max)}
+                  onChange={(event) => {
+                    const nextLeft = Number(event.target.value);
+                    if (kanbanRef.current) kanbanRef.current.scrollLeft = nextLeft;
+                    setKanbanScroll((current) => ({ ...current, left: nextLeft }));
+                  }}
+                  aria-label="Navegar horizontalmente pelas etapas do Kanban"
+                  className="h-2 w-full cursor-ew-resize accent-[#16006C]"
+                />
+              </div>
+            ) : null}
+            <div ref={kanbanRef} data-testid="lead-kanban" className="overflow-x-auto pb-2">
+              <div className="flex min-w-max items-stretch gap-3">
+                {displayPipelineColumns.map((column, stageIndex) => {
+                  const stageLeads = leadsByColumn.get(column.id) ?? EMPTY_LEADS;
+                  const visibleCount = stageVisibleCounts[column.id] ?? PIPELINE_STAGE_PAGE_SIZE;
+                  const visibleStageLeads = stageLeads.slice(0, visibleCount);
+                  const hiddenCount = Math.max(stageLeads.length - visibleStageLeads.length, 0);
+                  const isDropTarget = dropTargetStage === column.id;
+                  const stageVisual =
+                    pipelineColorVisual[column.color] ?? pipelineStageVisual["Novo lead"];
+                  return (
+                    <div
+                      key={column.id}
+                      data-pipeline-column={column.id}
+                      onDragOver={(event) => {
+                        if (!draggingLeadId) return;
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                        setDropTargetStage(column.id);
+                      }}
+                      onDragLeave={(event) => {
+                        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+                          setDropTargetStage((current) => (current === column.id ? null : current));
+                      }}
+                      onDrop={(event) => handleStageDrop(event, column)}
+                      className={`flex w-[310px] flex-shrink-0 flex-col overflow-hidden rounded-[22px] border bg-gradient-to-b ${stageVisual.surface} to-white/70 transition-all duration-200 ${
+                        isDropTarget
+                          ? "border-[#F4B728] shadow-[0_18px_42px_-28px_rgba(244,183,40,0.95)] ring-2 ring-[#F4B728]/20"
+                          : "border-[#16006C]/10"
+                      }`}
+                    >
+                      <div className="border-b border-[#16006C]/10 bg-white/75 p-4 backdrop-blur-sm">
+                        <div className="flex items-start gap-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div
+                              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-black text-white shadow-sm ${stageVisual.accent}`}
+                            >
+                              {String(stageIndex + 1).padStart(2, "0")}
+                            </div>
+                            <div className="min-w-0">
+                              <h3 className="truncate text-sm font-black text-[#07154C]">
+                                {column.name}
+                              </h3>
+                              <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                                <span className={`h-1.5 w-1.5 rounded-full ${stageVisual.dot}`} />
+                                {loadingLeads ? "Carregando" : `${stageLeads.length} oportunidades`}
+                              </div>
                             </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="min-h-[360px] flex-1 space-y-3 p-3">
-                      {loadingLeads ? (
-                        <EmptyState
-                          icon={KanbanSquare}
-                          title="Carregando"
-                          description="Sincronizando leads da unidade ativa."
-                        />
-                      ) : stageLeads.length ? (
-                        <>
-                          {visibleStageLeads.map((lead) => (
-                            <LeadPipelineCard
-                              key={lead.id}
-                              lead={lead}
-                              columnColor={column.color}
-                              removing={removingLeadId === lead.id}
-                              dragging={draggingLeadId === lead.id}
-                              syncing={syncingLeadId === lead.id}
-                              canViewAcquisitionChannel={canViewAcquisitionChannel}
-                              canViewOwner
-                              canRemove={canRemoveLeads}
-                              canOpen={
-                                canOperatePipeline &&
-                                (!isConsultant ||
-                                  canConsultantOpenPipelineLead(lead, session?.user.id ?? ""))
-                              }
-                              canDrag={
-                                canOperatePipeline &&
-                                (!isConsultant
-                                  ? !isSharedLeadQueueEntry(lead)
-                                  : canConsultantMovePipelineLead(lead, session?.user.id ?? ""))
-                              }
-                              onClaim={
-                                isConsultant && isSharedLeadQueueEntry(lead) && firstClaimColumn
-                                  ? () => void updateLeadStage(lead, firstClaimColumn)
-                                  : undefined
-                              }
-                              onAssume={
-                                isConsultant &&
-                                consultantScope === "all" &&
-                                canConsultantAssumePipelineLead(lead, session?.user.id ?? "")
-                                  ? () => setPendingAssumeLead(lead)
-                                  : undefined
-                              }
-                              onRemove={() => void handleRemoveLead(lead)}
-                              onEdit={() => openEditLeadDialog(lead)}
-                              onDragStart={(event) => handleDragStart(event, lead)}
-                              onDragEnd={handleDragEnd}
-                            />
-                          ))}
+                      <div className="min-h-[360px] flex-1 space-y-3 p-3">
+                        {loadingLeads ? (
+                          <EmptyState
+                            icon={KanbanSquare}
+                            title="Carregando"
+                            description="Sincronizando leads da unidade ativa."
+                          />
+                        ) : stageLeads.length ? (
+                          <>
+                            {visibleStageLeads.map((lead) => (
+                              <LeadPipelineCard
+                                key={lead.id}
+                                lead={lead}
+                                columnColor={column.color}
+                                removing={removingLeadId === lead.id}
+                                dragging={draggingLeadId === lead.id}
+                                syncing={syncingLeadId === lead.id}
+                                canViewAcquisitionChannel={canViewAcquisitionChannel}
+                                canViewOwner
+                                canRemove={canRemoveLeads}
+                                canOpen={
+                                  canOperatePipeline &&
+                                  (!isConsultant ||
+                                    canConsultantOpenPipelineLead(lead, session?.user.id ?? ""))
+                                }
+                                canDrag={
+                                  canOperatePipeline &&
+                                  (!isConsultant
+                                    ? !isSharedLeadQueueEntry(lead)
+                                    : canConsultantMovePipelineLead(lead, session?.user.id ?? ""))
+                                }
+                                onClaim={
+                                  canClaimSharedLeads &&
+                                  isSharedLeadQueueEntry(lead) &&
+                                  firstClaimColumn
+                                    ? () => void updateLeadStage(lead, firstClaimColumn)
+                                    : undefined
+                                }
+                                onAssume={
+                                  isConsultant &&
+                                  consultantScope === "all" &&
+                                  canConsultantAssumePipelineLead(lead, session?.user.id ?? "")
+                                    ? () => setPendingAssumeLead(lead)
+                                    : undefined
+                                }
+                                onRemove={() => void handleRemoveLead(lead)}
+                                onEdit={() => openEditLeadDialog(lead)}
+                                onDragStart={(event) => handleDragStart(event, lead)}
+                                onDragEnd={handleDragEnd}
+                              />
+                            ))}
 
-                          {hiddenCount ? (
-                            <div className="sticky bottom-0 -mx-1 -mb-1 rounded-b-xl bg-gradient-to-t from-[#F7F8FC] via-[#F7F8FC]/95 to-transparent px-1 pb-1 pt-8 backdrop-blur-sm">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                className="w-full border-[#16006C]/15 bg-white/90 text-[#16006C] shadow-sm hover:bg-[#16006C] hover:text-white"
-                                onClick={() => loadMoreStageLeads(column.id, stageLeads.length)}
-                              >
-                                + carregar mais leads
-                                <span className="ml-1 text-xs opacity-75">({hiddenCount})</span>
-                              </Button>
-                            </div>
-                          ) : null}
-                        </>
-                      ) : (
-                        <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#16006C]/15 bg-white/40 px-5 text-center">
-                          <div className={`mb-3 h-2 w-2 rounded-full ${stageVisual.dot}`} />
-                          <div className="text-sm font-bold text-[#07154C]">Etapa livre</div>
-                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                            Novas oportunidades aparecerão aqui.
-                          </p>
-                        </div>
-                      )}
+                            {hiddenCount ? (
+                              <div className="sticky bottom-0 -mx-1 -mb-1 rounded-b-xl bg-gradient-to-t from-[#F7F8FC] via-[#F7F8FC]/95 to-transparent px-1 pb-1 pt-8 backdrop-blur-sm">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="w-full border-[#16006C]/15 bg-white/90 text-[#16006C] shadow-sm hover:bg-[#16006C] hover:text-white"
+                                  onClick={() => loadMoreStageLeads(column.id, stageLeads.length)}
+                                >
+                                  + carregar mais leads
+                                  <span className="ml-1 text-xs opacity-75">({hiddenCount})</span>
+                                </Button>
+                              </div>
+                            ) : null}
+                          </>
+                        ) : (
+                          <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#16006C]/15 bg-white/40 px-5 text-center">
+                            <div className={`mb-3 h-2 w-2 rounded-full ${stageVisual.dot}`} />
+                            <div className="text-sm font-bold text-[#07154C]">Etapa livre</div>
+                            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                              Novas oportunidades aparecerão aqui.
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
@@ -2063,6 +2184,7 @@ function LeadPipelineList({
   syncingLeadId,
   isConsultant,
   canOperate,
+  canClaimSharedLeads,
   consultantId,
   consultantScope,
   firstClaimColumn,
@@ -2076,6 +2198,7 @@ function LeadPipelineList({
   syncingLeadId: string | null;
   isConsultant: boolean;
   canOperate: boolean;
+  canClaimSharedLeads: boolean;
   consultantId: string;
   consultantScope: ConsultantPipelineScope;
   firstClaimColumn?: PipelineColumn;
@@ -2109,7 +2232,8 @@ function LeadPipelineList({
         const column = resolveLeadPipelineColumn(lead, columns);
         const canOpen =
           canOperate && (!isConsultant || canConsultantOpenPipelineLead(lead, consultantId));
-        const canClaim = isConsultant && isSharedLeadQueueEntry(lead) && Boolean(firstClaimColumn);
+        const canClaim =
+          canClaimSharedLeads && isSharedLeadQueueEntry(lead) && Boolean(firstClaimColumn);
         const canAssume =
           isConsultant &&
           consultantScope === "all" &&
@@ -2361,7 +2485,7 @@ function LeadPipelineCard({
           <div className="mt-3 rounded-xl border border-[#377DFE]/20 bg-[#EAF1FF]/75 p-2.5">
             <div className="flex items-center gap-2 text-[11px] font-bold text-[#224C99]">
               <UsersRound className="h-4 w-4 shrink-0" />
-              Disponível para todos os consultores da unidade
+              Disponível para todos os usuários da unidade
             </div>
             {onClaim ? (
               <Button

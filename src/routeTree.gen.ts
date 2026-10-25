@@ -44,6 +44,7 @@ import { Route as ApiAtendimentosMidiaRouteImport } from './routes/api/atendimen
 import { Route as ApiAuthLoginRouteImport } from './routes/api/auth/login'
 import { Route as ApiAuthLogoutRouteImport } from './routes/api/auth/logout'
 import { Route as ApiAuthSessionRouteImport } from './routes/api/auth/session'
+import { Route as ApiCrmDashboardRouteImport } from './routes/api/crm/dashboard'
 import { Route as ApiCrmImportRouteImport } from './routes/api/crm/import'
 import { Route as ApiCrmLeadsRouteImport } from './routes/api/crm/leads'
 import { Route as ApiCrmTasksRouteImport } from './routes/api/crm/tasks'
@@ -256,6 +257,11 @@ const ApiAuthLogoutRoute = ApiAuthLogoutRouteImport.update({
 const ApiAuthSessionRoute = ApiAuthSessionRouteImport.update({
   id: '/api/auth/session',
   path: '/api/auth/session',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCrmDashboardRoute = ApiCrmDashboardRouteImport.update({
+  id: '/api/crm/dashboard',
+  path: '/api/crm/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiCrmImportRoute = ApiCrmImportRouteImport.update({
@@ -498,6 +504,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
+  '/api/crm/dashboard': typeof ApiCrmDashboardRoute
   '/api/crm/import': typeof ApiCrmImportRoute
   '/api/crm/leads': typeof ApiCrmLeadsRouteWithChildren
   '/api/crm/tasks': typeof ApiCrmTasksRoute
@@ -573,6 +580,7 @@ export interface FileRoutesByTo {
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
+  '/api/crm/dashboard': typeof ApiCrmDashboardRoute
   '/api/crm/import': typeof ApiCrmImportRoute
   '/api/crm/leads': typeof ApiCrmLeadsRouteWithChildren
   '/api/crm/tasks': typeof ApiCrmTasksRoute
@@ -649,6 +657,7 @@ export interface FileRoutesById {
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
+  '/api/crm/dashboard': typeof ApiCrmDashboardRoute
   '/api/crm/import': typeof ApiCrmImportRoute
   '/api/crm/leads': typeof ApiCrmLeadsRouteWithChildren
   '/api/crm/tasks': typeof ApiCrmTasksRoute
@@ -726,6 +735,7 @@ export interface FileRouteTypes {
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
+    | '/api/crm/dashboard'
     | '/api/crm/import'
     | '/api/crm/leads'
     | '/api/crm/tasks'
@@ -801,6 +811,7 @@ export interface FileRouteTypes {
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
+    | '/api/crm/dashboard'
     | '/api/crm/import'
     | '/api/crm/leads'
     | '/api/crm/tasks'
@@ -876,6 +887,7 @@ export interface FileRouteTypes {
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
+    | '/api/crm/dashboard'
     | '/api/crm/import'
     | '/api/crm/leads'
     | '/api/crm/tasks'
@@ -950,6 +962,7 @@ export interface RootRouteChildren {
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
   ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
   ApiAuthSessionRoute: typeof ApiAuthSessionRoute
+  ApiCrmDashboardRoute: typeof ApiCrmDashboardRoute
   ApiCrmImportRoute: typeof ApiCrmImportRoute
   ApiCrmLeadsRoute: typeof ApiCrmLeadsRouteWithChildren
   ApiCrmTasksRoute: typeof ApiCrmTasksRoute
@@ -1222,6 +1235,13 @@ declare module '@tanstack/react-router' {
       path: '/api/auth/session'
       fullPath: '/api/auth/session'
       preLoaderRoute: typeof ApiAuthSessionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/crm/dashboard': {
+      id: '/api/crm/dashboard'
+      path: '/api/crm/dashboard'
+      fullPath: '/api/crm/dashboard'
+      preLoaderRoute: typeof ApiCrmDashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/crm/import': {
@@ -1671,6 +1691,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthLoginRoute: ApiAuthLoginRoute,
   ApiAuthLogoutRoute: ApiAuthLogoutRoute,
   ApiAuthSessionRoute: ApiAuthSessionRoute,
+  ApiCrmDashboardRoute: ApiCrmDashboardRoute,
   ApiCrmImportRoute: ApiCrmImportRoute,
   ApiCrmLeadsRoute: ApiCrmLeadsRouteWithChildren,
   ApiCrmTasksRoute: ApiCrmTasksRoute,

@@ -1,7 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { QueryResultRow } from "pg";
 import type { LeadStage } from "@/lib/commercial-types";
-import { canOperateCrm, canReturnStudentToLead, canTransferLeads } from "@/lib/auth-types";
+import {
+  canClaimLeads,
+  canOperateCrm,
+  canReturnStudentToLead,
+  canTransferLeads,
+} from "@/lib/auth-types";
 import { ensureCommercialSchema, isUuid } from "@/lib/server/commercial-schema";
 import { getSessionFromRequest } from "@/lib/server/auth";
 import { ensureCourseAttendanceSchema } from "@/lib/server/course-attendances";
@@ -230,23 +235,23 @@ async function recordPaidStudentPayment(leadId: string, userId: string) {
   );
 }
 
-async function hasActiveUnitConsultant(unitId: string, userId?: string) {
+async function hasActiveUnitUser(unitId: string, userId?: string) {
   const result = await queryDb<{ allowed: boolean }>(
     `
       select exists (
         select 1
-        from app_users consultant
-        where consultant.role = 'CONSULTOR'
-          and consultant.status = 'active'
-          and ($2::uuid is null or consultant.id = $2)
+        from app_users app_user
+        where app_user.status = 'active'
+          and ($2::uuid is null or app_user.id = $2)
           and (
-            consultant.primary_unit_id = $1
+            app_user.primary_unit_id = $1
             or exists (
               select 1
               from app_user_units user_unit
-              where user_unit.user_id = consultant.id
+              where user_unit.user_id = app_user.id
                 and user_unit.unit_id = $1
             )
+            or app_user.role in ('DEV', 'CEO', 'CVO', 'MARKETING')
           )
       ) as allowed
     `,
@@ -266,13 +271,6 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
           return Response.json({ ok: false, error: "Não autenticado." }, { status: 401 });
         }
 
-        if (!canOperateCrm(session.user.role)) {
-          return Response.json(
-            { ok: false, error: "Acesso somente para leitura." },
-            { status: 403 },
-          );
-        }
-
         if (!isUuid(params.id)) {
           return Response.json({ ok: false, error: "Lead inválido." }, { status: 400 });
         }
@@ -285,6 +283,14 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
           studentPipelineColumnId?: unknown;
           returnToLead?: unknown;
         } | null;
+        const requestedLeadColumnId =
+          typeof pipelineMove?.pipelineColumnId === "string"
+            ? pipelineMove.pipelineColumnId.trim()
+            : "";
+        const requestedStudentColumnId =
+          typeof pipelineMove?.studentPipelineColumnId === "string"
+            ? pipelineMove.studentPipelineColumnId.trim()
+            : "";
 
         await ensureCommercialSchema();
         await ensureCourseAttendanceSchema();
@@ -324,24 +330,34 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
         }
 
         const canManageUnitLeads = canTransferLeads(session.user.role);
+        const canOperate = canOperateCrm(session.user.role);
+        const canClaim = canClaimLeads(session.user.role);
         const isSharedNewLead =
           lead.shared_queue && lead.stage === "Novo lead" && Boolean(lead.attendance_id);
-        const consultantCanAccessSharedLead =
-          session.user.role === "CONSULTOR" &&
-          isSharedNewLead &&
-          (await hasActiveUnitConsultant(lead.unit_id, session.user.id));
+        const userCanAccessSharedLead =
+          canClaim && isSharedNewLead && (await hasActiveUnitUser(lead.unit_id, session.user.id));
+
+        if (!canOperate && !(requestedLeadColumnId && userCanAccessSharedLead)) {
+          return Response.json(
+            {
+              ok: false,
+              error: "Seu perfil pode pegar leads livres, mas não alterar este registro.",
+            },
+            { status: 403 },
+          );
+        }
 
         if (
           !canManageUnitLeads &&
           lead.created_by !== session.user.id &&
-          !consultantCanAccessSharedLead
+          !userCanAccessSharedLead
         ) {
           return Response.json(
             {
               ok: false,
               error:
                 session.user.role === "CONSULTOR"
-                  ? "Este lead já foi assumido por outro consultor."
+                  ? "Este lead já foi assumido por outro usuário."
                   : "Acesso negado.",
             },
             { status: session.user.role === "CONSULTOR" ? 409 : 403 },
@@ -363,15 +379,6 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
             throw error;
           }
         }
-
-        const requestedLeadColumnId =
-          typeof pipelineMove?.pipelineColumnId === "string"
-            ? pipelineMove.pipelineColumnId.trim()
-            : "";
-        const requestedStudentColumnId =
-          typeof pipelineMove?.studentPipelineColumnId === "string"
-            ? pipelineMove.studentPipelineColumnId.trim()
-            : "";
 
         if (requestedLeadColumnId || requestedStudentColumnId) {
           const columnId = requestedLeadColumnId || requestedStudentColumnId;
@@ -408,12 +415,9 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
             return Response.json({ ok: true, studentPipelineColumnId: column.id });
           }
 
-          if (
-            isSharedNewLead &&
-            (session.user.role !== "CONSULTOR" || !consultantCanAccessSharedLead)
-          ) {
+          if (isSharedNewLead && !userCanAccessSharedLead) {
             return Response.json(
-              { ok: false, error: "Um consultor ativo da unidade deve assumir este lead." },
+              { ok: false, error: "Um usuário ativo com acesso à unidade deve assumir este lead." },
               { status: 403 },
             );
           }
@@ -422,7 +426,7 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
             const moved = await moveLeadToPipelineColumn({
               leadId: params.id,
               pipelineColumnId: column.id,
-              claimUserId: session.user.role === "CONSULTOR" ? session.user.id : null,
+              claimUserId: isSharedNewLead ? session.user.id : null,
             });
 
             return Response.json({
@@ -442,7 +446,7 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
           }
         }
 
-        if (isSharedNewLead && session.user.role === "CONSULTOR") {
+        if (isSharedNewLead) {
           return Response.json(
             { ok: false, error: "Mova o lead para outra etapa para iniciar o atendimento." },
             { status: 409 },
@@ -482,7 +486,7 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
           return Response.json(
             {
               ok: false,
-              error: "Um consultor ativo da unidade deve assumir o lead pelo pipeline.",
+              error: "Um usuário ativo da unidade deve assumir o lead pelo pipeline.",
             },
             { status: 409 },
           );

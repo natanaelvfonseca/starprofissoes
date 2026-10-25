@@ -9,7 +9,6 @@ import {
   isUniqueError,
 } from "@/lib/server/commercial-schema";
 import { getSessionFromRequest } from "@/lib/server/auth";
-import { ensureCourseAttendanceSchema } from "@/lib/server/course-attendances";
 import { queryDb } from "@/lib/server/db";
 
 type CourseRow = QueryResultRow & {
@@ -85,9 +84,6 @@ export const Route = createFileRoute("/api/gestao/courses")({
         if (!unit) {
           return Response.json({ ok: false, error: "Unidade indisponível." }, { status: 403 });
         }
-
-        await ensureCommercialSchema();
-        await ensureCourseAttendanceSchema();
 
         const [result, attendances] = await Promise.all([
           queryDb<CourseRow>(

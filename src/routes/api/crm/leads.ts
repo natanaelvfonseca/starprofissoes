@@ -3,7 +3,6 @@ import type { QueryResultRow } from "pg";
 import type { LeadRecord, LeadStage, PipelineColumn, PipelineType } from "@/lib/commercial-types";
 import {
   ensureCommercialSchema,
-  ensureDefaultPipelineColumns,
   getUnitFromBody,
   getUnitFromRequest,
   isUuid,
@@ -387,23 +386,19 @@ export const Route = createFileRoute("/api/crm/leads")({
           return Response.json({ ok: false, error: "Unidade indisponível." }, { status: 403 });
         }
 
-        await ensureDefaultPipelineColumns(unit.id);
-        await ensureCourseAttendanceSchema();
-
         const listView = getLeadListView(request);
         if (listView === "students" && !canViewStudents(session.user.role)) {
           return Response.json({ ok: false, error: "Acesso negado." }, { status: 403 });
         }
 
         if (listView === "pipeline" && session.user.role === "CONSULTOR") {
-          await reconcileEvolutionLabelsForUser(session.user.id, unit.id, request.url).catch(
+          void reconcileEvolutionLabelsForUser(session.user.id, unit.id, request.url).catch(
             (error) => {
               console.error("[Evolution labels] Falha ao reconciliar etiquetas", {
                 userId: session.user.id,
                 unitId: unit.id,
                 error: error instanceof Error ? error.message : String(error),
               });
-              return null;
             },
           );
         }
