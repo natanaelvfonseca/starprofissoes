@@ -150,10 +150,6 @@ export function canAccessLeadTransferCenter(role: UserRole) {
   return canTransferLeads(role) || role === "MARKETING";
 }
 
-export function canTransferLeadsImmediately(role: UserRole) {
-  return isMasterRole(role) || role === "MARKETING";
-}
-
 export function canViewAttendances(role: UserRole) {
   return isMasterRole(role) || isExecutiveRole(role) || role === "DIRETOR" || role === "GERENTE";
 }

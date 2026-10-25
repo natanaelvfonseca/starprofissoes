@@ -6,6 +6,7 @@ export const PIPELINE_FILTER_ALL = "__all__";
 
 export type PipelineFilters = {
   attendanceId: string;
+  attendanceStatus: string;
   courseId: string;
   channelId: string;
   ownerId: string;
@@ -17,6 +18,7 @@ export type PipelineFilters = {
 export function emptyPipelineFilters(): PipelineFilters {
   return {
     attendanceId: PIPELINE_FILTER_ALL,
+    attendanceStatus: PIPELINE_FILTER_ALL,
     courseId: PIPELINE_FILTER_ALL,
     channelId: PIPELINE_FILTER_ALL,
     ownerId: PIPELINE_FILTER_ALL,
@@ -31,9 +33,13 @@ export function countActivePipelineFilters(
   canViewAcquisitionChannel: boolean,
 ) {
   return (
-    [filters.attendanceId, filters.courseId, filters.ownerId, filters.city].filter(
-      (value) => value !== PIPELINE_FILTER_ALL,
-    ).length +
+    [
+      filters.attendanceId,
+      filters.attendanceStatus,
+      filters.courseId,
+      filters.ownerId,
+      filters.city,
+    ].filter((value) => value !== PIPELINE_FILTER_ALL).length +
     (canViewAcquisitionChannel && filters.channelId !== PIPELINE_FILTER_ALL ? 1 : 0) +
     (filters.startDate || filters.endDate ? 1 : 0)
   );
@@ -60,6 +66,8 @@ export function filterPipelineLeads(
     if (
       (filters.attendanceId !== PIPELINE_FILTER_ALL &&
         lead.attendanceId !== filters.attendanceId) ||
+      (filters.attendanceStatus !== PIPELINE_FILTER_ALL &&
+        lead.attendanceStatus !== filters.attendanceStatus) ||
       (filters.courseId !== PIPELINE_FILTER_ALL && lead.courseId !== filters.courseId) ||
       // The API redacts acquisition data for consultants. A hidden/stale filter must not reject every lead.
       (context.canViewAcquisitionChannel &&

@@ -62,6 +62,12 @@ type PipelineColumnRow = QueryResultRow & {
   semantic_stage: LeadStage | null;
 };
 
+type LeadOwnerOptionRow = QueryResultRow & {
+  id: string;
+  name: string;
+  role: string;
+};
+
 type CourseSnapshotRow = QueryResultRow & {
   id: string;
   name: string;
@@ -408,7 +414,7 @@ export const Route = createFileRoute("/api/crm/leads")({
             ? canViewAllUnitPipelineLeads(session.user.role)
             : canViewAllUnitLeads(session.user.role);
         const exposeAcquisitionChannel = session.user.role !== "CONSULTOR";
-        const [result, columnsResult] = await Promise.all([
+        const [result, columnsResult, ownersResult] = await Promise.all([
           queryDb<LeadRow>(
             `
             select
@@ -483,12 +489,28 @@ export const Route = createFileRoute("/api/crm/leads")({
             `,
             [unit.id, listView === "students" ? "students" : "leads"],
           ),
+          queryDb<LeadOwnerOptionRow>(
+            `
+              select distinct u.id, u.name, u.role
+              from app_users u
+              left join app_user_units uu on uu.user_id = u.id and uu.unit_id = $1
+              where u.status = 'active'
+                and (
+                  u.primary_unit_id = $1
+                  or uu.user_id is not null
+                  or u.role in ('DEV', 'CEO', 'CVO', 'MARKETING')
+                )
+              order by u.name
+            `,
+            [unit.id],
+          ),
         ]);
 
         return Response.json(
           {
             leads: result.rows.map((row) => mapLead(row, exposeAcquisitionChannel)),
             pipelineColumns: columnsResult.rows.map(mapPipelineColumn),
+            owners: ownersResult.rows,
           },
           { headers: { "Cache-Control": "no-store" } },
         );

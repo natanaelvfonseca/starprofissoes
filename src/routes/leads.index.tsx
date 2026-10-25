@@ -45,6 +45,8 @@ type LeadsResponse = {
 };
 
 type StudentFilters = {
+  attendanceId: string;
+  attendanceStatus: string;
   courseId: string;
   channelId: string;
   city: string;
@@ -88,6 +90,8 @@ const studentColumnStyles: Record<string, { accent: string; surface: string; bad
 
 function emptyStudentFilters(): StudentFilters {
   return {
+    attendanceId: FILTER_ALL,
+    attendanceStatus: FILTER_ALL,
     courseId: FILTER_ALL,
     channelId: FILTER_ALL,
     city: FILTER_ALL,
@@ -188,6 +192,20 @@ function LeadsList() {
     ),
     ([id, name]) => ({ id, name }),
   ).sort((first, second) => first.name.localeCompare(second.name, "pt-BR"));
+  const attendanceOptions = Array.from(
+    new Map(
+      leads
+        .filter((lead) => lead.attendanceId && lead.attendanceName)
+        .map((lead) => [
+          lead.attendanceId as string,
+          {
+            id: lead.attendanceId as string,
+            name: lead.attendanceName as string,
+            status: lead.attendanceStatus,
+          },
+        ]),
+    ).values(),
+  ).sort((first, second) => first.name.localeCompare(second.name, "pt-BR"));
   const channelOptions = Array.from(
     new Map(
       leads
@@ -207,6 +225,8 @@ function LeadsList() {
     ([id, name]) => ({ id, name }),
   ).sort((first, second) => first.name.localeCompare(second.name, "pt-BR"));
   const activeFilterCount = [
+    filters.attendanceId,
+    filters.attendanceStatus,
     filters.courseId,
     filters.channelId,
     filters.city,
@@ -231,6 +251,9 @@ function LeadsList() {
 
     return (
       searchText.includes(search.trim().toLowerCase()) &&
+      (filters.attendanceId === FILTER_ALL || lead.attendanceId === filters.attendanceId) &&
+      (filters.attendanceStatus === FILTER_ALL ||
+        lead.attendanceStatus === filters.attendanceStatus) &&
       (filters.courseId === FILTER_ALL || lead.courseId === filters.courseId) &&
       (filters.channelId === FILTER_ALL || lead.acquisitionChannelId === filters.channelId) &&
       (filters.city === FILTER_ALL || lead.city === filters.city) &&
@@ -393,6 +416,57 @@ function LeadsList() {
 
           {filtersOpen ? (
             <div className="mt-4 grid gap-3 rounded-xl border border-border bg-muted/25 p-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="space-y-2">
+                <Label>Turma</Label>
+                <Select
+                  value={filters.attendanceId}
+                  onValueChange={(value) =>
+                    setFilters((current) => ({ ...current, attendanceId: value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todas as turmas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={FILTER_ALL}>Todas as turmas</SelectItem>
+                    {attendanceOptions
+                      .filter(
+                        (attendance) =>
+                          filters.attendanceStatus === FILTER_ALL ||
+                          attendance.status === filters.attendanceStatus,
+                      )
+                      .map((attendance) => (
+                        <SelectItem key={attendance.id} value={attendance.id}>
+                          {attendance.name} · {attendance.status === "active" ? "Ativa" : "Inativa"}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Status da turma</Label>
+                <Select
+                  value={filters.attendanceStatus}
+                  onValueChange={(value) =>
+                    setFilters((current) => ({
+                      ...current,
+                      attendanceStatus: value,
+                      attendanceId: FILTER_ALL,
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todas as turmas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={FILTER_ALL}>Todas as turmas</SelectItem>
+                    <SelectItem value="active">Turmas ativas</SelectItem>
+                    <SelectItem value="inactive">Turmas inativas</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="space-y-2">
                 <Label>Curso</Label>
                 <Select

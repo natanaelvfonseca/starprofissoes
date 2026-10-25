@@ -56,7 +56,11 @@ type TransferLead = {
   phone2: string | null;
   email: string | null;
   city: string | null;
+  attendanceId: string | null;
+  attendanceName: string | null;
+  courseId: string | null;
   courseName: string | null;
+  acquisitionChannelId: string | null;
   acquisitionChannelName: string | null;
   stage: LeadStage;
   stageName: string;
@@ -74,10 +78,6 @@ type TransferDataResponse = {
   users?: Array<TransferUser>;
   consultants?: Array<TransferUser>;
   leads: Array<TransferLead>;
-  policy: {
-    immediateTransfer: boolean;
-    requires48Hours: boolean;
-  };
 };
 
 type TransferSubmitResponse = {
@@ -166,13 +166,13 @@ function LeadTransferCenter() {
   const canAccess = session ? canAccessLeadTransferCenter(session.user.role) : false;
   const [leads, setLeads] = React.useState<Array<TransferLead>>([]);
   const [users, setUsers] = React.useState<Array<TransferUser>>([]);
-  const [policy, setPolicy] = React.useState<TransferDataResponse["policy"]>({
-    immediateTransfer: false,
-    requires48Hours: true,
-  });
   const [selectedLeadIds, setSelectedLeadIds] = React.useState<Set<string>>(() => new Set());
   const [targetUserId, setTargetUserId] = React.useState("");
   const [ownerFilter, setOwnerFilter] = React.useState(FILTER_ALL);
+  const [attendanceFilter, setAttendanceFilter] = React.useState(FILTER_ALL);
+  const [courseFilter, setCourseFilter] = React.useState(FILTER_ALL);
+  const [channelFilter, setChannelFilter] = React.useState(FILTER_ALL);
+  const [cityFilter, setCityFilter] = React.useState(FILTER_ALL);
   const [stageFilter, setStageFilter] = React.useState(FILTER_ALL);
   const [search, setSearch] = React.useState("");
   const [loading, setLoading] = React.useState(true);
@@ -199,7 +199,6 @@ function LeadTransferCenter() {
 
       setUsers(nextUsers);
       setLeads(data.leads);
-      setPolicy(data.policy);
       setSelectedLeadIds(
         (current) => new Set(Array.from(current).filter((id) => availableIds.has(id))),
       );
@@ -256,10 +255,23 @@ function LeadTransferCenter() {
       leads.filter(
         (lead) =>
           ownerFilterMatches(lead, ownerFilter) &&
+          (attendanceFilter === FILTER_ALL || lead.attendanceId === attendanceFilter) &&
+          (courseFilter === FILTER_ALL || lead.courseId === courseFilter) &&
+          (channelFilter === FILTER_ALL || lead.acquisitionChannelId === channelFilter) &&
+          (cityFilter === FILTER_ALL || lead.city === cityFilter) &&
           (stageFilter === FILTER_ALL || lead.stageName === stageFilter) &&
           leadMatchesSearch(lead, search),
       ),
-    [leads, ownerFilter, search, stageFilter],
+    [
+      attendanceFilter,
+      channelFilter,
+      cityFilter,
+      courseFilter,
+      leads,
+      ownerFilter,
+      search,
+      stageFilter,
+    ],
   );
 
   const transferableFilteredLeads = React.useMemo(
@@ -287,6 +299,52 @@ function LeadTransferCenter() {
     return Array.from(map.entries()).map(([id, value]) => ({ id, ...value }));
   }, [leads]);
   const targetUser = users.find((user) => user.id === targetUserId) ?? null;
+  const attendanceOptions = React.useMemo(
+    () =>
+      Array.from(
+        new Map(
+          leads
+            .filter((lead) => lead.attendanceId && lead.attendanceName)
+            .map((lead) => [lead.attendanceId as string, lead.attendanceName as string]),
+        ),
+        ([id, name]) => ({ id, name }),
+      ).sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
+    [leads],
+  );
+  const courseOptions = React.useMemo(
+    () =>
+      Array.from(
+        new Map(
+          leads
+            .filter((lead) => lead.courseId && lead.courseName)
+            .map((lead) => [lead.courseId as string, lead.courseName as string]),
+        ),
+        ([id, name]) => ({ id, name }),
+      ).sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
+    [leads],
+  );
+  const channelOptions = React.useMemo(
+    () =>
+      Array.from(
+        new Map(
+          leads
+            .filter((lead) => lead.acquisitionChannelId && lead.acquisitionChannelName)
+            .map((lead) => [
+              lead.acquisitionChannelId as string,
+              lead.acquisitionChannelName as string,
+            ]),
+        ),
+        ([id, name]) => ({ id, name }),
+      ).sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
+    [leads],
+  );
+  const cityOptions = React.useMemo(
+    () =>
+      Array.from(new Set(leads.map((lead) => lead.city).filter(Boolean) as Array<string>)).sort(
+        (a, b) => a.localeCompare(b, "pt-BR"),
+      ),
+    [leads],
+  );
 
   function toggleLead(lead: TransferLead, checked: boolean | "indeterminate") {
     if (!lead.transferable) {
@@ -375,6 +433,10 @@ function LeadTransferCenter() {
 
   function clearFilters() {
     setOwnerFilter(FILTER_ALL);
+    setAttendanceFilter(FILTER_ALL);
+    setCourseFilter(FILTER_ALL);
+    setChannelFilter(FILTER_ALL);
+    setCityFilter(FILTER_ALL);
     setStageFilter(FILTER_ALL);
     setSearch("");
   }
@@ -403,9 +465,6 @@ function LeadTransferCenter() {
         description="Central de correção de responsáveis do CRM."
         actions={
           <div className="flex flex-wrap gap-2">
-            <Badge variant="secondary" className="bg-primary/10 text-primary">
-              {policy.immediateTransfer ? "Transferência imediata" : "Regra de 48h"}
-            </Badge>
             <Button
               type="button"
               variant="outline"
@@ -429,8 +488,8 @@ function LeadTransferCenter() {
         <Metric icon={UserCheck} label="Responsáveis" value={groupedCounts.length} />
         <Metric
           icon={ShieldCheck}
-          label={policy.immediateTransfer ? "Liberação" : "Elegíveis"}
-          value={policy.immediateTransfer ? "Agora" : transferableFilteredLeads.length}
+          label="Disponíveis"
+          value={transferableFilteredLeads.length}
           tone="gold"
         />
       </div>
@@ -438,7 +497,7 @@ function LeadTransferCenter() {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-4">
           <Card className="border-primary/10 shadow-card">
-            <CardContent className="grid gap-3 p-4 lg:grid-cols-[minmax(260px,1fr)_220px_220px_auto]">
+            <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -458,6 +517,7 @@ function LeadTransferCenter() {
                   {ownerOptions.map((owner) => (
                     <SelectItem key={owner.id} value={owner.id}>
                       {owner.name}
+                      {owner.role ? ` · ${ROLE_LABELS[owner.role]}` : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -471,6 +531,58 @@ function LeadTransferCenter() {
                   {Array.from(new Set(leads.map((lead) => lead.stageName))).map((stage) => (
                     <SelectItem key={stage} value={stage}>
                       {stage}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={attendanceFilter} onValueChange={setAttendanceFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Turma" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={FILTER_ALL}>Todas as turmas</SelectItem>
+                  {attendanceOptions.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={courseFilter} onValueChange={setCourseFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Curso" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={FILTER_ALL}>Todos os cursos</SelectItem>
+                  {courseOptions.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={channelFilter} onValueChange={setChannelFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Origem" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={FILTER_ALL}>Todas as origens</SelectItem>
+                  {channelOptions.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={cityFilter} onValueChange={setCityFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Cidade" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={FILTER_ALL}>Todas as cidades</SelectItem>
+                  {cityOptions.map((city) => (
+                    <SelectItem key={city} value={city}>
+                      {city}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -570,7 +682,7 @@ function LeadTransferCenter() {
                                     : "bg-gold/15 text-gold-foreground"
                                 }
                               >
-                                {lead.transferable ? "Liberado" : "Aguardando 48h"}
+                                Disponível
                               </Badge>
                               <Badge variant="outline">{lead.stageName}</Badge>
                             </div>

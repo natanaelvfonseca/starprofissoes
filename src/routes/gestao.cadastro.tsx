@@ -175,6 +175,9 @@ function CadastroPage() {
   const [courses, setCourses] = React.useState<Array<CourseRecord>>([]);
   const [channels, setChannels] = React.useState<Array<AcquisitionChannelRecord>>([]);
   const [attendances, setAttendances] = React.useState<Array<AttendanceRecord>>([]);
+  const [attendanceStatusFilter, setAttendanceStatusFilter] = React.useState<
+    "all" | CommercialStatus
+  >("all");
   const [pipelineColumns, setPipelineColumns] = React.useState<Array<PipelineColumn>>([]);
   const [loading, setLoading] = React.useState(true);
   const [savingCourse, setSavingCourse] = React.useState(false);
@@ -200,6 +203,10 @@ function CadastroPage() {
 
   const activeCourses = courses.filter((course) => course.status === "active").length;
   const activeChannels = channels.filter((channel) => channel.status === "active").length;
+  const filteredAttendances = attendances.filter(
+    (attendance) =>
+      attendanceStatusFilter === "all" || attendance.status === attendanceStatusFilter,
+  );
 
   const loadData = React.useCallback(async () => {
     if (session && !canViewManagement(session.user.role)) {
@@ -817,10 +824,27 @@ function CadastroPage() {
                 </p>
               </div>
             </div>
-            <Button onClick={openNewAttendanceDialog} className="bg-gradient-primary">
-              <Plus className="h-4 w-4" />
-              Nova Turma
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Select
+                value={attendanceStatusFilter}
+                onValueChange={(value) =>
+                  setAttendanceStatusFilter(value as "all" | CommercialStatus)
+                }
+              >
+                <SelectTrigger className="w-[170px] bg-white">
+                  <SelectValue placeholder="Todas as turmas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as turmas</SelectItem>
+                  <SelectItem value="active">Turmas ativas</SelectItem>
+                  <SelectItem value="inactive">Turmas inativas</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button onClick={openNewAttendanceDialog} className="bg-gradient-primary">
+                <Plus className="h-4 w-4" />
+                Nova Turma
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -841,8 +865,8 @@ function CadastroPage() {
                     Carregando atendimentos...
                   </TableCell>
                 </TableRow>
-              ) : attendances.length ? (
-                attendances.map((attendance) => (
+              ) : filteredAttendances.length ? (
+                filteredAttendances.map((attendance) => (
                   <TableRow key={attendance.id}>
                     <TableCell className="max-w-sm whitespace-normal px-5 font-semibold">
                       {attendance.displayName}
@@ -890,7 +914,9 @@ function CadastroPage() {
               ) : (
                 <TableRow>
                   <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
-                    Nenhuma turma cadastrada.
+                    {attendanceStatusFilter === "all"
+                      ? "Nenhuma turma cadastrada."
+                      : "Nenhuma turma encontrada neste status."}
                   </TableCell>
                 </TableRow>
               )}

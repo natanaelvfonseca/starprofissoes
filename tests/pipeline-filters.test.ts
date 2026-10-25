@@ -118,6 +118,31 @@ test("filtros por turma, curso, responsável e cidade retornam os IDs correspond
   }
 });
 
+test("filtro de status da turma alterna entre turmas ativas e inativas", () => {
+  const statusLeads = [makeLead("active"), makeLead("inactive", { attendanceStatus: "inactive" })];
+
+  assert.deepEqual(
+    ids(
+      filterPipelineLeads(
+        statusLeads,
+        { ...emptyPipelineFilters(), attendanceStatus: "active" },
+        manager,
+      ),
+    ),
+    ["active"],
+  );
+  assert.deepEqual(
+    ids(
+      filterPipelineLeads(
+        statusLeads,
+        { ...emptyPipelineFilters(), attendanceStatus: "inactive" },
+        manager,
+      ),
+    ),
+    ["inactive"],
+  );
+});
+
 test("combina os filtros sem apagar nem alterar a base de leads", () => {
   const before = structuredClone(leads);
   const filters = {

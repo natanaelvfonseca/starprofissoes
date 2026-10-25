@@ -59,6 +59,8 @@ import {
   canClaimLeads,
   canOperateCrm,
   canTransferLeads,
+  ROLE_LABELS,
+  type UserRole,
 } from "@/lib/auth-types";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Badge } from "@/components/ui/badge";
@@ -119,6 +121,7 @@ type PipelineViewMode = "kanban" | "list";
 type LeadsResponse = {
   leads: Array<LeadRecord>;
   pipelineColumns: Array<PipelineColumn>;
+  owners?: Array<{ id: string; name: string; role: UserRole }>;
 };
 
 type CoursesResponse = {
@@ -153,6 +156,7 @@ type TransferConsultant = {
   id: string;
   name: string;
   email: string;
+  role: UserRole;
 };
 
 type TransferLead = {
@@ -170,7 +174,8 @@ type TransferLead = {
 };
 
 type TransferDataResponse = {
-  consultants: Array<TransferConsultant>;
+  users?: Array<TransferConsultant>;
+  consultants?: Array<TransferConsultant>;
   leads: Array<TransferLead>;
 };
 
@@ -430,6 +435,9 @@ function CRMPipeline() {
   const [leads, setLeads] = React.useState<Array<LeadRecord>>([]);
   const [loadedLeadsUnitId, setLoadedLeadsUnitId] = React.useState("");
   const [pipelineColumns, setPipelineColumns] = React.useState<Array<PipelineColumn>>([]);
+  const [unitOwners, setUnitOwners] = React.useState<
+    Array<{ id: string; name: string; role: UserRole }>
+  >([]);
   const [courses, setCourses] = React.useState<Array<CourseRecord>>([]);
   const [attendances, setAttendances] = React.useState<Array<AttendanceOption>>([]);
   const [channels, setChannels] = React.useState<Array<AcquisitionChannelRecord>>([]);
@@ -501,18 +509,26 @@ function CRMPipeline() {
   const scopedLeads = loadedLeadsUnitId === activeUnitId ? leads : EMPTY_LEADS;
   const deferredSearch = React.useDeferredValue(search);
   const ownerOptions = React.useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, { id: string; name: string; role: UserRole | null }>();
+
+    unitOwners.forEach((owner) => map.set(owner.id, owner));
 
     scopedLeads.forEach((lead) => {
       if (lead.createdById && lead.createdByName) {
-        map.set(lead.createdById, lead.createdByName);
+        if (!map.has(lead.createdById)) {
+          map.set(lead.createdById, {
+            id: lead.createdById,
+            name: lead.createdByName,
+            role: null,
+          });
+        }
       }
     });
 
-    return Array.from(map, ([id, name]) => ({ id, name })).sort((first, second) =>
+    return Array.from(map.values()).sort((first, second) =>
       first.name.localeCompare(second.name, "pt-BR"),
     );
-  }, [scopedLeads]);
+  }, [scopedLeads, unitOwners]);
   const cityOptions = React.useMemo(
     () =>
       Array.from(
@@ -608,6 +624,7 @@ function CRMPipeline() {
             setLeads(data.leads);
             setLoadedLeadsUnitId(activeUnitId);
             setPipelineColumns(data.pipelineColumns ?? []);
+            setUnitOwners(data.owners ?? []);
           }
         } catch (error) {
           if (requestId === leadRequestIdRef.current) {
@@ -711,7 +728,7 @@ function CRMPipeline() {
       );
 
       setTransferLeads(data.leads);
-      setTransferConsultants(data.consultants);
+      setTransferConsultants(data.users ?? data.consultants ?? []);
       setSelectedTransferLeadIds((current) => {
         const availableIds = new Set(data.leads.map((lead) => lead.id));
 
@@ -1315,13 +1332,6 @@ function CRMPipeline() {
     void updateLeadStage(lead, column);
   }
 
-  function openTransferDialog() {
-    setTransferDialogOpen(true);
-    setSelectedTransferLeadIds(new Set());
-    setTransferTargetUserId("");
-    void loadTransferData();
-  }
-
   function toggleTransferLead(lead: TransferLead, checked: boolean | "indeterminate") {
     if (!lead.transferable) {
       return;
@@ -1359,12 +1369,12 @@ function CRMPipeline() {
     const leadIds = Array.from(selectedTransferLeadIds);
 
     if (!leadIds.length) {
-      toast.error("Selecione ao menos um lead com mais de 48 horas.");
+      toast.error("Selecione ao menos um lead.");
       return;
     }
 
     if (!transferTargetUserId) {
-      toast.error("Escolha o consultor de destino.");
+      toast.error("Escolha o usuário de destino.");
       return;
     }
 
@@ -1616,15 +1626,17 @@ function CRMPipeline() {
               </Button>
               {canAccessTransfers ? (
                 <Button
+                  asChild
                   type="button"
                   variant="outline"
-                  onClick={openTransferDialog}
                   className="h-11 flex-1 border-white/20 bg-white/10 px-4 text-white hover:bg-white/20 hover:text-white md:flex-none"
                   aria-label="Transferência de Lead"
                   title="Transferência de Lead"
                 >
-                  <Clock3 className="mr-2 h-4 w-4" />
-                  Transferir
+                  <Link to="/crm/transferencia">
+                    <ArrowRightLeft className="mr-2 h-4 w-4" />
+                    Transferir
+                  </Link>
                 </Button>
               ) : null}
               {search || activeFilterCount ? (
@@ -1667,11 +1679,41 @@ function CRMPipeline() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={FILTER_ALL}>Todas as turmas</SelectItem>
-                {attendances.map((attendance) => (
-                  <SelectItem key={attendance.id} value={attendance.id}>
-                    {attendance.displayName}
-                  </SelectItem>
-                ))}
+                {attendances
+                  .filter(
+                    (attendance) =>
+                      draftFilters.attendanceStatus === FILTER_ALL ||
+                      attendance.status === draftFilters.attendanceStatus,
+                  )
+                  .map((attendance) => (
+                    <SelectItem key={attendance.id} value={attendance.id}>
+                      {attendance.displayName} ·{" "}
+                      {attendance.status === "active" ? "Ativa" : "Inativa"}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="lead-attendance-status-filter">Status da turma</Label>
+            <Select
+              value={draftFilters.attendanceStatus}
+              onValueChange={(value) =>
+                setDraftFilters((current) => ({
+                  ...current,
+                  attendanceStatus: value,
+                  attendanceId: FILTER_ALL,
+                }))
+              }
+            >
+              <SelectTrigger id="lead-attendance-status-filter">
+                <SelectValue placeholder="Todas as turmas" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={FILTER_ALL}>Todas as turmas</SelectItem>
+                <SelectItem value="active">Turmas ativas</SelectItem>
+                <SelectItem value="inactive">Turmas inativas</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -1831,7 +1873,7 @@ function CRMPipeline() {
       ) : null}
 
       <section className="rounded-[28px] border border-[#16006C]/10 bg-[#F7F8FC] p-3 shadow-[0_22px_60px_-46px_rgba(7,21,76,0.65)] sm:p-5">
-        <div className="mb-5 flex flex-col gap-2 px-1 sm:flex-row sm:items-end sm:justify-between">
+        <div className="mb-5 px-1">
           <div>
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-[#224C99]">
               <KanbanSquare className="h-4 w-4" />
@@ -1841,10 +1883,6 @@ function CRMPipeline() {
               Fluxo de oportunidades
             </h2>
           </div>
-          <p className="max-w-md text-xs leading-relaxed text-muted-foreground sm:text-right">
-            Na primeira etapa, os leads ficam disponíveis para a equipe da unidade. Ao pegar, o
-            usuário se torna responsável pelo atendimento.
-          </p>
         </div>
 
         {!loadingLeads && !filteredLeads.length && (search || activeFilterCount) ? (
@@ -1879,11 +1917,7 @@ function CRMPipeline() {
         ) : (
           <div className="relative">
             {kanbanScroll.max > 0 ? (
-              <div className="sticky top-2 z-30 mb-3 rounded-2xl border border-[#16006C]/15 bg-white/95 px-4 py-2 shadow-lg backdrop-blur-md">
-                <div className="mb-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.14em] text-[#224C99]">
-                  <span>Navegar pelas etapas</span>
-                  <span>{Math.round((kanbanScroll.left / kanbanScroll.max) * 100)}%</span>
-                </div>
+              <div className="fixed bottom-3 left-1/2 z-40 w-[min(680px,calc(100vw-32px))] -translate-x-1/2 rounded-full border border-[#16006C]/10 bg-white/80 px-3 py-1 shadow-md backdrop-blur-md">
                 <input
                   type="range"
                   min={0}
@@ -1896,7 +1930,7 @@ function CRMPipeline() {
                     setKanbanScroll((current) => ({ ...current, left: nextLeft }));
                   }}
                   aria-label="Navegar horizontalmente pelas etapas do Kanban"
-                  className="h-2 w-full cursor-ew-resize accent-[#16006C]"
+                  className="block h-1.5 w-full cursor-ew-resize accent-[#16006C] opacity-70 hover:opacity-100"
                 />
               </div>
             ) : null}
@@ -2579,7 +2613,7 @@ function TransferLeadDialog({
                 Transferência de Lead
               </DialogTitle>
               <DialogDescription className="max-w-2xl text-white/72">
-                Mova leads com mais de 48 horas de criação para outro consultor da unidade.
+                Selecione os leads e transfira para qualquer usuário disponível da unidade.
               </DialogDescription>
             </DialogHeader>
             <Button
@@ -2604,11 +2638,11 @@ function TransferLeadDialog({
                   onCheckedChange={onToggleAll}
                   disabled={!transferableLeads.length || loading}
                 />
-                Selecionar todos com mais de 48h
+                Selecionar todos
               </label>
               <div className="flex flex-wrap gap-2 text-xs">
                 <Badge variant="secondary" className="bg-primary/10 text-primary">
-                  {transferableLeads.length} elegíveis
+                  {transferableLeads.length} disponíveis
                 </Badge>
                 <Badge variant="secondary" className="bg-gold/15 text-gold-foreground">
                   {selectedCount} selecionados
@@ -2654,7 +2688,7 @@ function TransferLeadDialog({
                                 : "border-warning/25 bg-warning/10 text-warning-foreground"
                             }
                           >
-                            {lead.transferable ? "Pode transferir" : "Aguardando 48h"}
+                            Disponível
                           </Badge>
                         </div>
                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -2669,15 +2703,11 @@ function TransferLeadDialog({
                           </span>
                           <span className="flex items-center gap-1 text-muted-foreground">
                             <UserCheck className="h-3.5 w-3.5" />
-                            {lead.createdByName ?? "Sem consultor"}
+                            {lead.createdByName ?? "Sem responsável"}
                           </span>
                         </div>
                       </div>
-                      <div className="text-right text-xs text-muted-foreground">
-                        {lead.transferable
-                          ? "48h liberado"
-                          : `Faltam ${Math.max(0, 48 - lead.ageHours)}h`}
-                      </div>
+                      <div className="text-right text-xs text-muted-foreground">Transferível</div>
                     </div>
                   );
                 })
@@ -2698,20 +2728,20 @@ function TransferLeadDialog({
                 Destino
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Escolha o consultor que receberá os leads selecionados.
+                Escolha o usuário que receberá os leads selecionados.
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label>Consultor</Label>
+              <Label>Usuário</Label>
               <Select value={targetUserId} onValueChange={onTargetChange}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione o consultor" />
+                  <SelectValue placeholder="Selecione o usuário" />
                 </SelectTrigger>
                 <SelectContent>
                   {consultants.map((consultant) => (
                     <SelectItem key={consultant.id} value={consultant.id}>
-                      {consultant.name}
+                      {consultant.name} · {ROLE_LABELS[consultant.role]}
                     </SelectItem>
                   ))}
                 </SelectContent>

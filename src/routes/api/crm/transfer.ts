@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { QueryResultRow } from "pg";
 import type { LeadStage } from "@/lib/commercial-types";
-import { canAccessLeadTransferCenter, canTransferLeadsImmediately } from "@/lib/auth-types";
+import { canAccessLeadTransferCenter } from "@/lib/auth-types";
 import {
   ensureCommercialSchema,
   getUnitFromBody,
@@ -25,7 +25,11 @@ type TransferLeadRow = QueryResultRow & {
   phone2: string | null;
   email: string | null;
   city: string | null;
+  attendance_id: string | null;
+  attendance_name: string | null;
   course_name_snapshot: string | null;
+  course_id: string | null;
+  acquisition_channel_id: string | null;
   acquisition_channel_name_snapshot: string | null;
   stage: LeadStage;
   stage_name: string;
@@ -73,7 +77,11 @@ function mapTransferLead(row: TransferLeadRow) {
     phone2: row.phone2,
     email: row.email,
     city: row.city,
+    attendanceId: row.attendance_id,
+    attendanceName: row.attendance_name,
+    courseId: row.course_id,
     courseName: row.course_name_snapshot,
+    acquisitionChannelId: row.acquisition_channel_id,
     acquisitionChannelName: row.acquisition_channel_name_snapshot,
     stage: row.stage,
     stageName: row.stage_name,
@@ -112,11 +120,7 @@ async function listAssignableUsers(unitId: string) {
   return result.rows;
 }
 
-async function listTransferLeads(
-  unitId: string,
-  immediateTransfer: boolean,
-  includeMetaEvents: boolean,
-) {
+async function listTransferLeads(unitId: string, includeMetaEvents: boolean) {
   const metaSelect = includeMetaEvents
     ? "meta.campaign_name, meta.ad_name,"
     : "null::text as campaign_name, null::text as ad_name,";
@@ -140,7 +144,13 @@ async function listTransferLeads(
         l.phone2,
         l.email,
         l.city,
+        l.attendance_id,
+        case when attendance.id is not null then
+          concat(attendance_course.name, ' · ', attendance.city, '/', attendance.state, ' · ', to_char(attendance.class_date, 'DD/MM/YYYY'))
+        end as attendance_name,
+        l.course_id,
         l.course_name_snapshot,
+        l.acquisition_channel_id,
         coalesce(channel.name, l.acquisition_channel_name_snapshot) as acquisition_channel_name_snapshot,
         l.stage,
         coalesce(pipeline.name, l.stage) as stage_name,
@@ -150,8 +160,10 @@ async function listTransferLeads(
         owner.role as created_by_role,
         ${metaSelect}
         floor(extract(epoch from (now() - l.created_at)) / 3600)::int as age_hours,
-        ($2::boolean or l.created_at <= now() - interval '48 hours') as transferable
+        true as transferable
       from app_leads l
+      left join app_course_attendances attendance on attendance.id = l.attendance_id
+      left join app_courses attendance_course on attendance_course.id = attendance.course_id
       left join app_acquisition_channels channel on channel.id = l.acquisition_channel_id and channel.unit_id = l.unit_id
       left join app_users owner on owner.id = l.created_by
       left join lateral (
@@ -170,7 +182,7 @@ async function listTransferLeads(
         l.created_at asc,
         l.full_name asc
     `,
-    [unitId, immediateTransfer],
+    [unitId],
   );
 
   return result.rows.map(mapTransferLead);
@@ -214,22 +226,17 @@ export const Route = createFileRoute("/api/crm/transfer")({
 
         await ensureCommercialSchema();
 
-        const immediateTransfer = canTransferLeadsImmediately(session.user.role);
         const [users, metaEventsExists] = await Promise.all([
           listAssignableUsers(unit.id),
           appMetaLeadEventsExists(),
         ]);
-        const leads = await listTransferLeads(unit.id, immediateTransfer, metaEventsExists);
+        const leads = await listTransferLeads(unit.id, metaEventsExists);
 
         return Response.json(
           {
             consultants: users,
             users,
             leads,
-            policy: {
-              immediateTransfer,
-              requires48Hours: !immediateTransfer,
-            },
           },
           { headers: { "Cache-Control": "no-store" } },
         );
@@ -267,7 +274,6 @@ export const Route = createFileRoute("/api/crm/transfer")({
 
         await ensureCommercialSchema();
 
-        const immediateTransfer = canTransferLeadsImmediately(session.user.role);
         const targetResult = await queryDb<TransferUserRow>(
           `
             select distinct
@@ -303,9 +309,8 @@ export const Route = createFileRoute("/api/crm/transfer")({
             where id = any($1::uuid[])
               and unit_id = $2
               and stage <> 'Matriculado'
-              and ($3::boolean or created_at <= now() - interval '48 hours')
           `,
-          [leadIds, unit.id, immediateTransfer],
+          [leadIds, unit.id],
         );
         const eligibleIds = eligibleResult.rows.map((row) => row.id);
 
@@ -313,9 +318,7 @@ export const Route = createFileRoute("/api/crm/transfer")({
           return Response.json(
             {
               ok: false,
-              error: immediateTransfer
-                ? "Ha leads selecionados fora da unidade ou ja matriculados."
-                : "Ha leads selecionados sem 48 horas de criacao ou fora da unidade.",
+              error: "Ha leads selecionados fora da unidade ou ja matriculados.",
             },
             { status: 400 },
           );
@@ -353,9 +356,7 @@ export const Route = createFileRoute("/api/crm/transfer")({
               targetUserId,
               unit.id,
               session.user.id,
-              immediateTransfer
-                ? "Transferencia imediata pela central de transferencias"
-                : "Transferencia apos 48 horas",
+              "Transferencia pela central de transferencias",
             ],
           );
 
