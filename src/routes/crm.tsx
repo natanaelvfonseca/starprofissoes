@@ -58,6 +58,7 @@ import { useAuth } from "@/lib/auth";
 import {
   canAccessLeadTransferCenter,
   canClaimLeads,
+  canExportLeads,
   canOperateCrm,
   canTransferLeads,
   ROLE_LABELS,
@@ -495,6 +496,7 @@ function CRMPipeline() {
   const canAccessTransfers = session ? canAccessLeadTransferCenter(session.user.role) : false;
   const canOperatePipeline = session ? canOperateCrm(session.user.role) : false;
   const canClaimSharedLeads = session ? canClaimLeads(session.user.role) : false;
+  const canExportLeadData = session ? canExportLeads(session.user.role, session.user.email) : false;
   const isConsultant = session?.user.role === "CONSULTOR";
   const canRemoveLeads = canTransferUnitLeads;
   const canViewAcquisitionChannel = session?.user.role !== "CONSULTOR";
@@ -1640,19 +1642,21 @@ function CRMPipeline() {
                   </Link>
                 </Button>
               ) : null}
-              <Button
-                asChild
-                type="button"
-                variant="outline"
-                className="h-11 flex-1 border-white/20 bg-white/10 px-4 text-white hover:bg-white/20 hover:text-white md:flex-none"
-                aria-label="Exportar leads"
-                title="Exportar leads"
-              >
-                <Link to="/crm/exportar">
-                  <Download className="mr-2 h-4 w-4" />
-                  Exportar
-                </Link>
-              </Button>
+              {canExportLeadData ? (
+                <Button
+                  asChild
+                  type="button"
+                  variant="outline"
+                  className="h-11 flex-1 border-white/20 bg-white/10 px-4 text-white hover:bg-white/20 hover:text-white md:flex-none"
+                  aria-label="Exportar leads"
+                  title="Exportar leads"
+                >
+                  <Link to="/crm/exportar">
+                    <Download className="mr-2 h-4 w-4" />
+                    Exportar
+                  </Link>
+                </Button>
+              ) : null}
               {search || activeFilterCount ? (
                 <Button
                   type="button"

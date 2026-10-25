@@ -1,10 +1,19 @@
 import * as React from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, Download, FileSpreadsheet, Filter, Loader2, Search, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Download,
+  FileSpreadsheet,
+  Filter,
+  Loader2,
+  Lock,
+  Search,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import type { LeadRecord, PipelineColumn } from "@/lib/commercial-types";
 import { useAuth } from "@/lib/auth";
-import { ROLE_LABELS, type UserRole } from "@/lib/auth-types";
+import { canExportLeads, ROLE_LABELS, type UserRole } from "@/lib/auth-types";
 import { leadExportFilename, leadsToCsv } from "@/lib/lead-csv";
 import {
   PIPELINE_FILTER_ALL as FILTER_ALL,
@@ -76,6 +85,7 @@ export const Route = createFileRoute("/crm/exportar")({
 function ExportLeadsPage() {
   const { session } = useAuth();
   const activeUnitId = session?.activeUnit?.id ?? "";
+  const canAccess = session ? canExportLeads(session.user.role, session.user.email) : false;
   const canViewAcquisitionChannel = session?.user.role !== "CONSULTOR";
   const [leads, setLeads] = React.useState<Array<LeadRecord>>([]);
   const [owners, setOwners] = React.useState<Array<OwnerOption>>([]);
@@ -87,7 +97,7 @@ function ExportLeadsPage() {
     let ignored = false;
 
     async function loadLeads() {
-      if (!activeUnitId) {
+      if (!activeUnitId || !canAccess) {
         setLoading(false);
         return;
       }
@@ -116,7 +126,7 @@ function ExportLeadsPage() {
     return () => {
       ignored = true;
     };
-  }, [activeUnitId]);
+  }, [activeUnitId, canAccess]);
 
   const attendanceOptions = React.useMemo(
     () => uniqueOptions(leads, "attendanceId", "attendanceName"),
@@ -173,6 +183,26 @@ function ExportLeadsPage() {
     anchor.remove();
     URL.revokeObjectURL(url);
     toast.success(`${filteredLeads.length} lead(s) exportado(s).`);
+  }
+
+  if (session && !canAccess) {
+    return (
+      <div className="flex min-h-[55vh] items-center justify-center">
+        <div className="max-w-md text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
+            <Lock className="h-6 w-6 text-muted-foreground" />
+          </div>
+          <h1 className="text-xl font-bold">Acesso restrito</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            A exportação de leads está disponível somente para Diretores, Gerentes, Marketing e o
+            usuário master.
+          </p>
+          <Button asChild variant="outline" className="mt-5">
+            <Link to="/crm">Voltar ao CRM</Link>
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (

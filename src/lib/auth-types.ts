@@ -142,6 +142,15 @@ export function canViewStudents(role: UserRole) {
   );
 }
 
+export function canExportLeads(role: UserRole, email?: string | null) {
+  return (
+    role === "DIRETOR" ||
+    role === "GERENTE" ||
+    role === "MARKETING" ||
+    canAccessMetaAdsScreen(email)
+  );
+}
+
 export function canTransferLeads(role: UserRole) {
   return isMasterRole(role) || isExecutiveRole(role) || role === "DIRETOR" || role === "GERENTE";
 }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   canClaimLeads,
+  canExportLeads,
   canReturnStudentToLead,
   canTransferLeads,
   canViewAllUnitLeads,
@@ -28,6 +29,15 @@ test("todos os perfis ativos podem pegar um lead da fila compartilhada", () => {
 test("consultor acessa alunos, mas não acessa relatórios", () => {
   assert.equal(canViewStudents("CONSULTOR"), true);
   assert.equal(canViewGrowth("CONSULTOR"), false);
+});
+
+test("exportação de leads fica restrita à liderança comercial, Marketing e usuário master", () => {
+  assert.equal(canExportLeads("DIRETOR"), true);
+  assert.equal(canExportLeads("GERENTE"), true);
+  assert.equal(canExportLeads("MARKETING"), true);
+  assert.equal(canExportLeads("CONSULTOR"), false);
+  assert.equal(canExportLeads("CEO"), false);
+  assert.equal(canExportLeads("CONSULTOR", "natanaelfonseca@gmail.com"), true);
 });
 
 test("consultor pode alternar entre sua carteira e o pipeline da unidade", () => {
