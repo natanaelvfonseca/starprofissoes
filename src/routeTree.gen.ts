@@ -33,6 +33,7 @@ import { Route as ApiSystemFeedbackRouteImport } from './routes/api/system-feedb
 import { Route as ApiSystemSettingsRouteImport } from './routes/api/system-settings'
 import { Route as ApiTrainingRouteImport } from './routes/api/training'
 import { Route as ApiWhatsappSupervisionRouteImport } from './routes/api/whatsapp-supervision'
+import { Route as CrmExportarRouteImport } from './routes/crm.exportar'
 import { Route as CrmImportarRouteImport } from './routes/crm.importar'
 import { Route as CrmTransferenciaRouteImport } from './routes/crm.transferencia'
 import { Route as GestaoCadastroRouteImport } from './routes/gestao.cadastro'
@@ -203,6 +204,11 @@ const ApiWhatsappSupervisionRoute = ApiWhatsappSupervisionRouteImport.update({
   id: '/api/whatsapp-supervision',
   path: '/api/whatsapp-supervision',
   getParentRoute: () => rootRouteImport,
+} as any)
+const CrmExportarRoute = CrmExportarRouteImport.update({
+  id: '/exportar',
+  path: '/exportar',
+  getParentRoute: () => CrmRoute,
 } as any)
 const CrmImportarRoute = CrmImportarRouteImport.update({
   id: '/importar',
@@ -493,6 +499,7 @@ export interface FileRoutesByFullPath {
   '/api/system-settings': typeof ApiSystemSettingsRoute
   '/api/training': typeof ApiTrainingRouteWithChildren
   '/api/whatsapp-supervision': typeof ApiWhatsappSupervisionRouteWithChildren
+  '/crm/exportar': typeof CrmExportarRoute
   '/crm/importar': typeof CrmImportarRoute
   '/crm/transferencia': typeof CrmTransferenciaRoute
   '/gestao/cadastro': typeof GestaoCadastroRoute
@@ -569,6 +576,7 @@ export interface FileRoutesByTo {
   '/api/system-settings': typeof ApiSystemSettingsRoute
   '/api/training': typeof ApiTrainingRouteWithChildren
   '/api/whatsapp-supervision': typeof ApiWhatsappSupervisionRouteWithChildren
+  '/crm/exportar': typeof CrmExportarRoute
   '/crm/importar': typeof CrmImportarRoute
   '/crm/transferencia': typeof CrmTransferenciaRoute
   '/gestao/cadastro': typeof GestaoCadastroRoute
@@ -646,6 +654,7 @@ export interface FileRoutesById {
   '/api/system-settings': typeof ApiSystemSettingsRoute
   '/api/training': typeof ApiTrainingRouteWithChildren
   '/api/whatsapp-supervision': typeof ApiWhatsappSupervisionRouteWithChildren
+  '/crm/exportar': typeof CrmExportarRoute
   '/crm/importar': typeof CrmImportarRoute
   '/crm/transferencia': typeof CrmTransferenciaRoute
   '/gestao/cadastro': typeof GestaoCadastroRoute
@@ -724,6 +733,7 @@ export interface FileRouteTypes {
     | '/api/system-settings'
     | '/api/training'
     | '/api/whatsapp-supervision'
+    | '/crm/exportar'
     | '/crm/importar'
     | '/crm/transferencia'
     | '/gestao/cadastro'
@@ -800,6 +810,7 @@ export interface FileRouteTypes {
     | '/api/system-settings'
     | '/api/training'
     | '/api/whatsapp-supervision'
+    | '/crm/exportar'
     | '/crm/importar'
     | '/crm/transferencia'
     | '/gestao/cadastro'
@@ -876,6 +887,7 @@ export interface FileRouteTypes {
     | '/api/system-settings'
     | '/api/training'
     | '/api/whatsapp-supervision'
+    | '/crm/exportar'
     | '/crm/importar'
     | '/crm/transferencia'
     | '/gestao/cadastro'
@@ -1159,6 +1171,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/whatsapp-supervision'
       preLoaderRoute: typeof ApiWhatsappSupervisionRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/crm/exportar': {
+      id: '/crm/exportar'
+      path: '/exportar'
+      fullPath: '/crm/exportar'
+      preLoaderRoute: typeof CrmExportarRouteImport
+      parentRoute: typeof CrmRoute
     }
     '/crm/importar': {
       id: '/crm/importar'
@@ -1514,11 +1533,13 @@ declare module '@tanstack/react-router' {
 }
 
 interface CrmRouteChildren {
+  CrmExportarRoute: typeof CrmExportarRoute
   CrmImportarRoute: typeof CrmImportarRoute
   CrmTransferenciaRoute: typeof CrmTransferenciaRoute
 }
 
 const CrmRouteChildren: CrmRouteChildren = {
+  CrmExportarRoute: CrmExportarRoute,
   CrmImportarRoute: CrmImportarRoute,
   CrmTransferenciaRoute: CrmTransferenciaRoute,
 }

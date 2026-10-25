@@ -17,12 +17,15 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { LeadRecord, PipelineColumn } from "@/lib/commercial-types";
+import { leadDateFilterValue, parseLeadDate } from "@/lib/lead-time";
 import { useAuth } from "@/lib/auth";
 import {
   canOperateCrm,
   canReturnStudentToLead,
   canTransferLeads,
   canViewStudents,
+  ROLE_LABELS,
+  type UserRole,
 } from "@/lib/auth-types";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -42,6 +45,7 @@ import {
 type LeadsResponse = {
   leads: Array<LeadRecord>;
   pipelineColumns: Array<PipelineColumn>;
+  owners?: Array<{ id: string; name: string; role: UserRole }>;
 };
 
 type StudentFilters = {
@@ -49,8 +53,11 @@ type StudentFilters = {
   attendanceStatus: string;
   courseId: string;
   channelId: string;
+  ownerId: string;
   city: string;
   unitId: string;
+  startDate: string;
+  endDate: string;
 };
 
 const FILTER_ALL = "__all__";
@@ -94,8 +101,11 @@ function emptyStudentFilters(): StudentFilters {
     attendanceStatus: FILTER_ALL,
     courseId: FILTER_ALL,
     channelId: FILTER_ALL,
+    ownerId: FILTER_ALL,
     city: FILTER_ALL,
     unitId: FILTER_ALL,
+    startDate: "",
+    endDate: "",
   };
 }
 
@@ -128,6 +138,9 @@ function LeadsList() {
   const isConsultant = session?.user.role === "CONSULTOR";
   const [leads, setLeads] = React.useState<Array<LeadRecord>>([]);
   const [pipelineColumns, setPipelineColumns] = React.useState<Array<PipelineColumn>>([]);
+  const [owners, setOwners] = React.useState<Array<{ id: string; name: string; role: UserRole }>>(
+    [],
+  );
   const [search, setSearch] = React.useState("");
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [filters, setFilters] = React.useState<StudentFilters>(() => emptyStudentFilters());
@@ -165,6 +178,7 @@ function LeadsList() {
         if (ignored) return;
         setLeads(data.leads);
         setPipelineColumns(data.pipelineColumns ?? []);
+        setOwners(data.owners ?? []);
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Falha ao carregar alunos.");
       } finally {
@@ -224,14 +238,17 @@ function LeadsList() {
     new Map(leads.map((lead) => [lead.unitId, lead.unitName])),
     ([id, name]) => ({ id, name }),
   ).sort((first, second) => first.name.localeCompare(second.name, "pt-BR"));
-  const activeFilterCount = [
-    filters.attendanceId,
-    filters.attendanceStatus,
-    filters.courseId,
-    filters.channelId,
-    filters.city,
-    filters.unitId,
-  ].filter((value) => value !== FILTER_ALL).length;
+  const activeFilterCount =
+    [
+      filters.attendanceId,
+      filters.attendanceStatus,
+      filters.courseId,
+      filters.channelId,
+      filters.ownerId,
+      filters.city,
+      filters.unitId,
+    ].filter((value) => value !== FILTER_ALL).length +
+    (filters.startDate || filters.endDate ? 1 : 0);
 
   const filteredLeads = leads.filter((lead) => {
     const searchText = [
@@ -240,14 +257,28 @@ function LeadsList() {
       lead.phone2,
       lead.email,
       lead.city,
+      lead.attendanceName,
       lead.courseName,
       lead.acquisitionChannelName,
+      lead.createdByName,
       lead.unitName,
       lead.stage,
     ]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
+
+    if (filters.startDate || filters.endDate) {
+      const date = parseLeadDate(lead.createdAt);
+      if (Number.isNaN(date.getTime())) return false;
+      const day = leadDateFilterValue(date);
+      if (
+        (filters.startDate && day < filters.startDate) ||
+        (filters.endDate && day > filters.endDate)
+      ) {
+        return false;
+      }
+    }
 
     return (
       searchText.includes(search.trim().toLowerCase()) &&
@@ -256,6 +287,7 @@ function LeadsList() {
         lead.attendanceStatus === filters.attendanceStatus) &&
       (filters.courseId === FILTER_ALL || lead.courseId === filters.courseId) &&
       (filters.channelId === FILTER_ALL || lead.acquisitionChannelId === filters.channelId) &&
+      (filters.ownerId === FILTER_ALL || lead.createdById === filters.ownerId) &&
       (filters.city === FILTER_ALL || lead.city === filters.city) &&
       (filters.unitId === FILTER_ALL || lead.unitId === filters.unitId)
     );
@@ -512,6 +544,28 @@ function LeadsList() {
               </div>
 
               <div className="space-y-2">
+                <Label>Responsável</Label>
+                <Select
+                  value={filters.ownerId}
+                  onValueChange={(value) =>
+                    setFilters((current) => ({ ...current, ownerId: value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todos os responsáveis" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={FILTER_ALL}>Todos os responsáveis</SelectItem>
+                    {owners.map((owner) => (
+                      <SelectItem key={owner.id} value={owner.id}>
+                        {owner.name} · {ROLE_LABELS[owner.role]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
                 <Label>Cidade</Label>
                 <Select
                   value={filters.city}
@@ -551,6 +605,32 @@ function LeadsList() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="student-start-date-filter">Data inicial</Label>
+                <Input
+                  id="student-start-date-filter"
+                  type="date"
+                  max={filters.endDate || undefined}
+                  value={filters.startDate}
+                  onChange={(event) =>
+                    setFilters((current) => ({ ...current, startDate: event.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="student-end-date-filter">Data final</Label>
+                <Input
+                  id="student-end-date-filter"
+                  type="date"
+                  min={filters.startDate || undefined}
+                  value={filters.endDate}
+                  onChange={(event) =>
+                    setFilters((current) => ({ ...current, endDate: event.target.value }))
+                  }
+                />
               </div>
             </div>
           ) : null}

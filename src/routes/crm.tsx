@@ -19,6 +19,7 @@ import {
   CheckSquare2,
   CheckCircle2,
   Clock3,
+  Download,
   Filter,
   KanbanSquare,
   List as ListIcon,
@@ -1639,6 +1640,19 @@ function CRMPipeline() {
                   </Link>
                 </Button>
               ) : null}
+              <Button
+                asChild
+                type="button"
+                variant="outline"
+                className="h-11 flex-1 border-white/20 bg-white/10 px-4 text-white hover:bg-white/20 hover:text-white md:flex-none"
+                aria-label="Exportar leads"
+                title="Exportar leads"
+              >
+                <Link to="/crm/exportar">
+                  <Download className="mr-2 h-4 w-4" />
+                  Exportar
+                </Link>
+              </Button>
               {search || activeFilterCount ? (
                 <Button
                   type="button"
