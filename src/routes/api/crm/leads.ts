@@ -547,27 +547,34 @@ export const Route = createFileRoute("/api/crm/leads")({
         await ensureCommercialSchema();
         await ensureCourseAttendanceSchema();
 
-        if (!isUuid(payload.attendanceId)) {
-          return Response.json({ ok: false, error: "Selecione uma turma ativa." }, { status: 400 });
-        }
+        let attendance: AttendanceSnapshotRow | null = null;
 
-        const attendanceResult = await queryDb<AttendanceSnapshotRow>(
-          `
-            select a.id, a.unit_id, a.course_id, c.name as course_name, c.value::text as course_value,
-              a.city, a.state
-            from app_course_attendances a
-            inner join app_courses c on c.id = a.course_id
-            where a.id = $1 and a.unit_id = $2 and a.status = 'active' and c.status = 'active'
-            limit 1
-          `,
-          [payload.attendanceId, unit.id],
-        );
-        const attendance = attendanceResult.rows[0];
-        if (!attendance) {
-          return Response.json(
-            { ok: false, error: "Turma inativa ou indisponível nesta unidade." },
-            { status: 400 },
+        if (payload.attendanceId) {
+          if (!isUuid(payload.attendanceId)) {
+            return Response.json(
+              { ok: false, error: "Selecione uma turma válida." },
+              { status: 400 },
+            );
+          }
+
+          const attendanceResult = await queryDb<AttendanceSnapshotRow>(
+            `
+              select a.id, a.unit_id, a.course_id, c.name as course_name, c.value::text as course_value,
+                a.city, a.state
+              from app_course_attendances a
+              inner join app_courses c on c.id = a.course_id
+              where a.id = $1 and a.unit_id = $2 and a.status = 'active' and c.status = 'active'
+              limit 1
+            `,
+            [payload.attendanceId, unit.id],
           );
+          attendance = attendanceResult.rows[0] ?? null;
+          if (!attendance) {
+            return Response.json(
+              { ok: false, error: "Turma inativa ou indisponível nesta unidade." },
+              { status: 400 },
+            );
+          }
         }
         const channelResult = await getChannelSnapshot(payload.acquisitionChannelId, unit.id);
 
@@ -579,7 +586,8 @@ export const Route = createFileRoute("/api/crm/leads")({
         }
 
         const channel = channelResult.channel;
-        const resolvedCity = `${attendance.city} - ${attendance.state}`;
+        const resolvedCity = attendance ? `${attendance.city} - ${attendance.state}` : payload.city;
+        const releaseToSharedQueue = Boolean(attendance);
         const result = await queryDb<LeadRow>(
           `
             insert into app_leads (
@@ -599,7 +607,7 @@ export const Route = createFileRoute("/api/crm/leads")({
               shared_queue,
               created_by
             )
-            values ($1, $2, $3, $4, nullif($5, ''), nullif($6, ''), nullif($7, ''), $8, $9, $10, $11, $12, nullif($13, ''), true, $14)
+            values ($1, $2, $3, $4, nullif($5, ''), nullif($6, ''), nullif($7, ''), $8, $9, $10, $11, $12, nullif($13, ''), $14, $15)
             returning
               id,
               unit_id,
@@ -612,7 +620,7 @@ export const Route = createFileRoute("/api/crm/leads")({
               attendance_id,
               (select concat(c.name, ' · ', a.city, '/', a.state, ' · ', to_char(a.class_date, 'DD/MM/YYYY'))
                 from app_course_attendances a inner join app_courses c on c.id = a.course_id where a.id = attendance_id) as attendance_name,
-              'active'::text as attendance_status,
+              case when attendance_id is null then null else 'active'::text end as attendance_status,
               course_id,
               course_name_snapshot,
               course_value_snapshot::text,
@@ -629,18 +637,19 @@ export const Route = createFileRoute("/api/crm/leads")({
           `,
           [
             unit.id,
-            attendance.id,
+            attendance?.id ?? null,
             payload.fullName,
             payload.phone,
             payload.phone2,
             payload.email,
             resolvedCity,
-            attendance.course_id,
-            attendance.course_name,
-            Number(attendance.course_value),
+            attendance?.course_id ?? null,
+            attendance?.course_name ?? null,
+            attendance ? Number(attendance.course_value) : null,
             channel?.id ?? null,
             channel?.name ?? null,
             payload.observations,
+            releaseToSharedQueue,
             session.user.id,
           ],
         );

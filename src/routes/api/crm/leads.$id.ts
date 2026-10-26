@@ -493,30 +493,34 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
         }
 
         if (payload.fullName && payload.phone) {
-          if (!isUuid(payload.attendanceId)) {
-            return Response.json(
-              { ok: false, error: "Selecione uma turma válida." },
-              { status: 400 },
+          let attendance: AttendanceSnapshotRow | null = null;
+
+          if (payload.attendanceId) {
+            if (!isUuid(payload.attendanceId)) {
+              return Response.json(
+                { ok: false, error: "Selecione uma turma válida." },
+                { status: 400 },
+              );
+            }
+            const attendanceResult = await queryDb<AttendanceSnapshotRow>(
+              `
+                select a.id, a.course_id, c.name as course_name, c.value::text as course_value,
+                  a.city, a.state, a.status
+                from app_course_attendances a
+                inner join app_courses c on c.id = a.course_id
+                where a.id = $1 and a.unit_id = $2
+                  and (a.status = 'active' or a.id = $3)
+                limit 1
+              `,
+              [payload.attendanceId, lead.unit_id, lead.attendance_id],
             );
-          }
-          const attendanceResult = await queryDb<AttendanceSnapshotRow>(
-            `
-              select a.id, a.course_id, c.name as course_name, c.value::text as course_value,
-                a.city, a.state, a.status
-              from app_course_attendances a
-              inner join app_courses c on c.id = a.course_id
-              where a.id = $1 and a.unit_id = $2
-                and (a.status = 'active' or a.id = $3)
-              limit 1
-            `,
-            [payload.attendanceId, lead.unit_id, lead.attendance_id],
-          );
-          const attendance = attendanceResult.rows[0];
-          if (!attendance) {
-            return Response.json(
-              { ok: false, error: "Não é permitido escolher outra turma inativa." },
-              { status: 400 },
-            );
+            attendance = attendanceResult.rows[0] ?? null;
+            if (!attendance) {
+              return Response.json(
+                { ok: false, error: "Não é permitido escolher outra turma inativa." },
+                { status: 400 },
+              );
+            }
           }
 
           const consultantEditingOwnLead = session.user.role === "CONSULTOR";
@@ -531,8 +535,10 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
             );
           }
 
-          const resolvedCity = `${attendance.city} - ${attendance.state}`;
-          const releaseToSharedQueue = resolvedStage === "Novo lead" && Boolean(attendance.id);
+          const resolvedCity = attendance
+            ? `${attendance.city} - ${attendance.state}`
+            : payload.city;
+          const releaseToSharedQueue = resolvedStage === "Novo lead" && Boolean(attendance);
 
           await queryDb(
             `
@@ -600,10 +606,10 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
               payload.phone2,
               payload.email,
               resolvedCity,
-              attendance.id,
-              attendance.course_id,
-              attendance.course_name,
-              Number(attendance.course_value),
+              attendance?.id ?? null,
+              attendance?.course_id ?? null,
+              attendance?.course_name ?? null,
+              attendance ? Number(attendance.course_value) : null,
               consultantEditingOwnLead
                 ? lead.acquisition_channel_id
                 : (channelResult.channel?.id ?? null),

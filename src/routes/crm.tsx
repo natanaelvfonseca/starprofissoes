@@ -896,11 +896,6 @@ function CRMPipeline() {
       toast.error("Nome completo e telefone são obrigatórios.");
       return;
     }
-    if (!form.attendanceId) {
-      toast.error("Selecione a turma do lead.");
-      return;
-    }
-
     setSavingLead(true);
 
     try {
@@ -2974,14 +2969,14 @@ function CreateLeadDialog({
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <Label>Turma</Label>
+              <Label>Turma (opcional)</Label>
               <Select
-                value={form.attendanceId}
+                value={form.attendanceId || NO_SELECTION}
                 onValueChange={(value) => {
                   const attendance = attendances.find((item) => item.id === value);
                   onFormChange((current) => ({
                     ...current,
-                    attendanceId: value,
+                    attendanceId: value === NO_SELECTION ? "" : value,
                     courseId: attendance?.courseId ?? "",
                     city: attendance ? `${attendance.city} - ${attendance.state}` : "",
                   }));
@@ -2989,10 +2984,13 @@ function CreateLeadDialog({
               >
                 <SelectTrigger>
                   <SelectValue
-                    placeholder={loadingOptions ? "Carregando..." : "Selecione a turma"}
+                    placeholder={
+                      loadingOptions ? "Carregando..." : "Selecione uma turma (opcional)"
+                    }
                   />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value={NO_SELECTION}>Sem turma</SelectItem>
                   {attendances
                     .filter(
                       (attendance) =>
@@ -3009,6 +3007,11 @@ function CreateLeadDialog({
               {!loadingOptions &&
               !attendances.some((attendance) => attendance.status === "active") ? (
                 <p className="text-xs text-muted-foreground">Nenhuma turma ativa nesta unidade</p>
+              ) : null}
+              {!form.attendanceId ? (
+                <p className="text-xs text-muted-foreground">
+                  Sem turma, o lead ficará na carteira do usuário que o cadastrou.
+                </p>
               ) : null}
               {selectedAttendance && selectedCourse ? (
                 <div className="flex items-center gap-2 rounded-md border border-primary/15 bg-primary/5 px-3 py-2 text-xs text-primary">
