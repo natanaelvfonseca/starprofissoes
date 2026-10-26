@@ -304,9 +304,12 @@ function SalesAiPage() {
 
       if (data.qrCode) {
         setQrCode(data.qrCode);
+      } else {
+        setQrCode(null);
       }
     } catch {
-      // Mantém o último QR visível; o botão manual continua disponível.
+      // Não mantém um QR potencialmente expirado disponível para leitura.
+      setQrCode(null);
     }
   }, [isConsultant, qrOpen, session]);
 
@@ -482,6 +485,7 @@ function SalesAiPage() {
   async function handleConnectWhatsapp() {
     setWorkingEvolution(true);
     setQrOpen(true);
+    setQrCode(null);
 
     try {
       const data = await requestJson<{ ok: true; status: ConnectionStatus; qrCode: string | null }>(

@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { QueryResultRow } from "pg";
+import { evolutionConnectionState, evolutionQrCodeFrom } from "@/lib/evolution-connection";
 import { phoneFromWhatsappJid } from "@/lib/whatsapp-label-automation";
 import {
   mergeWhatsappDeliveryStatus,
@@ -185,31 +186,6 @@ function instancePart(value: string, fallback = "star_profissoes") {
   return normalized || fallback;
 }
 
-function connectionState(data: unknown) {
-  const dataRecord = asRecord(data);
-  const instanceRecord = asRecord(dataRecord.instance);
-  const raw = String(
-    firstValue(instanceRecord.state, dataRecord.state, dataRecord.connectionStatus) ?? "",
-  ).toLowerCase();
-
-  if (["open", "connected", "conected"].includes(raw)) return "connected";
-  if (["connecting", "qr", "qrcode"].includes(raw)) return "connecting";
-  return "disconnected";
-}
-
-function qrCodeFrom(data: unknown) {
-  const dataRecord = asRecord(data);
-  const qrcodeRecord = asRecord(dataRecord.qrcode);
-  const value = firstValue(dataRecord.base64, qrcodeRecord.base64, dataRecord.code);
-
-  if (typeof value !== "string" || !value) return null;
-  if (value.startsWith("data:image/")) return value;
-  if (/^[A-Za-z0-9+/=\r\n]+$/.test(value) && value.length > 500) {
-    return `data:image/png;base64,${value.replace(/\s/g, "")}`;
-  }
-  return null;
-}
-
 function remoteInstanceName(item: unknown) {
   const itemRecord = asRecord(item);
   const instanceRecord = asRecord(itemRecord.instance);
@@ -251,6 +227,12 @@ async function createRemoteInstance(instanceName: string) {
   });
 }
 
+async function deleteRemoteInstance(instanceName: string) {
+  await requestEvolution(`/instance/delete/${encodeURIComponent(instanceName)}`, {
+    method: "DELETE",
+  });
+}
+
 async function getInstance(userId: string, unitId: string) {
   await ensureEvolutionSchema();
   const result = await queryDb<InstanceRow>(
@@ -268,7 +250,7 @@ export async function getEvolutionState(userId: string, unitId: string, requestU
       const stateData = await requestEvolution(
         `/instance/connectionState/${encodeURIComponent(instance.instance_name)}`,
       );
-      const status = connectionState(stateData);
+      const status = evolutionConnectionState(stateData);
       const updated = await queryDb<InstanceRow>(
         `
           update app_whatsapp_instances
@@ -331,7 +313,7 @@ export async function getEvolutionQrCode(userId: string, unitId: string) {
     `/instance/connect/${encodeURIComponent(instance.instance_name)}`,
   );
 
-  return qrCodeFrom(qrData);
+  return evolutionQrCodeFrom(qrData);
 }
 
 export async function connectEvolution(
@@ -361,12 +343,7 @@ export async function connectEvolution(
     );
     instance = created.rows[0];
   } else if (instance.instance_name !== desiredInstanceName && instance.status !== "connected") {
-    await requestEvolution(`/instance/logout/${encodeURIComponent(instance.instance_name)}`, {
-      method: "DELETE",
-    }).catch(() => null);
-    await requestEvolution(`/instance/delete/${encodeURIComponent(instance.instance_name)}`, {
-      method: "DELETE",
-    }).catch(() => null);
+    await deleteRemoteInstance(instance.instance_name).catch(() => null);
 
     const renamed = await queryDb<InstanceRow>(
       `
@@ -380,13 +357,35 @@ export async function connectEvolution(
     instance = renamed.rows[0] ?? instance;
   }
 
-  if (!(await remoteInstanceExists(instance.instance_name))) {
-    try {
-      await createRemoteInstance(instance.instance_name);
-    } catch (error) {
-      const message = error instanceof Error ? error.message.toLowerCase() : "";
-      if (!message.includes("already") && !message.includes("exist")) throw error;
+  const remoteExists = await remoteInstanceExists(instance.instance_name);
+
+  if (remoteExists) {
+    const stateData = await requestEvolution(
+      `/instance/connectionState/${encodeURIComponent(instance.instance_name)}`,
+    );
+
+    if (evolutionConnectionState(stateData) === "connected") {
+      await queryDb(
+        `
+          update app_whatsapp_instances
+          set status = 'connected', connected_at = coalesce(connected_at, now()), updated_at = now()
+          where id = $1
+        `,
+        [instance.id],
+      );
+      return { status: "connected", qrCode: null };
     }
+
+    // A Evolution pode manter credenciais incompletas depois de logout ou de uma
+    // leitura de QR interrompida. Recriar a instância limpa essa sessão inválida.
+    await deleteRemoteInstance(instance.instance_name);
+  }
+
+  try {
+    await createRemoteInstance(instance.instance_name);
+  } catch (error) {
+    const message = error instanceof Error ? error.message.toLowerCase() : "";
+    if (!message.includes("already") && !message.includes("exist")) throw error;
   }
 
   const webhookUrl = evolutionWebhookUrl(requestUrl, instance.webhook_secret);
@@ -411,7 +410,7 @@ export async function connectEvolution(
     `/instance/connectionState/${encodeURIComponent(instance.instance_name)}`,
   ).catch(() => null);
 
-  if (stateData && connectionState(stateData) === "connected") {
+  if (stateData && evolutionConnectionState(stateData) === "connected") {
     await queryDb(
       `
         update app_whatsapp_instances
@@ -431,7 +430,7 @@ export async function connectEvolution(
     [instance.id],
   );
 
-  return { status: "connecting", qrCode: qrCodeFrom(qrData) };
+  return { status: "connecting", qrCode: evolutionQrCodeFrom(qrData) };
 }
 
 export async function disconnectEvolution(userId: string, unitId: string) {
@@ -441,6 +440,7 @@ export async function disconnectEvolution(userId: string, unitId: string) {
   await requestEvolution(`/instance/logout/${encodeURIComponent(instance.instance_name)}`, {
     method: "DELETE",
   }).catch(() => null);
+  await deleteRemoteInstance(instance.instance_name).catch(() => null);
   await queryDb(
     `update app_whatsapp_instances set status = 'disconnected', updated_at = now() where id = $1`,
     [instance.id],
