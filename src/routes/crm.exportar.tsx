@@ -194,8 +194,7 @@ function ExportLeadsPage() {
           </div>
           <h1 className="text-xl font-bold">Acesso restrito</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            A exportação de leads está disponível somente para Diretores, Gerentes, Marketing e o
-            usuário master.
+            Consultores não podem exportar os dados dos leads.
           </p>
           <Button asChild variant="outline" className="mt-5">
             <Link to="/crm">Voltar ao CRM</Link>

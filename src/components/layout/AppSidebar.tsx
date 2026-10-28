@@ -46,6 +46,7 @@ import {
   canAccessMetaAdsScreen,
   canAccessSystemFeedback,
   canManageUnits,
+  canImportLeads,
   canSwitchActiveUnit,
   canViewGrowth,
   canViewManagement,
@@ -64,7 +65,7 @@ type NavigationItem = {
   studentViewOnly?: boolean;
   systemFeedbackOnly?: boolean;
   salesAiOnly?: boolean;
-  devOnly?: boolean;
+  leadImportOnly?: boolean;
   whatsappOnly?: boolean;
 };
 
@@ -109,7 +110,12 @@ const groups: Array<NavigationGroup> = [
         icon: ClipboardPenLine,
         managementOnly: true,
       },
-      { title: "Importar leads", url: "/crm/importar", icon: FileUp, devOnly: true },
+      {
+        title: "Importar leads",
+        url: "/crm/importar",
+        icon: FileUp,
+        leadImportOnly: true,
+      },
       { title: "Feedback", url: "/feedback", icon: MessagesSquare, systemFeedbackOnly: true },
     ],
   },
@@ -168,7 +174,7 @@ export function AppSidebar() {
           (!item.whatsappOnly ||
             user?.role === "CONSULTOR" ||
             Boolean(session?.features.whatsappSupervision)) &&
-          (!item.devOnly || user?.role === "DEV"),
+          (!item.leadImportOnly || (user ? canImportLeads(user.role) : false)),
       ),
     }))
     .filter((group) => group.items.length > 0);

@@ -142,13 +142,12 @@ export function canViewStudents(role: UserRole) {
   );
 }
 
-export function canExportLeads(role: UserRole, email?: string | null) {
-  return (
-    role === "DIRETOR" ||
-    role === "GERENTE" ||
-    role === "MARKETING" ||
-    canAccessMetaAdsScreen(email)
-  );
+export function canExportLeads(role: UserRole, _email?: string | null) {
+  return role !== "CONSULTOR";
+}
+
+export function canImportLeads(role: UserRole) {
+  return role !== "CONSULTOR";
 }
 
 export function canTransferLeads(role: UserRole) {

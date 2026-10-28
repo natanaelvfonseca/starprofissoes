@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   canClaimLeads,
   canExportLeads,
+  canImportLeads,
   canReturnStudentToLead,
   canTransferLeads,
   canViewAllUnitLeads,
@@ -31,13 +32,15 @@ test("consultor acessa alunos, mas não acessa relatórios", () => {
   assert.equal(canViewGrowth("CONSULTOR"), false);
 });
 
-test("exportação de leads fica restrita à liderança comercial, Marketing e usuário master", () => {
-  assert.equal(canExportLeads("DIRETOR"), true);
-  assert.equal(canExportLeads("GERENTE"), true);
-  assert.equal(canExportLeads("MARKETING"), true);
+test("somente o consultor não pode importar nem exportar leads", () => {
+  for (const role of ["DEV", "CEO", "CVO", "DIRETOR", "GERENTE", "MARKETING"] as const) {
+    assert.equal(canExportLeads(role), true);
+    assert.equal(canImportLeads(role), true);
+  }
+
   assert.equal(canExportLeads("CONSULTOR"), false);
-  assert.equal(canExportLeads("CEO"), false);
-  assert.equal(canExportLeads("CONSULTOR", "natanaelfonseca@gmail.com"), true);
+  assert.equal(canImportLeads("CONSULTOR"), false);
+  assert.equal(canExportLeads("CONSULTOR", "natanaelfonseca@gmail.com"), false);
 });
 
 test("consultor pode alternar entre sua carteira e o pipeline da unidade", () => {

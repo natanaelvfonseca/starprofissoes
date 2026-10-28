@@ -3,7 +3,7 @@ import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { CheckCircle2, FileSpreadsheet, Loader2, Upload, UsersRound } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
-import { isDevRole } from "@/lib/auth-types";
+import { canImportLeads } from "@/lib/auth-types";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -117,6 +117,7 @@ export const Route = createFileRoute("/crm/importar")({
 function LeadImporter() {
   const { session } = useAuth();
   const unitId = session?.activeUnit?.id ?? "";
+  const canAccess = session ? canImportLeads(session.user.role) : false;
   const [parsed, setParsed] = React.useState<ParsedCsv | null>(null);
   const [fileName, setFileName] = React.useState("");
   const [mapping, setMapping] = React.useState<Array<TargetField>>([]);
@@ -134,7 +135,7 @@ function LeadImporter() {
   } | null>(null);
 
   React.useEffect(() => {
-    if (!unitId || session?.user.role !== "DEV") {
+    if (!unitId || !canAccess) {
       setLoading(false);
       return;
     }
@@ -154,9 +155,9 @@ function LeadImporter() {
         toast.error(error instanceof Error ? error.message : "Falha ao carregar consultores."),
       )
       .finally(() => setLoading(false));
-  }, [session?.user.role, unitId]);
+  }, [canAccess, unitId]);
 
-  if (session && !isDevRole(session.user.role)) return <Navigate to="/crm" />;
+  if (session && !canAccess) return <Navigate to="/crm" />;
 
   async function handleFile(file: File | undefined) {
     if (!file) return;
@@ -229,7 +230,7 @@ function LeadImporter() {
     <div className="space-y-6">
       <PageHeader
         title="Importar leads"
-        description="Importação manual de leads para a unidade ativa. Acesso exclusivo para DEV."
+        description="Importe uma planilha de leads para a unidade ativa. Disponível para todos os perfis, exceto consultores."
       />
       <Card>
         <CardHeader>
