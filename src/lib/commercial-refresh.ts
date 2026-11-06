@@ -41,13 +41,13 @@ export function subscribeCommercialConfiguration(
   };
   const channel = "BroadcastChannel" in window ? new BroadcastChannel(eventName) : null;
   if (channel) channel.onmessage = (event) => onChange(event.data);
-  const interval = window.setInterval(onVisible, pollMs);
+  const interval = pollMs > 0 ? window.setInterval(onVisible, pollMs) : null;
   window.addEventListener(eventName, onEvent);
   window.addEventListener("storage", onStorage);
   window.addEventListener("focus", onVisible);
   document.addEventListener("visibilitychange", onVisible);
   return () => {
-    window.clearInterval(interval);
+    if (interval !== null) window.clearInterval(interval);
     window.removeEventListener(eventName, onEvent);
     window.removeEventListener("storage", onStorage);
     window.removeEventListener("focus", onVisible);

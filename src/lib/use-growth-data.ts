@@ -43,8 +43,8 @@ export function useGrowthData(
 
     let ignore = false;
 
-    async function loadGrowthData() {
-      setLoading(true);
+    async function loadGrowthData(showLoading = true) {
+      if (showLoading) setLoading(true);
 
       try {
         const nextData = await readJson<GrowthResponse>(
@@ -60,17 +60,21 @@ export function useGrowthData(
       } catch (error) {
         if (!ignore) {
           toast.error(error instanceof Error ? error.message : "Falha ao carregar crescimento.");
-          setData(null);
+          if (showLoading) setData(null);
         }
       } finally {
-        if (!ignore) {
+        if (!ignore && showLoading) {
           setLoading(false);
         }
       }
     }
 
     void loadGrowthData();
-    const unsubscribe = subscribeCommercialConfiguration(scopeValue, () => void loadGrowthData());
+    const unsubscribe = subscribeCommercialConfiguration(
+      scopeValue,
+      () => void loadGrowthData(false),
+      0,
+    );
 
     return () => {
       unsubscribe();

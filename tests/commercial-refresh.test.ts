@@ -69,3 +69,50 @@ test("salvar configurações atualiza a tela e outra aba da mesma unidade e remo
     Object.defineProperty(globalThis, "localStorage", { value: savedStorage, configurable: true });
   }
 });
+
+test("polling pode ser desativado sem perder atualizações por evento ou foco", () => {
+  const savedWindow = globalThis.window;
+  const savedDocument = globalThis.document;
+  const savedBroadcast = globalThis.BroadcastChannel;
+  let intervals = 0;
+  class FakeChannel {
+    onmessage: ((event: { data: { unitId: string } }) => void) | null = null;
+    constructor(_name: string) {}
+    close() {}
+  }
+  const windowTarget = Object.assign(new EventTarget(), {
+    BroadcastChannel: FakeChannel,
+    setInterval: () => {
+      intervals++;
+      return 1;
+    },
+    clearInterval: () => undefined,
+  });
+  const documentTarget = Object.assign(new EventTarget(), { visibilityState: "visible" });
+  try {
+    Object.defineProperty(globalThis, "window", { value: windowTarget, configurable: true });
+    Object.defineProperty(globalThis, "document", { value: documentTarget, configurable: true });
+    Object.defineProperty(globalThis, "BroadcastChannel", {
+      value: FakeChannel,
+      configurable: true,
+    });
+    let refreshes = 0;
+    const unsubscribe = subscribeCommercialConfiguration("star", () => refreshes++, 0);
+    assert.equal(intervals, 0);
+    windowTarget.dispatchEvent(
+      new CustomEvent("star-commercial-configuration", {
+        detail: { unitId: "star", changeId: "change-1" },
+      }),
+    );
+    windowTarget.dispatchEvent(new Event("focus"));
+    assert.equal(refreshes, 2);
+    unsubscribe();
+  } finally {
+    Object.defineProperty(globalThis, "window", { value: savedWindow, configurable: true });
+    Object.defineProperty(globalThis, "document", { value: savedDocument, configurable: true });
+    Object.defineProperty(globalThis, "BroadcastChannel", {
+      value: savedBroadcast,
+      configurable: true,
+    });
+  }
+});
