@@ -8,6 +8,7 @@ import type {
   WhatsappSupervisionConversation,
   WhatsappSupervisionMessage,
 } from "@/lib/whatsapp-supervision-types";
+import { activeSessionUnit } from "@/lib/unit-isolation";
 import {
   isUsefulWhatsappContactName,
   normalizeWhatsappContactName,
@@ -261,7 +262,8 @@ export async function setWhatsappFeatureRole(role: UserRole, enabled: boolean, a
 }
 
 function allowedUnitIds(session: AuthSession) {
-  return session.units.map((unit) => unit.id);
+  const activeUnit = activeSessionUnit(session);
+  return activeUnit ? [activeUnit.id] : [];
 }
 
 function recordOf(value: unknown): Record<string, unknown> {
@@ -1209,9 +1211,12 @@ export async function listWhatsappNotifications(session: AuthSession) {
       notification.created_at::text, intervention.content, actor.name actor_name
     from app_whatsapp_notifications notification
     inner join app_whatsapp_interventions intervention on intervention.id = notification.intervention_id
+    inner join app_whatsapp_conversations conversation on conversation.id = notification.conversation_id
     inner join app_users actor on actor.id = intervention.actor_user_id
-    where notification.user_id = $1 order by notification.created_at desc limit 50`,
-    [session.user.id],
+    where notification.user_id = $1
+      and conversation.unit_id = any($2::uuid[])
+    order by notification.created_at desc limit 50`,
+    [session.user.id, allowedUnitIds(session)],
   );
   return result.rows.map<WhatsappInterventionNotification>((row) => ({
     id: row.id,
@@ -1226,9 +1231,14 @@ export async function listWhatsappNotifications(session: AuthSession) {
 export async function markWhatsappNotificationRead(session: AuthSession, notificationId: string) {
   await ensureWhatsappSupervisionSchema();
   await queryDb(
-    `update app_whatsapp_notifications set read_at = coalesce(read_at, now())
-    where id = $1 and user_id = $2`,
-    [notificationId, session.user.id],
+    `update app_whatsapp_notifications notification
+    set read_at = coalesce(notification.read_at, now())
+    from app_whatsapp_conversations conversation
+    where notification.id = $1
+      and notification.user_id = $2
+      and conversation.id = notification.conversation_id
+      and conversation.unit_id = any($3::uuid[])`,
+    [notificationId, session.user.id, allowedUnitIds(session)],
   );
 }
 

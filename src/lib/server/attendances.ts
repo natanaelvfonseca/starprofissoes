@@ -7,11 +7,11 @@ import type {
   AttendanceMessageDirection,
   AttendanceMessageType,
 } from "@/lib/attendance-types";
-import type { AuthSession, UserRole } from "@/lib/auth-types";
-import { canViewAttendances, isExecutiveRole, isMasterRole } from "@/lib/auth-types";
-import { isUuid } from "@/lib/server/commercial-schema";
+import type { AuthSession } from "@/lib/auth-types";
+import { canViewAttendances } from "@/lib/auth-types";
 import { queryDb } from "@/lib/server/db";
 import { ensureEvolutionSchema, requestEvolution } from "@/lib/server/evolution-whatsapp";
+import { resolveActiveSessionUnit } from "@/lib/unit-isolation";
 
 export const ATTENDANCE_ALL_UNITS = "__all__";
 
@@ -72,10 +72,6 @@ type AttendanceMediaFile = {
   fileName: string;
 };
 
-export function canUseGlobalAttendanceUnitFilter(role: UserRole) {
-  return isMasterRole(role) || isExecutiveRole(role);
-}
-
 export function requireAttendanceAccess(session: AuthSession | null) {
   return Boolean(session && canViewAttendances(session.user.role) && session.units.length);
 }
@@ -84,26 +80,10 @@ export function getAttendanceUnitScope(
   session: AuthSession,
   requestedUnitId?: string | null,
 ): AttendanceUnitScope | null {
-  const requested = requestedUnitId?.trim();
-  const canUseAllUnits = canUseGlobalAttendanceUnitFilter(session.user.role);
+  const activeUnit = resolveActiveSessionUnit(session, requestedUnitId, [ATTENDANCE_ALL_UNITS]);
 
-  if (requested && requested !== ATTENDANCE_ALL_UNITS) {
-    if (!isUuid(requested)) {
-      return null;
-    }
-
-    const unit = session.units.find((item) => item.id === requested);
-
-    return unit ? { unitIds: [unit.id], selectedUnitId: unit.id } : null;
-  }
-
-  if ((requested === ATTENDANCE_ALL_UNITS || !requested) && canUseAllUnits) {
-    return { unitIds: session.units.map((unit) => unit.id), selectedUnitId: null };
-  }
-
-  return session.units.length
-    ? { unitIds: session.units.map((unit) => unit.id), selectedUnitId: null }
-    : null;
+  if (!activeUnit) return null;
+  return { unitIds: [activeUnit.id], selectedUnitId: activeUnit.id };
 }
 
 function safeLimit(value: unknown, fallback: number) {

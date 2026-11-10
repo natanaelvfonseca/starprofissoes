@@ -8,11 +8,9 @@ import type {
   GrowthCourseMetric,
   GrowthFunnelMetric,
   GrowthSourceMetric,
-  GrowthUnitMetric,
 } from "@/lib/growth-types";
 import {
   canViewGrowth,
-  canViewNetworkGrowth,
   type AuthSession,
   type UnitSummary,
 } from "@/lib/auth-types";
@@ -20,9 +18,10 @@ import { ensureCommercialSchema, isUuid } from "@/lib/server/commercial-schema";
 import { getSessionFromRequest } from "@/lib/server/auth";
 import { queryDb } from "@/lib/server/db";
 import { ensureMetaLeadSchema } from "@/lib/server/meta-leads";
+import { resolveActiveSessionUnit } from "@/lib/unit-isolation";
 
 type GrowthScopeSelection = {
-  mode: "network" | "unit" | "individual";
+  mode: "unit" | "individual";
   label: string;
   unit: UnitSummary | null;
   unitIds: Array<string>;
@@ -81,15 +80,6 @@ type CityRow = QueryResultRow & {
 type FunnelRow = QueryResultRow & {
   stage: string;
   leads: string | number;
-};
-
-type UnitRow = QueryResultRow & {
-  id: string;
-  name: string;
-  leads: string | number;
-  enrollments: string | number;
-  confirmed_revenue: string | number | null;
-  pipeline_potential: string | number | null;
 };
 
 type TrendRow = QueryResultRow & {
@@ -183,27 +173,8 @@ function resolveScope(session: AuthSession, request: Request): GrowthScopeSelect
   }
 
   const url = new URL(request.url);
-  const canViewNetwork = canViewNetworkGrowth(session.user.role);
-  const requestedScope = url.searchParams.get("scope")?.trim();
   const requestedUnitId = url.searchParams.get("unitId")?.trim();
-  const availableUnits = session.units;
-
-  if (
-    canViewNetwork &&
-    (requestedScope === "all" || requestedUnitId === "all" || !requestedUnitId)
-  ) {
-    return {
-      mode: "network",
-      label: "Toda rede",
-      unit: null,
-      unitIds: availableUnits.map((unit) => unit.id),
-      consultantId: null,
-      availableUnits,
-    };
-  }
-
-  const selectedUnitId = canViewNetwork ? requestedUnitId : session.activeUnit?.id;
-  const unit = availableUnits.find((item) => item.id === selectedUnitId) ?? null;
+  const unit = resolveActiveSessionUnit(session, requestedUnitId, ["all"]);
 
   if (!unit) {
     return Response.json({ ok: false, error: "Unidade indisponível." }, { status: 403 });
@@ -217,7 +188,7 @@ function resolveScope(session: AuthSession, request: Request): GrowthScopeSelect
     unit,
     unitIds: [unit.id],
     consultantId: individual ? session.user.id : null,
-    availableUnits,
+    availableUnits: [unit],
   };
 }
 
@@ -256,22 +227,6 @@ function mapCities(rows: Array<CityRow>): Array<GrowthCityMetric> {
     const leads = toNumber(row.leads);
     const enrollments = toNumber(row.enrollments);
     return { city: row.city, leads, enrollments, conversionRate: percentage(enrollments, leads) };
-  });
-}
-
-function mapUnits(rows: Array<UnitRow>): Array<GrowthUnitMetric> {
-  return rows.map((row) => {
-    const leads = toNumber(row.leads);
-    const enrollments = toNumber(row.enrollments);
-    return {
-      id: row.id,
-      name: row.name,
-      leads,
-      enrollments,
-      confirmedRevenue: toNumber(row.confirmed_revenue),
-      pipelinePotential: toNumber(row.pipeline_potential),
-      conversionRate: percentage(enrollments, leads),
-    };
   });
 }
 
@@ -395,7 +350,6 @@ export const Route = createFileRoute("/api/growth")({
           courseResult,
           cityResult,
           funnelResult,
-          unitResult,
           trendResult,
           campaignResult,
           consultantResult,
@@ -595,40 +549,6 @@ export const Route = createFileRoute("/api/growth")({
               ) funnel order by position, stage`,
             params,
           ),
-          queryDb<UnitRow>(
-            `
-              with paid_by_lead as (
-                select p.lead_id, sum(p.amount) as paid_amount
-                from app_student_payments p
-                where p.unit_id = any($1::uuid[])
-                  and p.status = 'paid'
-                group by p.lead_id
-              )
-              select u.id, u.name,
-                     count(l.id) as leads,
-                     count(l.id) filter (where l.stage = 'Matriculado') as enrollments,
-                     coalesce(
-                       sum(
-                         coalesce(
-                           p.paid_amount,
-                           case when l.stage = 'Matriculado' then l.course_value_snapshot else 0 end
-                         )
-                       ),
-                       0
-                     ) as confirmed_revenue,
-                     coalesce(sum(l.course_value_snapshot) filter (where l.stage <> 'Matriculado'), 0) as pipeline_potential
-              from unnest($1::uuid[]) with ordinality as selected(unit_id, ord)
-              join app_units u on u.id = selected.unit_id
-              left join app_leads l on l.unit_id = u.id
-                and ($2::uuid is null or l.created_by = $2)
-                and l.created_at >= current_date - make_interval(days => $3::int)
-                and ($4::uuid is null or l.attendance_id = $4)
-              left join paid_by_lead p on p.lead_id = l.id
-              group by u.id, u.name, selected.ord
-              order by selected.ord
-            `,
-            params,
-          ),
           queryDb<TrendRow>(
             `
               with days as (
@@ -803,7 +723,7 @@ export const Route = createFileRoute("/api/growth")({
             sources: mapSources(sourceResult.rows),
             courses: mapCourses(courseResult.rows),
             cities: mapCities(cityResult.rows),
-            units: scope.mode === "network" ? mapUnits(unitResult.rows) : [],
+            units: [],
             funnel: funnelResult.rows.map<GrowthFunnelMetric>((row) => ({
               stage: row.stage,
               leads: toNumber(row.leads),

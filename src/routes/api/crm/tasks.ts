@@ -193,7 +193,7 @@ async function listLeadTasks(leadId: string) {
   return result.rows.map(mapTask);
 }
 
-async function listReminderTasks(userId: string) {
+async function listReminderTasks(userId: string, unitId: string) {
   const result = await queryDb<TaskRow>(
     `
       select
@@ -212,12 +212,13 @@ async function listReminderTasks(userId: string) {
       inner join app_leads l on l.id = t.lead_id
       left join app_units un on un.id = t.unit_id
       where t.created_by = $1
+        and t.unit_id = $2
         and t.status = 'pending'
         and t.due_at <= now() + interval '15 minutes'
       order by t.due_at asc
       limit 30
     `,
-    [userId],
+    [userId, unitId],
   );
 
   return result.rows.map(mapTask);
@@ -268,8 +269,11 @@ export const Route = createFileRoute("/api/crm/tasks")({
         const view = url.searchParams.get("view");
 
         if (view === "notifications") {
+          if (!session.activeUnit) {
+            return Response.json({ ok: false, error: "Unidade indisponível." }, { status: 403 });
+          }
           return Response.json(
-            { tasks: await listReminderTasks(session.user.id) },
+            { tasks: await listReminderTasks(session.user.id, session.activeUnit.id) },
             { headers: { "Cache-Control": "no-store" } },
           );
         }
@@ -283,7 +287,7 @@ export const Route = createFileRoute("/api/crm/tasks")({
         const leadAccess = await getLeadForUser(
           leadId,
           session.user.id,
-          session.units.map((unit) => unit.id),
+          session.activeUnit ? [session.activeUnit.id] : [],
           canManageUnitLeads,
         );
 
@@ -331,7 +335,7 @@ export const Route = createFileRoute("/api/crm/tasks")({
         const leadAccess = await getLeadForUser(
           leadId,
           session.user.id,
-          session.units.map((unit) => unit.id),
+          session.activeUnit ? [session.activeUnit.id] : [],
           canManageUnitLeads,
         );
 
@@ -404,7 +408,7 @@ export const Route = createFileRoute("/api/crm/tasks")({
         const taskAccess = await assertTaskForUser(
           taskId,
           session.user.id,
-          session.units.map((unit) => unit.id),
+          session.activeUnit ? [session.activeUnit.id] : [],
           canManageUnitLeads,
         );
 
@@ -455,7 +459,7 @@ export const Route = createFileRoute("/api/crm/tasks")({
         const taskAccess = await assertTaskForUser(
           taskId,
           session.user.id,
-          session.units.map((unit) => unit.id),
+          session.activeUnit ? [session.activeUnit.id] : [],
           canManageUnitLeads,
         );
 

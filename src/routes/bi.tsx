@@ -51,7 +51,7 @@ import {
   metricValue,
 } from "@/components/growth/GrowthDashboardPrimitives";
 import { useAuth } from "@/lib/auth";
-import { canViewGrowth, canViewNetworkGrowth } from "@/lib/auth-types";
+import { canViewGrowth } from "@/lib/auth-types";
 import { useGrowthData } from "@/lib/use-growth-data";
 
 const chartColors = [
@@ -100,19 +100,15 @@ function BI() {
   const [attendanceOptions, setAttendanceOptions] = React.useState<
     Array<{ id: string; name: string; status: "active" | "inactive" }>
   >([]);
-  const canViewNetwork = session ? canViewNetworkGrowth(session.user.role) : false;
   const canViewReports = session ? canViewGrowth(session.user.role) : false;
   const activeUnitId = session?.activeUnit?.id ?? "";
 
   React.useEffect(() => {
     if (!session) return;
-    setScopeValue((current) => {
-      if (!canViewNetwork) return activeUnitId;
-      return current === "all" || session.units.some((unit) => unit.id === current)
-        ? current
-        : "all";
-    });
-  }, [activeUnitId, canViewNetwork, session]);
+    setScopeValue(activeUnitId);
+    setAttendanceId("all");
+    setAttendanceOptions([]);
+  }, [activeUnitId, session]);
 
   const { data, loading } = useGrowthData(
     scopeValue,
@@ -167,11 +163,7 @@ function BI() {
                 </SelectContent>
               </Select>
               <GrowthPeriodSelect value={periodDays} onValueChange={setPeriodDays} />
-              <GrowthScopeSelect
-                session={session}
-                value={scopeValue}
-                onValueChange={setScopeValue}
-              />
+              <GrowthScopeSelect session={session} />
             </div>
           ) : null
         }

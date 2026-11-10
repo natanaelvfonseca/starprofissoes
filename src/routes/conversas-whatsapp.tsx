@@ -227,6 +227,13 @@ function LeadershipInbox() {
   const activeConversationIdRef = React.useRef(conversationId);
   activeConversationIdRef.current = conversationId;
 
+  React.useEffect(() => {
+    setSelectedUnitId(session?.activeUnit?.id ?? "");
+    setConsultantId("");
+    setConversationId("");
+    setMobileView("contacts");
+  }, [session?.activeUnit?.id]);
+
   const selectedConversation = conversations.find((item) => item.id === conversationId) ?? null;
   const selectedConsultant = consultants.find(
     (item) => item.id === consultantId && (!selectedUnitId || item.unitId === selectedUnitId),
@@ -697,28 +704,9 @@ function LeadershipInbox() {
         description="Acompanhe as conversas da equipe, responda com auditoria e consulte a análise da IA."
         actions={
           <>
-            {session && session.units.length > 1 ? (
-              <Select
-                value={selectedUnitId}
-                onValueChange={(value) => {
-                  setSelectedUnitId(value);
-                  setConsultantId("");
-                  setConversationId("");
-                  setMobileView("contacts");
-                }}
-              >
-                <SelectTrigger className="w-56 bg-background">
-                  <SelectValue placeholder="Selecionar unidade" />
-                </SelectTrigger>
-                <SelectContent>
-                  {session.units.map((unit) => (
-                    <SelectItem key={unit.id} value={unit.id}>
-                      {unit.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : null}
+            <Badge variant="secondary" className="bg-primary/10 text-primary">
+              {session?.activeUnit?.name ?? "Unidade ativa"}
+            </Badge>
             <Button variant="outline" onClick={() => void refreshAll()} disabled={refreshing}>
               <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
               Atualizar

@@ -55,7 +55,7 @@ import { Textarea } from "@/components/ui/textarea";
 import starIaWhatsappConnect from "@/assets/star-ia-whatsapp-connect.png";
 import starIaWhatsappConnected from "@/assets/star-ia-whatsapp-connected.png";
 import { useAuth } from "@/lib/auth";
-import { canViewSalesAi, getInitials, isExecutiveRole, isMasterRole } from "@/lib/auth-types";
+import { canViewSalesAi, getInitials } from "@/lib/auth-types";
 import type {
   SalesAiConsultantSummary,
   SalesAiCourseOption,
@@ -64,8 +64,6 @@ import type {
   SalesScriptRecord,
 } from "@/lib/sales-ai-types";
 import { cn } from "@/lib/utils";
-
-const ATTENDANCE_ALL_UNITS = "__all__";
 
 type ScriptForm = {
   courseId: string;
@@ -199,10 +197,7 @@ function SalesAiPage() {
   const { session } = useAuth();
   const isConsultant = session?.user.role === "CONSULTOR";
   const canAccess = session ? canViewSalesAi(session.user.role) : false;
-  const canUseUnitFilter = Boolean(
-    session && (isMasterRole(session.user.role) || isExecutiveRole(session.user.role)),
-  );
-  const [unitFilter, setUnitFilter] = React.useState(ATTENDANCE_ALL_UNITS);
+  const activeUnitId = session?.activeUnit?.id ?? "";
   const [loading, setLoading] = React.useState(true);
   const [savingScript, setSavingScript] = React.useState(false);
   const [analyzing, setAnalyzing] = React.useState(false);
@@ -327,7 +322,7 @@ function SalesAiPage() {
       try {
         const data = await requestJson<SalesAiDashboardResponse>(
           buildUrl("/api/ia-comercial", {
-            unitId: canUseUnitFilter ? unitFilter : undefined,
+            unitId: activeUnitId,
           }),
         );
 
@@ -358,7 +353,7 @@ function SalesAiPage() {
         }
       }
     },
-    [canAccess, canUseUnitFilter, isConsultant, session, unitFilter],
+    [activeUnitId, canAccess, isConsultant, session],
   );
 
   React.useEffect(() => {
@@ -393,7 +388,7 @@ function SalesAiPage() {
     setAnalysisCourseId("");
     setSelectedScriptCourseId("");
     setScriptForm(emptyScriptForm);
-  }, [unitFilter]);
+  }, [activeUnitId]);
 
   React.useEffect(() => {
     if (!selectedConsultant) {
@@ -612,29 +607,9 @@ function SalesAiPage() {
         description="Análise de conversas dos consultores com base nos scripts de venda cadastrados por curso."
         actions={
           <>
-            {canUseUnitFilter ? (
-              <div className="w-full sm:w-64">
-                <Label className="sr-only">Unidade</Label>
-                <Select value={unitFilter} onValueChange={setUnitFilter}>
-                  <SelectTrigger>
-                    <Building2 className="mr-2 h-4 w-4 text-muted-foreground" />
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ATTENDANCE_ALL_UNITS}>Todas as unidades</SelectItem>
-                    {session?.units.map((unit) => (
-                      <SelectItem key={unit.id} value={unit.id}>
-                        {unit.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : (
-              <Badge variant="secondary" className="bg-primary/10 text-primary">
-                {session?.activeUnit?.name ?? "Unidade ativa"}
-              </Badge>
-            )}
+            <Badge variant="secondary" className="bg-primary/10 text-primary">
+              {session?.activeUnit?.name ?? "Unidade ativa"}
+            </Badge>
             <Button
               type="button"
               variant="outline"

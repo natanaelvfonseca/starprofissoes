@@ -16,6 +16,7 @@ import {
   listAttendanceMessages,
 } from "@/lib/server/attendances";
 import { ensureEvolutionSchema } from "@/lib/server/evolution-whatsapp";
+import { activeSessionUnit } from "@/lib/unit-isolation";
 
 const OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_ANALYSIS_MODEL = "gpt-4.1-mini";
@@ -508,7 +509,7 @@ export async function upsertSalesScript(
   const scriptBody = readString(payload.scriptBody, MAX_SCRIPT_CHARS);
   const active = payload.active !== false;
 
-  if (!isUuid(unitId) || !session.units.some((unit) => unit.id === unitId)) {
+  if (!isUuid(unitId) || activeSessionUnit(session)?.id !== unitId) {
     return { error: "Unidade indisponível.", status: 403 } as const;
   }
 
@@ -814,7 +815,7 @@ export async function runSalesConversationAnalysis(
     !isUuid(unitId) ||
     !isUuid(consultantId) ||
     !isUuid(courseId) ||
-    !session.units.some((unit) => unit.id === unitId)
+    activeSessionUnit(session)?.id !== unitId
   ) {
     return { error: "Dados inválidos para análise.", status: 400 } as const;
   }

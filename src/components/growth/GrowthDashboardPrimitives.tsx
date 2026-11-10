@@ -1,7 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import { Lock } from "lucide-react";
 import type { AuthSession } from "@/lib/auth-types";
-import { canViewNetworkGrowth } from "@/lib/auth-types";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -33,37 +32,11 @@ export function metricValue(loading: boolean, value: string | number) {
   return loading ? "..." : value;
 }
 
-export function GrowthScopeSelect({
-  session,
-  value,
-  onValueChange,
-}: {
-  session: AuthSession;
-  value: string;
-  onValueChange: (value: string) => void;
-}) {
-  if (!canViewNetworkGrowth(session.user.role)) {
-    return (
-      <Badge variant="secondary" className="bg-primary/10 text-primary">
-        {session.activeUnit?.name ?? "Unidade ativa"}
-      </Badge>
-    );
-  }
-
+export function GrowthScopeSelect({ session }: { session: AuthSession }) {
   return (
-    <Select value={value} onValueChange={onValueChange}>
-      <SelectTrigger className="w-full md:w-[240px]">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="all">Toda rede</SelectItem>
-        {session.units.map((unit) => (
-          <SelectItem key={unit.id} value={unit.id}>
-            {unit.name}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <Badge variant="secondary" className="bg-primary/10 text-primary">
+      {session.activeUnit?.name ?? "Unidade ativa"}
+    </Badge>
   );
 }
 

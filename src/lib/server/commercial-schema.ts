@@ -5,6 +5,7 @@ import {
   acquisitionChannelInitializationSql,
   initializeAcquisitionChannelsSql,
 } from "@/lib/server/acquisition-channel-defaults";
+import { resolveActiveSessionUnit } from "@/lib/unit-isolation";
 
 export const DEFAULT_ACQUISITION_CHANNELS = [
   { name: "Meta Ads", type: "Pago" },
@@ -28,16 +29,12 @@ export function isUuid(value: string) {
 export function getUnitFromRequest(session: AuthSession, request: Request): UnitSummary | null {
   const url = new URL(request.url);
   const requestedUnitId = url.searchParams.get("unitId")?.trim();
-  const unitId = requestedUnitId || session.activeUnit?.id || "";
-
-  return session.units.find((unit) => unit.id === unitId) ?? null;
+  return resolveActiveSessionUnit(session, requestedUnitId);
 }
 
 export function getUnitFromBody(session: AuthSession, unitId: unknown): UnitSummary | null {
   const requestedUnitId = typeof unitId === "string" ? unitId.trim() : "";
-  const selectedUnitId = requestedUnitId || session.activeUnit?.id || "";
-
-  return session.units.find((unit) => unit.id === selectedUnitId) ?? null;
+  return resolveActiveSessionUnit(session, requestedUnitId);
 }
 
 export function isUniqueError(error: unknown) {

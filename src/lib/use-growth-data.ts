@@ -19,10 +19,6 @@ async function readJson<T>(response: Response): Promise<T> {
 
 function growthQuery(scopeValue: string, periodDays: number, attendanceId: string) {
   const attendance = attendanceId ? `&attendanceId=${encodeURIComponent(attendanceId)}` : "";
-  if (scopeValue === "all") {
-    return `?scope=all&period=${periodDays}${attendance}`;
-  }
-
   return `?unitId=${encodeURIComponent(scopeValue)}&period=${periodDays}${attendance}`;
 }
 
