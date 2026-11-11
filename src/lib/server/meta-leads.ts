@@ -277,6 +277,40 @@ const allowedStages: Array<LeadStage> = [
 
 let metaSchemaPromise: Promise<void> | null = null;
 
+declare global {
+  var __starMetaFormSyncWorker: ReturnType<typeof setInterval> | undefined;
+  var __starMetaFormSyncInFlight: boolean | undefined;
+}
+
+const META_FORM_SYNC_INTERVAL_MS = Math.max(
+  5 * 60_000,
+  Number(process.env.META_FORM_SYNC_INTERVAL_MS) || 30 * 60_000,
+);
+
+function ensureMetaFormSyncWorker() {
+  if (process.env.NODE_ENV !== "production" || globalThis.__starMetaFormSyncWorker) return;
+
+  const sync = () => {
+    if (globalThis.__starMetaFormSyncInFlight) return;
+    globalThis.__starMetaFormSyncInFlight = true;
+    void syncAllMetaForms()
+      .catch((error) => {
+        console.error("[Meta Ads] Falha na sincronização automática de formulários.", {
+          error: error instanceof Error ? error.message : "Erro desconhecido",
+        });
+      })
+      .finally(() => {
+        globalThis.__starMetaFormSyncInFlight = false;
+      });
+  };
+
+  const initialSync = setTimeout(sync, 45_000);
+  initialSync.unref?.();
+  const worker = setInterval(sync, META_FORM_SYNC_INTERVAL_MS);
+  worker.unref?.();
+  globalThis.__starMetaFormSyncWorker = worker;
+}
+
 export async function ensureMetaLeadSchema() {
   await ensureCommercialSchema();
   await ensureCourseAttendanceSchema();
@@ -474,6 +508,7 @@ export async function ensureMetaLeadSchema() {
     });
 
   await metaSchemaPromise;
+  ensureMetaFormSyncWorker();
 }
 
 const META_OAUTH_CONTEXT_LOCK = "star_profissoes:meta_oauth_unit_context";
@@ -1947,6 +1982,29 @@ export async function syncFormsForPage(pageDbId: string) {
     ]);
     throw new Error(message);
   }
+}
+
+export async function syncAllMetaForms() {
+  await ensureMetaLeadSchema();
+  const pages = await queryDb<{ id: string }>(
+    `select id from app_meta_pages where status = 'active' order by created_at asc`,
+  );
+  const summary = { pages: pages.rows.length, forms: 0, failed: 0 };
+
+  for (const page of pages.rows) {
+    try {
+      const result = await syncFormsForPage(page.id);
+      summary.forms += result.count;
+    } catch (error) {
+      summary.failed += 1;
+      console.error("[Meta Ads] Falha ao sincronizar formulários da Página.", {
+        pageDbId: page.id,
+        error: error instanceof Error ? error.message : "Erro desconhecido",
+      });
+    }
+  }
+
+  return summary;
 }
 
 export async function validateMetaPageToken(pageDbId: string) {

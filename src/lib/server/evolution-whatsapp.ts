@@ -578,7 +578,7 @@ export async function receiveEvolutionWebhook(
 
   const event = eventName(payload);
   if (event === "connection.update") {
-    const status = connectionState(payloadRecord.data ?? payload);
+    const status = evolutionConnectionState(payloadRecord.data ?? payload);
     const phone = String(
       firstValue(dataRecord.wuid, dataRecord.phoneNumber, payloadRecord.sender, ""),
     )
