@@ -124,7 +124,7 @@ export async function materializeScheduledTasks() {
   return withTransaction(async (client) => {
     const result = await client.query<TaskRow>(
       `select *, due_at::text as due_at, next_due_at::text as next_due_at, repeat_until::text as repeat_until from app_team_tasks where status = 'active' and next_due_at <= now() + interval '10 minutes'
-       order by next_due_at limit 40 for update skip locked`,
+       order by app_team_tasks.next_due_at limit 40 for update skip locked`,
     );
     let generated = 0;
     for (const task of result.rows) {
