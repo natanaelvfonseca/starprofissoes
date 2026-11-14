@@ -45,6 +45,7 @@ import { Route as ApiAtendimentosMidiaRouteImport } from './routes/api/atendimen
 import { Route as ApiAuthLoginRouteImport } from './routes/api/auth/login'
 import { Route as ApiAuthLogoutRouteImport } from './routes/api/auth/logout'
 import { Route as ApiAuthSessionRouteImport } from './routes/api/auth/session'
+import { Route as ApiBiReportsRouteImport } from './routes/api/bi/reports'
 import { Route as ApiCrmDashboardRouteImport } from './routes/api/crm/dashboard'
 import { Route as ApiCrmImportRouteImport } from './routes/api/crm/import'
 import { Route as ApiCrmLeadsRouteImport } from './routes/api/crm/leads'
@@ -263,6 +264,11 @@ const ApiAuthLogoutRoute = ApiAuthLogoutRouteImport.update({
 const ApiAuthSessionRoute = ApiAuthSessionRouteImport.update({
   id: '/api/auth/session',
   path: '/api/auth/session',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiBiReportsRoute = ApiBiReportsRouteImport.update({
+  id: '/api/bi/reports',
+  path: '/api/bi/reports',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiCrmDashboardRoute = ApiCrmDashboardRouteImport.update({
@@ -511,6 +517,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
+  '/api/bi/reports': typeof ApiBiReportsRoute
   '/api/crm/dashboard': typeof ApiCrmDashboardRoute
   '/api/crm/import': typeof ApiCrmImportRoute
   '/api/crm/leads': typeof ApiCrmLeadsRouteWithChildren
@@ -588,6 +595,7 @@ export interface FileRoutesByTo {
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
+  '/api/bi/reports': typeof ApiBiReportsRoute
   '/api/crm/dashboard': typeof ApiCrmDashboardRoute
   '/api/crm/import': typeof ApiCrmImportRoute
   '/api/crm/leads': typeof ApiCrmLeadsRouteWithChildren
@@ -666,6 +674,7 @@ export interface FileRoutesById {
   '/api/auth/login': typeof ApiAuthLoginRoute
   '/api/auth/logout': typeof ApiAuthLogoutRoute
   '/api/auth/session': typeof ApiAuthSessionRoute
+  '/api/bi/reports': typeof ApiBiReportsRoute
   '/api/crm/dashboard': typeof ApiCrmDashboardRoute
   '/api/crm/import': typeof ApiCrmImportRoute
   '/api/crm/leads': typeof ApiCrmLeadsRouteWithChildren
@@ -745,6 +754,7 @@ export interface FileRouteTypes {
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
+    | '/api/bi/reports'
     | '/api/crm/dashboard'
     | '/api/crm/import'
     | '/api/crm/leads'
@@ -822,6 +832,7 @@ export interface FileRouteTypes {
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
+    | '/api/bi/reports'
     | '/api/crm/dashboard'
     | '/api/crm/import'
     | '/api/crm/leads'
@@ -899,6 +910,7 @@ export interface FileRouteTypes {
     | '/api/auth/login'
     | '/api/auth/logout'
     | '/api/auth/session'
+    | '/api/bi/reports'
     | '/api/crm/dashboard'
     | '/api/crm/import'
     | '/api/crm/leads'
@@ -974,6 +986,7 @@ export interface RootRouteChildren {
   ApiAuthLoginRoute: typeof ApiAuthLoginRoute
   ApiAuthLogoutRoute: typeof ApiAuthLogoutRoute
   ApiAuthSessionRoute: typeof ApiAuthSessionRoute
+  ApiBiReportsRoute: typeof ApiBiReportsRoute
   ApiCrmDashboardRoute: typeof ApiCrmDashboardRoute
   ApiCrmImportRoute: typeof ApiCrmImportRoute
   ApiCrmLeadsRoute: typeof ApiCrmLeadsRouteWithChildren
@@ -1254,6 +1267,13 @@ declare module '@tanstack/react-router' {
       path: '/api/auth/session'
       fullPath: '/api/auth/session'
       preLoaderRoute: typeof ApiAuthSessionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/bi/reports': {
+      id: '/api/bi/reports'
+      path: '/api/bi/reports'
+      fullPath: '/api/bi/reports'
+      preLoaderRoute: typeof ApiBiReportsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/crm/dashboard': {
@@ -1712,6 +1732,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthLoginRoute: ApiAuthLoginRoute,
   ApiAuthLogoutRoute: ApiAuthLogoutRoute,
   ApiAuthSessionRoute: ApiAuthSessionRoute,
+  ApiBiReportsRoute: ApiBiReportsRoute,
   ApiCrmDashboardRoute: ApiCrmDashboardRoute,
   ApiCrmImportRoute: ApiCrmImportRoute,
   ApiCrmLeadsRoute: ApiCrmLeadsRouteWithChildren,
