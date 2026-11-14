@@ -21,6 +21,7 @@ import { Route as IntegracoesLeadsRouteImport } from './routes/integracoes-leads
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as MetaAdsRouteImport } from './routes/meta-ads'
 import { Route as PerfilRouteImport } from './routes/perfil'
+import { Route as TarefasRouteImport } from './routes/tarefas'
 import { Route as TreinamentosRouteImport } from './routes/treinamentos'
 import { Route as UnidadesRouteImport } from './routes/unidades'
 import { Route as UsuariosRouteImport } from './routes/usuarios'
@@ -37,6 +38,7 @@ import { Route as CrmExportarRouteImport } from './routes/crm.exportar'
 import { Route as CrmImportarRouteImport } from './routes/crm.importar'
 import { Route as CrmTransferenciaRouteImport } from './routes/crm.transferencia'
 import { Route as GestaoCadastroRouteImport } from './routes/gestao.cadastro'
+import { Route as GestaoComunicacaoRouteImport } from './routes/gestao/comunicacao'
 import { Route as LeadsIndexRouteImport } from './routes/leads.index'
 import { Route as LeadsIdRouteImport } from './routes/leads.$id'
 import { Route as ApiAdminUnitsRouteImport } from './routes/api/admin/units'
@@ -52,6 +54,7 @@ import { Route as ApiCrmLeadsRouteImport } from './routes/api/crm/leads'
 import { Route as ApiCrmTasksRouteImport } from './routes/api/crm/tasks'
 import { Route as ApiCrmTransferRouteImport } from './routes/api/crm/transfer'
 import { Route as ApiCronFinanceiroCaezSyncRouteImport } from './routes/api/cron.financeiro-caez-sync'
+import { Route as ApiCronTeamManagementRouteImport } from './routes/api/cron.team-management'
 import { Route as ApiCronWhatsappAnalysisRouteImport } from './routes/api/cron.whatsapp-analysis'
 import { Route as ApiFinanceiroCollectionActionsRouteImport } from './routes/api/financeiro/collection-actions'
 import { Route as ApiFinanceiroDashboardRouteImport } from './routes/api/financeiro/dashboard'
@@ -69,6 +72,10 @@ import { Route as ApiIaComercialScriptsRouteImport } from './routes/api/ia-comer
 import { Route as ApiIntegrationsEvolutionRouteImport } from './routes/api/integrations/evolution'
 import { Route as ApiMetaConnectUrlRouteImport } from './routes/api/meta/connect-url'
 import { Route as ApiMetaOauthCompleteRouteImport } from './routes/api/meta/oauth-complete'
+import { Route as ApiTeamContactRouteImport } from './routes/api/team/contact'
+import { Route as ApiTeamManagementRouteImport } from './routes/api/team/management'
+import { Route as ApiTeamNotificationsRouteImport } from './routes/api/team/notifications'
+import { Route as ApiTeamTasksRouteImport } from './routes/api/team/tasks'
 import { Route as ApiTrainingVideoRouteImport } from './routes/api/training.video'
 import { Route as ApiWebhooksEvolutionRouteImport } from './routes/api/webhooks/evolution'
 import { Route as ApiWebhooksKognaMetaLeadsRouteImport } from './routes/api/webhooks/kogna-meta-leads'
@@ -144,6 +151,11 @@ const MetaAdsRoute = MetaAdsRouteImport.update({
 const PerfilRoute = PerfilRouteImport.update({
   id: '/perfil',
   path: '/perfil',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TarefasRoute = TarefasRouteImport.update({
+  id: '/tarefas',
+  path: '/tarefas',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TreinamentosRoute = TreinamentosRouteImport.update({
@@ -226,6 +238,11 @@ const GestaoCadastroRoute = GestaoCadastroRouteImport.update({
   path: '/gestao/cadastro',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GestaoComunicacaoRoute = GestaoComunicacaoRouteImport.update({
+  id: '/gestao/comunicacao',
+  path: '/gestao/comunicacao',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LeadsIndexRoute = LeadsIndexRouteImport.update({
   id: '/leads/',
   path: '/leads/',
@@ -302,6 +319,11 @@ const ApiCronFinanceiroCaezSyncRoute =
     path: '/api/cron/financeiro-caez-sync',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiCronTeamManagementRoute = ApiCronTeamManagementRouteImport.update({
+  id: '/api/cron/team-management',
+  path: '/api/cron/team-management',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCronWhatsappAnalysisRoute = ApiCronWhatsappAnalysisRouteImport.update({
   id: '/api/cron/whatsapp-analysis',
   path: '/api/cron/whatsapp-analysis',
@@ -389,6 +411,26 @@ const ApiMetaConnectUrlRoute = ApiMetaConnectUrlRouteImport.update({
 const ApiMetaOauthCompleteRoute = ApiMetaOauthCompleteRouteImport.update({
   id: '/api/meta/oauth-complete',
   path: '/api/meta/oauth-complete',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTeamContactRoute = ApiTeamContactRouteImport.update({
+  id: '/api/team/contact',
+  path: '/api/team/contact',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTeamManagementRoute = ApiTeamManagementRouteImport.update({
+  id: '/api/team/management',
+  path: '/api/team/management',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTeamNotificationsRoute = ApiTeamNotificationsRouteImport.update({
+  id: '/api/team/notifications',
+  path: '/api/team/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTeamTasksRoute = ApiTeamTasksRouteImport.update({
+  id: '/api/team/tasks',
+  path: '/api/team/tasks',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiTrainingVideoRoute = ApiTrainingVideoRouteImport.update({
@@ -493,6 +535,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/meta-ads': typeof MetaAdsRoute
   '/perfil': typeof PerfilRoute
+  '/tarefas': typeof TarefasRoute
   '/treinamentos': typeof TreinamentosRoute
   '/unidades': typeof UnidadesRoute
   '/usuarios': typeof UsuariosRoute
@@ -509,6 +552,7 @@ export interface FileRoutesByFullPath {
   '/crm/importar': typeof CrmImportarRoute
   '/crm/transferencia': typeof CrmTransferenciaRoute
   '/gestao/cadastro': typeof GestaoCadastroRoute
+  '/gestao/comunicacao': typeof GestaoComunicacaoRoute
   '/leads/$id': typeof LeadsIdRoute
   '/leads/': typeof LeadsIndexRoute
   '/api/admin/units': typeof ApiAdminUnitsRoute
@@ -524,6 +568,7 @@ export interface FileRoutesByFullPath {
   '/api/crm/tasks': typeof ApiCrmTasksRoute
   '/api/crm/transfer': typeof ApiCrmTransferRoute
   '/api/cron/financeiro-caez-sync': typeof ApiCronFinanceiroCaezSyncRoute
+  '/api/cron/team-management': typeof ApiCronTeamManagementRoute
   '/api/cron/whatsapp-analysis': typeof ApiCronWhatsappAnalysisRoute
   '/api/financeiro/collection-actions': typeof ApiFinanceiroCollectionActionsRoute
   '/api/financeiro/dashboard': typeof ApiFinanceiroDashboardRoute
@@ -541,6 +586,10 @@ export interface FileRoutesByFullPath {
   '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
   '/api/meta/connect-url': typeof ApiMetaConnectUrlRoute
   '/api/meta/oauth-complete': typeof ApiMetaOauthCompleteRoute
+  '/api/team/contact': typeof ApiTeamContactRoute
+  '/api/team/management': typeof ApiTeamManagementRoute
+  '/api/team/notifications': typeof ApiTeamNotificationsRoute
+  '/api/team/tasks': typeof ApiTeamTasksRoute
   '/api/training/video': typeof ApiTrainingVideoRoute
   '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
   '/api/webhooks/kogna-meta-leads': typeof ApiWebhooksKognaMetaLeadsRoute
@@ -571,6 +620,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/meta-ads': typeof MetaAdsRoute
   '/perfil': typeof PerfilRoute
+  '/tarefas': typeof TarefasRoute
   '/treinamentos': typeof TreinamentosRoute
   '/unidades': typeof UnidadesRoute
   '/usuarios': typeof UsuariosRoute
@@ -587,6 +637,7 @@ export interface FileRoutesByTo {
   '/crm/importar': typeof CrmImportarRoute
   '/crm/transferencia': typeof CrmTransferenciaRoute
   '/gestao/cadastro': typeof GestaoCadastroRoute
+  '/gestao/comunicacao': typeof GestaoComunicacaoRoute
   '/leads/$id': typeof LeadsIdRoute
   '/leads': typeof LeadsIndexRoute
   '/api/admin/units': typeof ApiAdminUnitsRoute
@@ -602,6 +653,7 @@ export interface FileRoutesByTo {
   '/api/crm/tasks': typeof ApiCrmTasksRoute
   '/api/crm/transfer': typeof ApiCrmTransferRoute
   '/api/cron/financeiro-caez-sync': typeof ApiCronFinanceiroCaezSyncRoute
+  '/api/cron/team-management': typeof ApiCronTeamManagementRoute
   '/api/cron/whatsapp-analysis': typeof ApiCronWhatsappAnalysisRoute
   '/api/financeiro/collection-actions': typeof ApiFinanceiroCollectionActionsRoute
   '/api/financeiro/dashboard': typeof ApiFinanceiroDashboardRoute
@@ -619,6 +671,10 @@ export interface FileRoutesByTo {
   '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
   '/api/meta/connect-url': typeof ApiMetaConnectUrlRoute
   '/api/meta/oauth-complete': typeof ApiMetaOauthCompleteRoute
+  '/api/team/contact': typeof ApiTeamContactRoute
+  '/api/team/management': typeof ApiTeamManagementRoute
+  '/api/team/notifications': typeof ApiTeamNotificationsRoute
+  '/api/team/tasks': typeof ApiTeamTasksRoute
   '/api/training/video': typeof ApiTrainingVideoRoute
   '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
   '/api/webhooks/kogna-meta-leads': typeof ApiWebhooksKognaMetaLeadsRoute
@@ -650,6 +706,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/meta-ads': typeof MetaAdsRoute
   '/perfil': typeof PerfilRoute
+  '/tarefas': typeof TarefasRoute
   '/treinamentos': typeof TreinamentosRoute
   '/unidades': typeof UnidadesRoute
   '/usuarios': typeof UsuariosRoute
@@ -666,6 +723,7 @@ export interface FileRoutesById {
   '/crm/importar': typeof CrmImportarRoute
   '/crm/transferencia': typeof CrmTransferenciaRoute
   '/gestao/cadastro': typeof GestaoCadastroRoute
+  '/gestao/comunicacao': typeof GestaoComunicacaoRoute
   '/leads/$id': typeof LeadsIdRoute
   '/leads/': typeof LeadsIndexRoute
   '/api/admin/units': typeof ApiAdminUnitsRoute
@@ -681,6 +739,7 @@ export interface FileRoutesById {
   '/api/crm/tasks': typeof ApiCrmTasksRoute
   '/api/crm/transfer': typeof ApiCrmTransferRoute
   '/api/cron/financeiro-caez-sync': typeof ApiCronFinanceiroCaezSyncRoute
+  '/api/cron/team-management': typeof ApiCronTeamManagementRoute
   '/api/cron/whatsapp-analysis': typeof ApiCronWhatsappAnalysisRoute
   '/api/financeiro/collection-actions': typeof ApiFinanceiroCollectionActionsRoute
   '/api/financeiro/dashboard': typeof ApiFinanceiroDashboardRoute
@@ -698,6 +757,10 @@ export interface FileRoutesById {
   '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
   '/api/meta/connect-url': typeof ApiMetaConnectUrlRoute
   '/api/meta/oauth-complete': typeof ApiMetaOauthCompleteRoute
+  '/api/team/contact': typeof ApiTeamContactRoute
+  '/api/team/management': typeof ApiTeamManagementRoute
+  '/api/team/notifications': typeof ApiTeamNotificationsRoute
+  '/api/team/tasks': typeof ApiTeamTasksRoute
   '/api/training/video': typeof ApiTrainingVideoRoute
   '/api/webhooks/evolution': typeof ApiWebhooksEvolutionRoute
   '/api/webhooks/kogna-meta-leads': typeof ApiWebhooksKognaMetaLeadsRoute
@@ -730,6 +793,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/meta-ads'
     | '/perfil'
+    | '/tarefas'
     | '/treinamentos'
     | '/unidades'
     | '/usuarios'
@@ -746,6 +810,7 @@ export interface FileRouteTypes {
     | '/crm/importar'
     | '/crm/transferencia'
     | '/gestao/cadastro'
+    | '/gestao/comunicacao'
     | '/leads/$id'
     | '/leads/'
     | '/api/admin/units'
@@ -761,6 +826,7 @@ export interface FileRouteTypes {
     | '/api/crm/tasks'
     | '/api/crm/transfer'
     | '/api/cron/financeiro-caez-sync'
+    | '/api/cron/team-management'
     | '/api/cron/whatsapp-analysis'
     | '/api/financeiro/collection-actions'
     | '/api/financeiro/dashboard'
@@ -778,6 +844,10 @@ export interface FileRouteTypes {
     | '/api/integrations/evolution'
     | '/api/meta/connect-url'
     | '/api/meta/oauth-complete'
+    | '/api/team/contact'
+    | '/api/team/management'
+    | '/api/team/notifications'
+    | '/api/team/tasks'
     | '/api/training/video'
     | '/api/webhooks/evolution'
     | '/api/webhooks/kogna-meta-leads'
@@ -808,6 +878,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/meta-ads'
     | '/perfil'
+    | '/tarefas'
     | '/treinamentos'
     | '/unidades'
     | '/usuarios'
@@ -824,6 +895,7 @@ export interface FileRouteTypes {
     | '/crm/importar'
     | '/crm/transferencia'
     | '/gestao/cadastro'
+    | '/gestao/comunicacao'
     | '/leads/$id'
     | '/leads'
     | '/api/admin/units'
@@ -839,6 +911,7 @@ export interface FileRouteTypes {
     | '/api/crm/tasks'
     | '/api/crm/transfer'
     | '/api/cron/financeiro-caez-sync'
+    | '/api/cron/team-management'
     | '/api/cron/whatsapp-analysis'
     | '/api/financeiro/collection-actions'
     | '/api/financeiro/dashboard'
@@ -856,6 +929,10 @@ export interface FileRouteTypes {
     | '/api/integrations/evolution'
     | '/api/meta/connect-url'
     | '/api/meta/oauth-complete'
+    | '/api/team/contact'
+    | '/api/team/management'
+    | '/api/team/notifications'
+    | '/api/team/tasks'
     | '/api/training/video'
     | '/api/webhooks/evolution'
     | '/api/webhooks/kogna-meta-leads'
@@ -886,6 +963,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/meta-ads'
     | '/perfil'
+    | '/tarefas'
     | '/treinamentos'
     | '/unidades'
     | '/usuarios'
@@ -902,6 +980,7 @@ export interface FileRouteTypes {
     | '/crm/importar'
     | '/crm/transferencia'
     | '/gestao/cadastro'
+    | '/gestao/comunicacao'
     | '/leads/$id'
     | '/leads/'
     | '/api/admin/units'
@@ -917,6 +996,7 @@ export interface FileRouteTypes {
     | '/api/crm/tasks'
     | '/api/crm/transfer'
     | '/api/cron/financeiro-caez-sync'
+    | '/api/cron/team-management'
     | '/api/cron/whatsapp-analysis'
     | '/api/financeiro/collection-actions'
     | '/api/financeiro/dashboard'
@@ -934,6 +1014,10 @@ export interface FileRouteTypes {
     | '/api/integrations/evolution'
     | '/api/meta/connect-url'
     | '/api/meta/oauth-complete'
+    | '/api/team/contact'
+    | '/api/team/management'
+    | '/api/team/notifications'
+    | '/api/team/tasks'
     | '/api/training/video'
     | '/api/webhooks/evolution'
     | '/api/webhooks/kogna-meta-leads'
@@ -965,6 +1049,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   MetaAdsRoute: typeof MetaAdsRoute
   PerfilRoute: typeof PerfilRoute
+  TarefasRoute: typeof TarefasRoute
   TreinamentosRoute: typeof TreinamentosRoute
   UnidadesRoute: typeof UnidadesRoute
   UsuariosRoute: typeof UsuariosRoute
@@ -978,6 +1063,7 @@ export interface RootRouteChildren {
   ApiTrainingRoute: typeof ApiTrainingRouteWithChildren
   ApiWhatsappSupervisionRoute: typeof ApiWhatsappSupervisionRouteWithChildren
   GestaoCadastroRoute: typeof GestaoCadastroRoute
+  GestaoComunicacaoRoute: typeof GestaoComunicacaoRoute
   LeadsIdRoute: typeof LeadsIdRoute
   LeadsIndexRoute: typeof LeadsIndexRoute
   ApiAdminUnitsRoute: typeof ApiAdminUnitsRoute
@@ -993,6 +1079,7 @@ export interface RootRouteChildren {
   ApiCrmTasksRoute: typeof ApiCrmTasksRoute
   ApiCrmTransferRoute: typeof ApiCrmTransferRoute
   ApiCronFinanceiroCaezSyncRoute: typeof ApiCronFinanceiroCaezSyncRoute
+  ApiCronTeamManagementRoute: typeof ApiCronTeamManagementRoute
   ApiCronWhatsappAnalysisRoute: typeof ApiCronWhatsappAnalysisRoute
   ApiFinanceiroCollectionActionsRoute: typeof ApiFinanceiroCollectionActionsRoute
   ApiFinanceiroDashboardRoute: typeof ApiFinanceiroDashboardRoute
@@ -1008,6 +1095,10 @@ export interface RootRouteChildren {
   ApiIntegrationsEvolutionRoute: typeof ApiIntegrationsEvolutionRoute
   ApiMetaConnectUrlRoute: typeof ApiMetaConnectUrlRoute
   ApiMetaOauthCompleteRoute: typeof ApiMetaOauthCompleteRoute
+  ApiTeamContactRoute: typeof ApiTeamContactRoute
+  ApiTeamManagementRoute: typeof ApiTeamManagementRoute
+  ApiTeamNotificationsRoute: typeof ApiTeamNotificationsRoute
+  ApiTeamTasksRoute: typeof ApiTeamTasksRoute
   ApiWebhooksEvolutionRoute: typeof ApiWebhooksEvolutionRoute
   ApiWebhooksKognaMetaLeadsRoute: typeof ApiWebhooksKognaMetaLeadsRoute
   ApiWebhooksMetaLeadsRoute: typeof ApiWebhooksMetaLeadsRoute
@@ -1099,6 +1190,13 @@ declare module '@tanstack/react-router' {
       path: '/perfil'
       fullPath: '/perfil'
       preLoaderRoute: typeof PerfilRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tarefas': {
+      id: '/tarefas'
+      path: '/tarefas'
+      fullPath: '/tarefas'
+      preLoaderRoute: typeof TarefasRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/treinamentos': {
@@ -1213,6 +1311,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GestaoCadastroRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/gestao/comunicacao': {
+      id: '/gestao/comunicacao'
+      path: '/gestao/comunicacao'
+      fullPath: '/gestao/comunicacao'
+      preLoaderRoute: typeof GestaoComunicacaoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/leads/': {
       id: '/leads/'
       path: '/leads'
@@ -1316,6 +1421,13 @@ declare module '@tanstack/react-router' {
       path: '/api/cron/financeiro-caez-sync'
       fullPath: '/api/cron/financeiro-caez-sync'
       preLoaderRoute: typeof ApiCronFinanceiroCaezSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/cron/team-management': {
+      id: '/api/cron/team-management'
+      path: '/api/cron/team-management'
+      fullPath: '/api/cron/team-management'
+      preLoaderRoute: typeof ApiCronTeamManagementRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/cron/whatsapp-analysis': {
@@ -1435,6 +1547,34 @@ declare module '@tanstack/react-router' {
       path: '/api/meta/oauth-complete'
       fullPath: '/api/meta/oauth-complete'
       preLoaderRoute: typeof ApiMetaOauthCompleteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/team/contact': {
+      id: '/api/team/contact'
+      path: '/api/team/contact'
+      fullPath: '/api/team/contact'
+      preLoaderRoute: typeof ApiTeamContactRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/team/management': {
+      id: '/api/team/management'
+      path: '/api/team/management'
+      fullPath: '/api/team/management'
+      preLoaderRoute: typeof ApiTeamManagementRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/team/notifications': {
+      id: '/api/team/notifications'
+      path: '/api/team/notifications'
+      fullPath: '/api/team/notifications'
+      preLoaderRoute: typeof ApiTeamNotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/team/tasks': {
+      id: '/api/team/tasks'
+      path: '/api/team/tasks'
+      fullPath: '/api/team/tasks'
+      preLoaderRoute: typeof ApiTeamTasksRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/training/video': {
@@ -1711,6 +1851,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   MetaAdsRoute: MetaAdsRoute,
   PerfilRoute: PerfilRoute,
+  TarefasRoute: TarefasRoute,
   TreinamentosRoute: TreinamentosRoute,
   UnidadesRoute: UnidadesRoute,
   UsuariosRoute: UsuariosRoute,
@@ -1724,6 +1865,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiTrainingRoute: ApiTrainingRouteWithChildren,
   ApiWhatsappSupervisionRoute: ApiWhatsappSupervisionRouteWithChildren,
   GestaoCadastroRoute: GestaoCadastroRoute,
+  GestaoComunicacaoRoute: GestaoComunicacaoRoute,
   LeadsIdRoute: LeadsIdRoute,
   LeadsIndexRoute: LeadsIndexRoute,
   ApiAdminUnitsRoute: ApiAdminUnitsRoute,
@@ -1739,6 +1881,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCrmTasksRoute: ApiCrmTasksRoute,
   ApiCrmTransferRoute: ApiCrmTransferRoute,
   ApiCronFinanceiroCaezSyncRoute: ApiCronFinanceiroCaezSyncRoute,
+  ApiCronTeamManagementRoute: ApiCronTeamManagementRoute,
   ApiCronWhatsappAnalysisRoute: ApiCronWhatsappAnalysisRoute,
   ApiFinanceiroCollectionActionsRoute: ApiFinanceiroCollectionActionsRoute,
   ApiFinanceiroDashboardRoute: ApiFinanceiroDashboardRoute,
@@ -1754,6 +1897,10 @@ const rootRouteChildren: RootRouteChildren = {
   ApiIntegrationsEvolutionRoute: ApiIntegrationsEvolutionRoute,
   ApiMetaConnectUrlRoute: ApiMetaConnectUrlRoute,
   ApiMetaOauthCompleteRoute: ApiMetaOauthCompleteRoute,
+  ApiTeamContactRoute: ApiTeamContactRoute,
+  ApiTeamManagementRoute: ApiTeamManagementRoute,
+  ApiTeamNotificationsRoute: ApiTeamNotificationsRoute,
+  ApiTeamTasksRoute: ApiTeamTasksRoute,
   ApiWebhooksEvolutionRoute: ApiWebhooksEvolutionRoute,
   ApiWebhooksKognaMetaLeadsRoute: ApiWebhooksKognaMetaLeadsRoute,
   ApiWebhooksMetaLeadsRoute: ApiWebhooksMetaLeadsRoute,

@@ -4,6 +4,8 @@ import {
   Building2,
   ChartNoAxesCombined,
   ClipboardPenLine,
+  ClipboardCheck,
+  BellRing,
   ContactRound,
   FileUp,
   Gauge,
@@ -50,6 +52,7 @@ import {
   canSwitchActiveUnit,
   canViewGrowth,
   canViewManagement,
+  canTransferLeads,
   canViewSalesAi,
   canViewStudents,
   getInitials,
@@ -62,6 +65,7 @@ type NavigationItem = {
   url: string;
   icon: LucideIcon;
   managementOnly?: boolean;
+  teamManagementOnly?: boolean;
   studentViewOnly?: boolean;
   systemFeedbackOnly?: boolean;
   salesAiOnly?: boolean;
@@ -83,6 +87,7 @@ const groups: Array<NavigationGroup> = [
     label: "Comercial",
     items: [
       { title: "Leads", url: "/crm", icon: ContactRound },
+      { title: "Tarefas", url: "/tarefas", icon: ClipboardCheck },
       { title: "Alunos", url: "/leads", icon: UserRoundCheck, studentViewOnly: true },
       { title: "IA Comercial", url: "/ia-comercial", icon: WandSparkles, salesAiOnly: true },
       {
@@ -104,6 +109,12 @@ const groups: Array<NavigationGroup> = [
   {
     label: "Gestão",
     items: [
+      {
+        title: "Comunicação da equipe",
+        url: "/gestao/comunicacao",
+        icon: BellRing,
+        teamManagementOnly: true,
+      },
       {
         title: "Cadastros e pipelines",
         url: "/gestao/cadastro",
@@ -168,6 +179,7 @@ export function AppSidebar() {
       items: group.items.filter(
         (item) =>
           (!item.managementOnly || canViewManagementArea) &&
+          (!item.teamManagementOnly || (user ? canTransferLeads(user.role) : false)) &&
           (!item.studentViewOnly || canViewStudentList) &&
           (!item.systemFeedbackOnly || canViewSystemFeedback) &&
           (!item.salesAiOnly || canSeeSalesAi) &&

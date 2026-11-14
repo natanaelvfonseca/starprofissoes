@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { isTeamManagementInstance } from "@/lib/team-message-guards";
 import type { QueryResultRow } from "pg";
 import { evolutionConnectionState, evolutionQrCodeFrom } from "@/lib/evolution-connection";
 import { phoneFromWhatsappJid } from "@/lib/whatsapp-label-automation";
@@ -201,7 +202,7 @@ function remoteInstanceName(item: unknown) {
   );
 }
 
-async function remoteInstanceExists(instanceName: string) {
+export async function remoteInstanceExists(instanceName: string) {
   const instances = await requestEvolution("/instance/fetchInstances");
   const instancesRecord = asRecord(instances);
   const items = Array.isArray(instances)
@@ -596,6 +597,12 @@ export async function receiveEvolutionWebhook(
       `,
       [instance.id, status, phone],
     );
+  }
+
+  // Instância de avisos internos: não transformar respostas de funcionários em
+  // conversas de atendimento nem gerar leads no CRM. Só sincronizar conexão.
+  if (isTeamManagementInstance(instance.instance_name, instance.user_id)) {
+    return { ok: true, status: 200 };
   }
 
   if (event === "messages.upsert" || event === "message" || event === "send.message") {

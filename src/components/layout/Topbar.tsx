@@ -28,6 +28,16 @@ type TaskResponse = {
   task: CrmLeadTask;
 };
 
+type TeamNotice = {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  href: string;
+  read_at: string | null;
+  created_at: string;
+};
+
 async function readJson<T>(response: Response): Promise<T> {
   const data = (await response.json().catch(() => ({}))) as T & { error?: string };
 
@@ -59,6 +69,7 @@ export function Topbar() {
   const [whatsappNotifications, setWhatsappNotifications] = React.useState<
     Array<WhatsappInterventionNotification>
   >([]);
+  const [teamNotices, setTeamNotices] = React.useState<Array<TeamNotice>>([]);
   const [loadingNotifications, setLoadingNotifications] = React.useState(false);
   const [updatingTaskId, setUpdatingTaskId] = React.useState<string | null>(null);
   const [browserPermission, setBrowserPermission] = React.useState<
@@ -69,6 +80,7 @@ export function Topbar() {
       : "unsupported",
   );
   const notifiedTaskIdsRef = React.useRef<Set<string>>(new Set());
+  const notifiedTeamIdsRef = React.useRef<Set<string>>(new Set());
 
   const notifyBrowser = React.useCallback(
     (tasks: Array<CrmLeadTask>) => {
@@ -99,6 +111,7 @@ export function Topbar() {
     async ({ silent = false }: { silent?: boolean } = {}) => {
       if (!session) {
         setNotifications([]);
+        setTeamNotices([]);
         return;
       }
 
@@ -107,13 +120,21 @@ export function Topbar() {
       }
 
       try {
-        const [data, whatsappData] = await Promise.all([
-          readJson<NotificationsResponse>(await fetch("/api/crm/tasks?view=notifications", {
-            credentials: "same-origin",
-            headers: { Accept: "application/json" },
-          })),
+        const [data, whatsappData, teamData] = await Promise.all([
+          readJson<NotificationsResponse>(
+            await fetch("/api/crm/tasks?view=notifications", {
+              credentials: "same-origin",
+              headers: { Accept: "application/json" },
+            }),
+          ),
           readJson<{ notifications: Array<WhatsappInterventionNotification> }>(
             await fetch("/api/whatsapp-supervision/notifications", {
+              credentials: "same-origin",
+              headers: { Accept: "application/json" },
+            }),
+          ).catch(() => ({ notifications: [] })),
+          readJson<{ notifications: Array<TeamNotice> }>(
+            await fetch("/api/team/notifications", {
               credentials: "same-origin",
               headers: { Accept: "application/json" },
             }),
@@ -122,6 +143,22 @@ export function Topbar() {
 
         setNotifications(data.tasks);
         setWhatsappNotifications(whatsappData.notifications.filter((item) => !item.readAt));
+        const unread = teamData.notifications.filter((item) => !item.read_at);
+        setTeamNotices(unread);
+        if (
+          browserPermission === "granted" &&
+          typeof window !== "undefined" &&
+          "Notification" in window
+        ) {
+          for (const notice of unread) {
+            if (notifiedTeamIdsRef.current.has(notice.id)) continue;
+            notifiedTeamIdsRef.current.add(notice.id);
+            new Notification(notice.title, {
+              body: notice.body,
+              tag: "team-" + notice.id,
+            });
+          }
+        }
         notifyBrowser(data.tasks);
       } catch (error) {
         if (!silent) {
@@ -133,7 +170,7 @@ export function Topbar() {
         }
       }
     },
-    [notifyBrowser, session],
+    [notifyBrowser, session, browserPermission],
   );
 
   React.useEffect(() => {
@@ -191,6 +228,16 @@ export function Topbar() {
     } finally {
       setUpdatingTaskId(null);
     }
+  }
+
+  async function readTeamNotice(item: TeamNotice) {
+    await fetch("/api/team/notifications", {
+      method: "PATCH",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: item.id }),
+    });
+    setTeamNotices((current) => current.filter((notice) => notice.id !== item.id));
   }
 
   async function readWhatsappNotification(item: WhatsappInterventionNotification) {
@@ -256,9 +303,9 @@ export function Topbar() {
               className="relative rounded-xl border-border/80 bg-white/90 shadow-card backdrop-blur hover:bg-accent hover:text-accent-foreground"
             >
               <Bell className="h-5 w-5" />
-              {notifications.length + whatsappNotifications.length ? (
+              {notifications.length + whatsappNotifications.length + teamNotices.length ? (
                 <Badge className="absolute -right-1 -top-1 h-4 min-w-4 rounded-full bg-gold p-0 px-1 text-[10px] text-gold-foreground">
-                  {notifications.length + whatsappNotifications.length}
+                  {notifications.length + whatsappNotifications.length + teamNotices.length}
                 </Badge>
               ) : null}
             </Button>
@@ -290,8 +337,21 @@ export function Topbar() {
             </div>
 
             <div className="max-h-[360px] overflow-y-auto p-3">
-              {notifications.length || whatsappNotifications.length ? (
+              {notifications.length || whatsappNotifications.length || teamNotices.length ? (
                 <div className="space-y-2">
+                  {teamNotices.map((notice) => (
+                    <Link
+                      key={notice.id}
+                      to="/tarefas"
+                      onClick={() => void readTeamNotice(notice)}
+                      className="block rounded-lg border border-[#C9D7F5] bg-[#F2F6FF] p-3 shadow-sm"
+                    >
+                      <div className="text-sm font-bold text-[#283F7B]">{notice.title}</div>
+                      {notice.body ? (
+                        <p className="mt-1 line-clamp-3 text-xs text-[#697997]">{notice.body}</p>
+                      ) : null}
+                    </Link>
+                  ))}
                   {whatsappNotifications.map((item) => (
                     <Link
                       key={item.id}
