@@ -570,7 +570,7 @@ function CadastroPage() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Gestão"
-        title="Cadastro"
+        title="Gestão"
         description="Central administrativa para manter pipelines, cursos, turmas e canais de aquisição da unidade."
         actions={
           <>

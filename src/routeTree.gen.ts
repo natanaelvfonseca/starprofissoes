@@ -14,7 +14,6 @@ import { Route as AlunoRouteImport } from './routes/aluno'
 import { Route as BiRouteImport } from './routes/bi'
 import { Route as ConversasWhatsappRouteImport } from './routes/conversas-whatsapp'
 import { Route as CrmRouteImport } from './routes/crm'
-import { Route as FeedbackRouteImport } from './routes/feedback'
 import { Route as FinanceiroRouteImport } from './routes/financeiro'
 import { Route as IaComercialRouteImport } from './routes/ia-comercial'
 import { Route as IntegracoesLeadsRouteImport } from './routes/integracoes-leads'
@@ -23,14 +22,12 @@ import { Route as MetaAdsRouteImport } from './routes/meta-ads'
 import { Route as PerfilRouteImport } from './routes/perfil'
 import { Route as TarefasRouteImport } from './routes/tarefas'
 import { Route as TreinamentosRouteImport } from './routes/treinamentos'
-import { Route as UnidadesRouteImport } from './routes/unidades'
 import { Route as UsuariosRouteImport } from './routes/usuarios'
 import { Route as ApiGrowthRouteImport } from './routes/api/growth'
 import { Route as ApiIaComercialRouteImport } from './routes/api/ia-comercial'
 import { Route as ApiLeadIntegrationsRouteImport } from './routes/api/lead-integrations'
 import { Route as ApiMetaAdsRouteImport } from './routes/api/meta-ads'
 import { Route as ApiProfileRouteImport } from './routes/api/profile'
-import { Route as ApiSystemFeedbackRouteImport } from './routes/api/system-feedback'
 import { Route as ApiSystemSettingsRouteImport } from './routes/api/system-settings'
 import { Route as ApiTrainingRouteImport } from './routes/api/training'
 import { Route as ApiWhatsappSupervisionRouteImport } from './routes/api/whatsapp-supervision'
@@ -69,6 +66,7 @@ import { Route as ApiGestaoPipelineColumnsRouteImport } from './routes/api/gesta
 import { Route as ApiHealthDbRouteImport } from './routes/api/health/db'
 import { Route as ApiIaComercialAnalisesRouteImport } from './routes/api/ia-comercial.analises'
 import { Route as ApiIaComercialScriptsRouteImport } from './routes/api/ia-comercial.scripts'
+import { Route as ApiIaComercialVisaoRouteImport } from './routes/api/ia-comercial.visao'
 import { Route as ApiIntegrationsEvolutionRouteImport } from './routes/api/integrations/evolution'
 import { Route as ApiMetaConnectUrlRouteImport } from './routes/api/meta/connect-url'
 import { Route as ApiMetaOauthCompleteRouteImport } from './routes/api/meta/oauth-complete'
@@ -118,11 +116,6 @@ const CrmRoute = CrmRouteImport.update({
   path: '/crm',
   getParentRoute: () => rootRouteImport,
 } as any)
-const FeedbackRoute = FeedbackRouteImport.update({
-  id: '/feedback',
-  path: '/feedback',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const FinanceiroRoute = FinanceiroRouteImport.update({
   id: '/financeiro',
   path: '/financeiro',
@@ -163,11 +156,6 @@ const TreinamentosRoute = TreinamentosRouteImport.update({
   path: '/treinamentos',
   getParentRoute: () => rootRouteImport,
 } as any)
-const UnidadesRoute = UnidadesRouteImport.update({
-  id: '/unidades',
-  path: '/unidades',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const UsuariosRoute = UsuariosRouteImport.update({
   id: '/usuarios',
   path: '/usuarios',
@@ -196,11 +184,6 @@ const ApiMetaAdsRoute = ApiMetaAdsRouteImport.update({
 const ApiProfileRoute = ApiProfileRouteImport.update({
   id: '/api/profile',
   path: '/api/profile',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiSystemFeedbackRoute = ApiSystemFeedbackRouteImport.update({
-  id: '/api/system-feedback',
-  path: '/api/system-feedback',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiSystemSettingsRoute = ApiSystemSettingsRouteImport.update({
@@ -397,6 +380,11 @@ const ApiIaComercialScriptsRoute = ApiIaComercialScriptsRouteImport.update({
   path: '/scripts',
   getParentRoute: () => ApiIaComercialRoute,
 } as any)
+const ApiIaComercialVisaoRoute = ApiIaComercialVisaoRouteImport.update({
+  id: '/visao',
+  path: '/visao',
+  getParentRoute: () => ApiIaComercialRoute,
+} as any)
 const ApiIntegrationsEvolutionRoute =
   ApiIntegrationsEvolutionRouteImport.update({
     id: '/api/integrations/evolution',
@@ -528,7 +516,6 @@ export interface FileRoutesByFullPath {
   '/bi': typeof BiRoute
   '/conversas-whatsapp': typeof ConversasWhatsappRoute
   '/crm': typeof CrmRouteWithChildren
-  '/feedback': typeof FeedbackRoute
   '/financeiro': typeof FinanceiroRouteWithChildren
   '/ia-comercial': typeof IaComercialRoute
   '/integracoes-leads': typeof IntegracoesLeadsRoute
@@ -537,14 +524,12 @@ export interface FileRoutesByFullPath {
   '/perfil': typeof PerfilRoute
   '/tarefas': typeof TarefasRoute
   '/treinamentos': typeof TreinamentosRoute
-  '/unidades': typeof UnidadesRoute
   '/usuarios': typeof UsuariosRoute
   '/api/growth': typeof ApiGrowthRoute
   '/api/ia-comercial': typeof ApiIaComercialRouteWithChildren
   '/api/lead-integrations': typeof ApiLeadIntegrationsRoute
   '/api/meta-ads': typeof ApiMetaAdsRoute
   '/api/profile': typeof ApiProfileRoute
-  '/api/system-feedback': typeof ApiSystemFeedbackRoute
   '/api/system-settings': typeof ApiSystemSettingsRoute
   '/api/training': typeof ApiTrainingRouteWithChildren
   '/api/whatsapp-supervision': typeof ApiWhatsappSupervisionRouteWithChildren
@@ -583,6 +568,7 @@ export interface FileRoutesByFullPath {
   '/api/health/db': typeof ApiHealthDbRoute
   '/api/ia-comercial/analises': typeof ApiIaComercialAnalisesRoute
   '/api/ia-comercial/scripts': typeof ApiIaComercialScriptsRoute
+  '/api/ia-comercial/visao': typeof ApiIaComercialVisaoRoute
   '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
   '/api/meta/connect-url': typeof ApiMetaConnectUrlRoute
   '/api/meta/oauth-complete': typeof ApiMetaOauthCompleteRoute
@@ -613,7 +599,6 @@ export interface FileRoutesByTo {
   '/bi': typeof BiRoute
   '/conversas-whatsapp': typeof ConversasWhatsappRoute
   '/crm': typeof CrmRouteWithChildren
-  '/feedback': typeof FeedbackRoute
   '/financeiro': typeof FinanceiroRouteWithChildren
   '/ia-comercial': typeof IaComercialRoute
   '/integracoes-leads': typeof IntegracoesLeadsRoute
@@ -622,14 +607,12 @@ export interface FileRoutesByTo {
   '/perfil': typeof PerfilRoute
   '/tarefas': typeof TarefasRoute
   '/treinamentos': typeof TreinamentosRoute
-  '/unidades': typeof UnidadesRoute
   '/usuarios': typeof UsuariosRoute
   '/api/growth': typeof ApiGrowthRoute
   '/api/ia-comercial': typeof ApiIaComercialRouteWithChildren
   '/api/lead-integrations': typeof ApiLeadIntegrationsRoute
   '/api/meta-ads': typeof ApiMetaAdsRoute
   '/api/profile': typeof ApiProfileRoute
-  '/api/system-feedback': typeof ApiSystemFeedbackRoute
   '/api/system-settings': typeof ApiSystemSettingsRoute
   '/api/training': typeof ApiTrainingRouteWithChildren
   '/api/whatsapp-supervision': typeof ApiWhatsappSupervisionRouteWithChildren
@@ -668,6 +651,7 @@ export interface FileRoutesByTo {
   '/api/health/db': typeof ApiHealthDbRoute
   '/api/ia-comercial/analises': typeof ApiIaComercialAnalisesRoute
   '/api/ia-comercial/scripts': typeof ApiIaComercialScriptsRoute
+  '/api/ia-comercial/visao': typeof ApiIaComercialVisaoRoute
   '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
   '/api/meta/connect-url': typeof ApiMetaConnectUrlRoute
   '/api/meta/oauth-complete': typeof ApiMetaOauthCompleteRoute
@@ -699,7 +683,6 @@ export interface FileRoutesById {
   '/bi': typeof BiRoute
   '/conversas-whatsapp': typeof ConversasWhatsappRoute
   '/crm': typeof CrmRouteWithChildren
-  '/feedback': typeof FeedbackRoute
   '/financeiro': typeof FinanceiroRouteWithChildren
   '/ia-comercial': typeof IaComercialRoute
   '/integracoes-leads': typeof IntegracoesLeadsRoute
@@ -708,14 +691,12 @@ export interface FileRoutesById {
   '/perfil': typeof PerfilRoute
   '/tarefas': typeof TarefasRoute
   '/treinamentos': typeof TreinamentosRoute
-  '/unidades': typeof UnidadesRoute
   '/usuarios': typeof UsuariosRoute
   '/api/growth': typeof ApiGrowthRoute
   '/api/ia-comercial': typeof ApiIaComercialRouteWithChildren
   '/api/lead-integrations': typeof ApiLeadIntegrationsRoute
   '/api/meta-ads': typeof ApiMetaAdsRoute
   '/api/profile': typeof ApiProfileRoute
-  '/api/system-feedback': typeof ApiSystemFeedbackRoute
   '/api/system-settings': typeof ApiSystemSettingsRoute
   '/api/training': typeof ApiTrainingRouteWithChildren
   '/api/whatsapp-supervision': typeof ApiWhatsappSupervisionRouteWithChildren
@@ -754,6 +735,7 @@ export interface FileRoutesById {
   '/api/health/db': typeof ApiHealthDbRoute
   '/api/ia-comercial/analises': typeof ApiIaComercialAnalisesRoute
   '/api/ia-comercial/scripts': typeof ApiIaComercialScriptsRoute
+  '/api/ia-comercial/visao': typeof ApiIaComercialVisaoRoute
   '/api/integrations/evolution': typeof ApiIntegrationsEvolutionRoute
   '/api/meta/connect-url': typeof ApiMetaConnectUrlRoute
   '/api/meta/oauth-complete': typeof ApiMetaOauthCompleteRoute
@@ -786,7 +768,6 @@ export interface FileRouteTypes {
     | '/bi'
     | '/conversas-whatsapp'
     | '/crm'
-    | '/feedback'
     | '/financeiro'
     | '/ia-comercial'
     | '/integracoes-leads'
@@ -795,14 +776,12 @@ export interface FileRouteTypes {
     | '/perfil'
     | '/tarefas'
     | '/treinamentos'
-    | '/unidades'
     | '/usuarios'
     | '/api/growth'
     | '/api/ia-comercial'
     | '/api/lead-integrations'
     | '/api/meta-ads'
     | '/api/profile'
-    | '/api/system-feedback'
     | '/api/system-settings'
     | '/api/training'
     | '/api/whatsapp-supervision'
@@ -841,6 +820,7 @@ export interface FileRouteTypes {
     | '/api/health/db'
     | '/api/ia-comercial/analises'
     | '/api/ia-comercial/scripts'
+    | '/api/ia-comercial/visao'
     | '/api/integrations/evolution'
     | '/api/meta/connect-url'
     | '/api/meta/oauth-complete'
@@ -871,7 +851,6 @@ export interface FileRouteTypes {
     | '/bi'
     | '/conversas-whatsapp'
     | '/crm'
-    | '/feedback'
     | '/financeiro'
     | '/ia-comercial'
     | '/integracoes-leads'
@@ -880,14 +859,12 @@ export interface FileRouteTypes {
     | '/perfil'
     | '/tarefas'
     | '/treinamentos'
-    | '/unidades'
     | '/usuarios'
     | '/api/growth'
     | '/api/ia-comercial'
     | '/api/lead-integrations'
     | '/api/meta-ads'
     | '/api/profile'
-    | '/api/system-feedback'
     | '/api/system-settings'
     | '/api/training'
     | '/api/whatsapp-supervision'
@@ -926,6 +903,7 @@ export interface FileRouteTypes {
     | '/api/health/db'
     | '/api/ia-comercial/analises'
     | '/api/ia-comercial/scripts'
+    | '/api/ia-comercial/visao'
     | '/api/integrations/evolution'
     | '/api/meta/connect-url'
     | '/api/meta/oauth-complete'
@@ -956,7 +934,6 @@ export interface FileRouteTypes {
     | '/bi'
     | '/conversas-whatsapp'
     | '/crm'
-    | '/feedback'
     | '/financeiro'
     | '/ia-comercial'
     | '/integracoes-leads'
@@ -965,14 +942,12 @@ export interface FileRouteTypes {
     | '/perfil'
     | '/tarefas'
     | '/treinamentos'
-    | '/unidades'
     | '/usuarios'
     | '/api/growth'
     | '/api/ia-comercial'
     | '/api/lead-integrations'
     | '/api/meta-ads'
     | '/api/profile'
-    | '/api/system-feedback'
     | '/api/system-settings'
     | '/api/training'
     | '/api/whatsapp-supervision'
@@ -1011,6 +986,7 @@ export interface FileRouteTypes {
     | '/api/health/db'
     | '/api/ia-comercial/analises'
     | '/api/ia-comercial/scripts'
+    | '/api/ia-comercial/visao'
     | '/api/integrations/evolution'
     | '/api/meta/connect-url'
     | '/api/meta/oauth-complete'
@@ -1042,7 +1018,6 @@ export interface RootRouteChildren {
   BiRoute: typeof BiRoute
   ConversasWhatsappRoute: typeof ConversasWhatsappRoute
   CrmRoute: typeof CrmRouteWithChildren
-  FeedbackRoute: typeof FeedbackRoute
   FinanceiroRoute: typeof FinanceiroRouteWithChildren
   IaComercialRoute: typeof IaComercialRoute
   IntegracoesLeadsRoute: typeof IntegracoesLeadsRoute
@@ -1051,14 +1026,12 @@ export interface RootRouteChildren {
   PerfilRoute: typeof PerfilRoute
   TarefasRoute: typeof TarefasRoute
   TreinamentosRoute: typeof TreinamentosRoute
-  UnidadesRoute: typeof UnidadesRoute
   UsuariosRoute: typeof UsuariosRoute
   ApiGrowthRoute: typeof ApiGrowthRoute
   ApiIaComercialRoute: typeof ApiIaComercialRouteWithChildren
   ApiLeadIntegrationsRoute: typeof ApiLeadIntegrationsRoute
   ApiMetaAdsRoute: typeof ApiMetaAdsRoute
   ApiProfileRoute: typeof ApiProfileRoute
-  ApiSystemFeedbackRoute: typeof ApiSystemFeedbackRoute
   ApiSystemSettingsRoute: typeof ApiSystemSettingsRoute
   ApiTrainingRoute: typeof ApiTrainingRouteWithChildren
   ApiWhatsappSupervisionRoute: typeof ApiWhatsappSupervisionRouteWithChildren
@@ -1143,13 +1116,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CrmRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/feedback': {
-      id: '/feedback'
-      path: '/feedback'
-      fullPath: '/feedback'
-      preLoaderRoute: typeof FeedbackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/financeiro': {
       id: '/financeiro'
       path: '/financeiro'
@@ -1206,13 +1172,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TreinamentosRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/unidades': {
-      id: '/unidades'
-      path: '/unidades'
-      fullPath: '/unidades'
-      preLoaderRoute: typeof UnidadesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/usuarios': {
       id: '/usuarios'
       path: '/usuarios'
@@ -1253,13 +1212,6 @@ declare module '@tanstack/react-router' {
       path: '/api/profile'
       fullPath: '/api/profile'
       preLoaderRoute: typeof ApiProfileRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/system-feedback': {
-      id: '/api/system-feedback'
-      path: '/api/system-feedback'
-      fullPath: '/api/system-feedback'
-      preLoaderRoute: typeof ApiSystemFeedbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/system-settings': {
@@ -1528,6 +1480,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiIaComercialScriptsRouteImport
       parentRoute: typeof ApiIaComercialRoute
     }
+    '/api/ia-comercial/visao': {
+      id: '/api/ia-comercial/visao'
+      path: '/visao'
+      fullPath: '/api/ia-comercial/visao'
+      preLoaderRoute: typeof ApiIaComercialVisaoRouteImport
+      parentRoute: typeof ApiIaComercialRoute
+    }
     '/api/integrations/evolution': {
       id: '/api/integrations/evolution'
       path: '/api/integrations/evolution'
@@ -1721,11 +1680,13 @@ const FinanceiroRouteWithChildren = FinanceiroRoute._addFileChildren(
 interface ApiIaComercialRouteChildren {
   ApiIaComercialAnalisesRoute: typeof ApiIaComercialAnalisesRoute
   ApiIaComercialScriptsRoute: typeof ApiIaComercialScriptsRoute
+  ApiIaComercialVisaoRoute: typeof ApiIaComercialVisaoRoute
 }
 
 const ApiIaComercialRouteChildren: ApiIaComercialRouteChildren = {
   ApiIaComercialAnalisesRoute: ApiIaComercialAnalisesRoute,
   ApiIaComercialScriptsRoute: ApiIaComercialScriptsRoute,
+  ApiIaComercialVisaoRoute: ApiIaComercialVisaoRoute,
 }
 
 const ApiIaComercialRouteWithChildren = ApiIaComercialRoute._addFileChildren(
@@ -1844,7 +1805,6 @@ const rootRouteChildren: RootRouteChildren = {
   BiRoute: BiRoute,
   ConversasWhatsappRoute: ConversasWhatsappRoute,
   CrmRoute: CrmRouteWithChildren,
-  FeedbackRoute: FeedbackRoute,
   FinanceiroRoute: FinanceiroRouteWithChildren,
   IaComercialRoute: IaComercialRoute,
   IntegracoesLeadsRoute: IntegracoesLeadsRoute,
@@ -1853,14 +1813,12 @@ const rootRouteChildren: RootRouteChildren = {
   PerfilRoute: PerfilRoute,
   TarefasRoute: TarefasRoute,
   TreinamentosRoute: TreinamentosRoute,
-  UnidadesRoute: UnidadesRoute,
   UsuariosRoute: UsuariosRoute,
   ApiGrowthRoute: ApiGrowthRoute,
   ApiIaComercialRoute: ApiIaComercialRouteWithChildren,
   ApiLeadIntegrationsRoute: ApiLeadIntegrationsRoute,
   ApiMetaAdsRoute: ApiMetaAdsRoute,
   ApiProfileRoute: ApiProfileRoute,
-  ApiSystemFeedbackRoute: ApiSystemFeedbackRoute,
   ApiSystemSettingsRoute: ApiSystemSettingsRoute,
   ApiTrainingRoute: ApiTrainingRouteWithChildren,
   ApiWhatsappSupervisionRoute: ApiWhatsappSupervisionRouteWithChildren,

@@ -11,13 +11,10 @@ import {
   Gauge,
   LibraryBig,
   LogOut,
-  MapPinned,
   Megaphone,
-  MessageCircleMore,
-  MessagesSquare,
   UserRoundCheck,
   UsersRound,
-  WandSparkles,
+  BrainCircuit,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -46,8 +43,6 @@ import starLogo from "@/assets/star-profissoes-logo.png";
 import { useAuth } from "@/lib/auth";
 import {
   canAccessMetaAdsScreen,
-  canAccessSystemFeedback,
-  canManageUnits,
   canImportLeads,
   canSwitchActiveUnit,
   canViewGrowth,
@@ -67,10 +62,8 @@ type NavigationItem = {
   managementOnly?: boolean;
   teamManagementOnly?: boolean;
   studentViewOnly?: boolean;
-  systemFeedbackOnly?: boolean;
   salesAiOnly?: boolean;
   leadImportOnly?: boolean;
-  whatsappOnly?: boolean;
 };
 
 type NavigationGroup = {
@@ -89,12 +82,11 @@ const groups: Array<NavigationGroup> = [
       { title: "Leads", url: "/crm", icon: ContactRound },
       { title: "Tarefas", url: "/tarefas", icon: ClipboardCheck },
       { title: "Alunos", url: "/leads", icon: UserRoundCheck, studentViewOnly: true },
-      { title: "IA Comercial", url: "/ia-comercial", icon: WandSparkles, salesAiOnly: true },
       {
-        title: "Conversas WhatsApp",
-        url: "/conversas-whatsapp",
-        icon: MessageCircleMore,
-        whatsappOnly: true,
+        title: "Inteligência Comercial",
+        url: "/ia-comercial",
+        icon: BrainCircuit,
+        salesAiOnly: true,
       },
     ],
   },
@@ -116,7 +108,7 @@ const groups: Array<NavigationGroup> = [
         teamManagementOnly: true,
       },
       {
-        title: "Cadastros e pipelines",
+        title: "Gestão",
         url: "/gestao/cadastro",
         icon: ClipboardPenLine,
         managementOnly: true,
@@ -127,7 +119,6 @@ const groups: Array<NavigationGroup> = [
         icon: FileUp,
         leadImportOnly: true,
       },
-      { title: "Feedback", url: "/feedback", icon: MessagesSquare, systemFeedbackOnly: true },
     ],
   },
 ];
@@ -143,7 +134,6 @@ export function AppSidebar() {
   const isActive = (url: string) => (url === "/" ? path === "/" : path.startsWith(url));
   const canViewManagementArea = user ? canViewManagement(user.role) : false;
   const canViewStudentList = user ? canViewStudents(user.role) : false;
-  const canViewSystemFeedback = user ? canAccessSystemFeedback(user.role) : false;
   const canSeeSalesAi = user ? canViewSalesAi(user.role) : false;
   const canSwitchUnit = user ? canSwitchActiveUnit(user.role) : false;
   const handleUnitChange = async (unitId: string) => {
@@ -172,7 +162,9 @@ export function AppSidebar() {
     .filter(
       (group) =>
         (group.label !== "Crescimento" || (user ? canViewGrowth(user.role) : false)) &&
-        (group.label !== "Gestão" || canViewManagementArea || canViewSystemFeedback),
+        (group.label !== "Gestão" ||
+          canViewManagementArea ||
+          (user ? canTransferLeads(user.role) : false)),
     )
     .map((group) => ({
       ...group,
@@ -181,11 +173,7 @@ export function AppSidebar() {
           (!item.managementOnly || canViewManagementArea) &&
           (!item.teamManagementOnly || (user ? canTransferLeads(user.role) : false)) &&
           (!item.studentViewOnly || canViewStudentList) &&
-          (!item.systemFeedbackOnly || canViewSystemFeedback) &&
           (!item.salesAiOnly || canSeeSalesAi) &&
-          (!item.whatsappOnly ||
-            user?.role === "CONSULTOR" ||
-            Boolean(session?.features.whatsappSupervision)) &&
           (!item.leadImportOnly || (user ? canImportLeads(user.role) : false)),
       ),
     }))
@@ -195,12 +183,7 @@ export function AppSidebar() {
       ? [{ title: "Meta Ads", url: "/meta-ads", icon: Megaphone }]
       : []),
     ...(session?.canRegisterUsers
-      ? [
-          { title: "Usuários", url: "/usuarios", icon: UsersRound },
-          ...(user && canManageUnits(user.role)
-            ? [{ title: "Unidades", url: "/unidades", icon: MapPinned }]
-            : []),
-        ]
+      ? [{ title: "Usuários", url: "/usuarios", icon: UsersRound }]
       : []),
   ];
   const navGroups = administrationItems.length

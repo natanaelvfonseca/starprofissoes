@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
   enqueueChangedWhatsappConversations,
+  enqueueRecentWhatsappConversations,
   processWhatsappAnalysisQueue,
 } from "@/lib/server/whatsapp-conversation-ai";
 import { reconcileCanonicalHistory } from "@/lib/server/whatsapp-supervision";
@@ -12,6 +13,10 @@ async function run(request: Request) {
     return Response.json({ ok: false, error: "Não autorizado." }, { status: 401 });
   }
   const url = new URL(request.url);
+  if (url.searchParams.get("enqueueRecent") === "1") {
+    const enqueue = await enqueueRecentWhatsappConversations();
+    return Response.json({ ok: true, mode: "enqueue_recent", enqueue });
+  }
   if (url.searchParams.get("queueOnly") === "1") {
     const requestedLimit = Number(url.searchParams.get("limit") || 40);
     const processed = await processWhatsappAnalysisQueue(

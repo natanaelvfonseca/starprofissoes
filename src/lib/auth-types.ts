@@ -214,24 +214,6 @@ export function canViewLeadershipTraining(role: UserRole) {
   return role !== "CONSULTOR";
 }
 
-export function canSubmitSystemFeedback(role: UserRole) {
-  return (
-    isMasterRole(role) ||
-    isExecutiveRole(role) ||
-    role === "DIRETOR" ||
-    role === "GERENTE" ||
-    role === "MARKETING"
-  );
-}
-
-export function canManageSystemFeedback(role: UserRole) {
-  return isMasterRole(role);
-}
-
-export function canAccessSystemFeedback(role: UserRole) {
-  return canSubmitSystemFeedback(role) || canManageSystemFeedback(role);
-}
-
 export function getAssignableRoles(role: UserRole): Array<UserRole> {
   if (isMasterRole(role)) {
     return ["CEO", "CVO", "DIRETOR", "GERENTE", "MARKETING", "CONSULTOR"];

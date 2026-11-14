@@ -89,6 +89,41 @@ export async function enqueueChangedWhatsappConversations() {
   return { scanned: result.rows.length, queued };
 }
 
+// Rotina gerencial leve: prioriza amostras de conversas recentes de cada
+// consultor, sem percorrer meses de histórico nem puxar transcrições.
+export async function enqueueRecentWhatsappConversations() {
+  await ensureWhatsappSupervisionSchema();
+  const result = await queryDb<ConversationData>(`
+    select id, unit_id, consultant_id, canonical_phone, contact_name,
+      last_message_at::text, message_count
+    from (
+      select c.*, row_number() over (
+        partition by c.unit_id, c.consultant_id order by c.last_message_at desc
+      ) as position
+      from app_whatsapp_conversations c
+      where c.merged_into_id is null
+        and c.last_message_at >= now() - interval '14 days'
+    ) recent
+    where position <= 4
+    order by position, last_message_at desc limit 300
+  `);
+  let queued = 0;
+  for (const conversation of result.rows) {
+    const fingerprint = conversationFingerprint(
+      conversation.id,
+      conversation.last_message_at,
+      Number(conversation.message_count),
+    );
+    const inserted = await queryDb(
+      `insert into app_whatsapp_analysis_jobs (conversation_id, input_fingerprint)
+       values($1,$2) on conflict(conversation_id,input_fingerprint) do nothing returning id`,
+      [conversation.id, fingerprint],
+    );
+    queued += inserted.rowCount ?? 0;
+  }
+  return { scanned: result.rows.length, queued };
+}
+
 async function takeJob() {
   return withTransaction(async (client) => {
     const result = await client.query<JobRow>(`

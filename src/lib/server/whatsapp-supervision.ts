@@ -206,6 +206,9 @@ export function leadershipRole(role: UserRole) {
 export async function canUseWhatsappSupervision(session: AuthSession | null) {
   if (!session || !leadershipRole(session.user.role) || !session.units.length) return false;
   await ensureWhatsappSupervisionSchema();
+  // A direção e a gerência precisam visualizar o painel gerencial da própria
+  // unidade sem depender de uma chave de liberação manual da tela antiga.
+  if (["CEO", "DIRETOR", "GERENTE"].includes(session.user.role)) return true;
   const result = await queryDb<{ enabled: boolean } & QueryResultRow>(
     `select enabled from app_feature_role_access where feature_key = $1 and role = $2 limit 1`,
     [WHATSAPP_SUPERVISION_FEATURE, session.user.role],
