@@ -99,13 +99,13 @@ export async function enqueueRecentWhatsappConversations() {
     from (
       select c.*, row_number() over (
         partition by c.unit_id, c.consultant_id order by c.last_message_at desc
-      ) as position
+      ) as sample_rank
       from app_whatsapp_conversations c
       where c.merged_into_id is null
         and c.last_message_at >= now() - interval '14 days'
     ) recent
-    where position <= 4
-    order by position, last_message_at desc limit 300
+    where sample_rank <= 4
+    order by sample_rank, last_message_at desc limit 300
   `);
   let queued = 0;
   for (const conversation of result.rows) {
