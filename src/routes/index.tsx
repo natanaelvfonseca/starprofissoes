@@ -1,56 +1,139 @@
-import { resolveLeadPipelineColumn, pipelineColorHex } from "@/lib/pipeline-configuration";
-import { subscribeCommercialConfiguration } from "@/lib/commercial-refresh";
 import * as React from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Activity,
   ArrowRight,
-  ArrowUpRight,
-  CircleDollarSign,
+  CalendarDays,
+  CheckCircle2,
   Clock3,
   GraduationCap,
-  Sparkles,
-  Target,
+  RefreshCw,
+  TrendingDown,
+  TrendingUp,
+  UserRoundX,
   Users,
 } from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { useAuth } from "@/lib/auth";
-import type { LeadStage, PipelineColumn } from "@/lib/commercial-types";
-import { Badge } from "@/components/ui/badge";
+import { canViewGrowth } from "@/lib/auth-types";
+import { subscribeCommercialConfiguration } from "@/lib/commercial-refresh";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
-type DashboardResponse = {
-  stats: {
-    openLeads: number;
-    qualifiedLeads: number;
-    students: number;
-    pipelineValue: number;
+type Period = "today" | "7d" | "30d" | "custom";
+
+type DashboardData = {
+  period: { start: string; end: string; days: number; hourly: boolean };
+  scope: "individual" | "unit";
+  metrics: {
+    leadsReceived: number;
+    previousLeads: number;
+    uncontactedLeads: number;
+    enrollments: number;
+    pendingTasks: number;
   };
-  pipelineColumns: Array<PipelineColumn>;
-  stageBuckets: Array<{
-    pipelineColumnId: string | null;
-    stage: LeadStage;
-    count: number;
+  attendances: Array<{
+    id: string | null;
+    name: string;
+    city: string | null;
+    state: string | null;
+    classDate: string | null;
+    leads: number;
   }>;
-  recentLeads: Array<{
-    id: string;
-    unitId: string;
-    fullName: string;
-    phone: string;
-    courseName: string | null;
-    stage: LeadStage;
-    pipelineColumnId: string | null;
-    createdAt: string;
-  }>;
-  error?: string;
+  sources: Array<{ name: string; leads: number }>;
+  trend: Array<{ bucket: string; leads: number }>;
+  updatedAt: string;
 };
 
-const emptyDashboardStats = {
-  openLeads: 0,
-  qualifiedLeads: 0,
-  students: 0,
-  pipelineValue: 0,
-};
+const chartColors = ["#3465D8", "#F1B735", "#16006C", "#22A699", "#8C65CF", "#E18D55"];
+const numberFormat = new Intl.NumberFormat("pt-BR");
+
+function currentLocalDate() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const get = (key: string) => parts.find((part) => part.type === key)?.value ?? "";
+  return [get("year"), get("month"), get("day")].join("-");
+}
+
+function compactDate(day: string | null) {
+  if (!day) return "";
+  const [year, month, date] = day.split("-");
+  return `${date}/${month}/${year}`;
+}
+
+function periodText(data: DashboardData | null, period: Period) {
+  if (!data) return "Acompanhamento comercial";
+  if (period === "today") return "Hoje, " + compactDate(data.period.end);
+  return compactDate(data.period.start) + " a " + compactDate(data.period.end);
+}
+
+function Placeholder({ text }: { text: string }) {
+  return (
+    <div className="flex min-h-[225px] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-[#DEE5F1] bg-[#F9FAFD] px-4 text-center">
+      <Activity className="h-6 w-6 text-[#AAB6CD]" />
+      <p className="text-sm text-slate-500">{text}</p>
+    </div>
+  );
+}
+
+function MetricCard({
+  title,
+  value,
+  helper,
+  icon: Icon,
+  color,
+  loading,
+  children,
+}: {
+  title: string;
+  value?: number;
+  helper: string;
+  icon: React.ComponentType<{ className?: string }>;
+  color: string;
+  loading: boolean;
+  children?: React.ReactNode;
+}) {
+  return (
+    <Card className="min-w-0 overflow-hidden rounded-[22px] border-[#E3E8F1] bg-white shadow-[0_18px_36px_-32px_rgba(25,39,80,.45)]">
+      <CardContent className="p-5 sm:p-6">
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-[13px] font-semibold text-[#59667F]">{title}</p>
+          <span
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+            style={{ backgroundColor: color + "14", color }}
+          >
+            <Icon className="h-5 w-5" />
+          </span>
+        </div>
+        <div className="mt-2 text-[36px] font-extrabold leading-none tracking-tight text-[#14234C] sm:text-[42px]">
+          {loading ? (
+            <span className="inline-block h-10 w-20 animate-pulse rounded-lg bg-slate-100" />
+          ) : value === undefined ? (
+            "—"
+          ) : (
+            numberFormat.format(value)
+          )}
+        </div>
+        <div className="mt-3 min-h-5 text-xs text-[#8893A8]">{children ?? helper}</div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export const Route = createFileRoute("/")({
   head: () => ({ meta: [{ title: "Dashboard · Star Profissões" }] }),
@@ -59,266 +142,524 @@ export const Route = createFileRoute("/")({
 
 function DashboardPage() {
   const { session } = useAuth();
-  const activeUnitId = session?.activeUnit?.id ?? "";
-  const [stats, setStats] = React.useState(emptyDashboardStats);
-  const [pipelineColumns, setPipelineColumns] = React.useState<Array<PipelineColumn>>([]);
-  const [stageBuckets, setStageBuckets] = React.useState<DashboardResponse["stageBuckets"]>([]);
-  const [recentLeads, setRecentLeads] = React.useState<DashboardResponse["recentLeads"]>([]);
+  const unitId = session?.activeUnit?.id ?? "";
+  const [period, setPeriod] = React.useState<Period>("today");
+  const [customOpen, setCustomOpen] = React.useState(false);
+  const [customStart, setCustomStart] = React.useState(() => currentLocalDate());
+  const [customEnd, setCustomEnd] = React.useState(() => currentLocalDate());
+  const [appliedCustom, setAppliedCustom] = React.useState({ start: "", end: "" });
+  const [refreshKey, setRefreshKey] = React.useState(0);
+  const [data, setData] = React.useState<DashboardData | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [error, setError] = React.useState("");
+  const isConsultant = session?.user.role === "CONSULTOR";
+  const canSeeReports = session ? canViewGrowth(session.user.role) : false;
 
   React.useEffect(() => {
-    if (!activeUnitId) {
+    if (!unitId || (period === "custom" && (!appliedCustom.start || !appliedCustom.end))) {
+      setData(null);
       setLoading(false);
       return;
     }
-
     const controller = new AbortController();
-    let latestRequest = 0;
-    let inFlight: Promise<void> | null = null;
-    const load = () => {
-      if (inFlight) return inFlight;
-      const requestId = ++latestRequest;
-      inFlight = fetch(`/api/crm/dashboard?unitId=${encodeURIComponent(activeUnitId)}`, {
-        credentials: "same-origin",
-        headers: { Accept: "application/json" },
-        signal: controller.signal,
-      })
-        .then(async (response) => {
-          const data = (await response.json().catch(() => ({}))) as DashboardResponse;
-          if (!response.ok) throw new Error(data.error ?? "Falha ao carregar o dashboard.");
-          if (controller.signal.aborted || requestId !== latestRequest) return;
-          setStats(data.stats ?? emptyDashboardStats);
-          setPipelineColumns(data.pipelineColumns ?? []);
-          setStageBuckets(data.stageBuckets ?? []);
-          setRecentLeads(data.recentLeads ?? []);
-        })
-        .catch((error) => {
-          if (error instanceof DOMException && error.name === "AbortError") return;
-          setStats(emptyDashboardStats);
-          setStageBuckets([]);
-          setRecentLeads([]);
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setLoading(false);
-          inFlight = null;
+    let working = false;
+    let active = true;
+    const fetchDashboard = async (initial = false) => {
+      if (working || !active) return;
+      working = true;
+      if (initial) setLoading(true);
+      else setRefreshing(true);
+      try {
+        const query = new URLSearchParams({ unitId, period });
+        if (period === "custom") {
+          query.set("startDate", appliedCustom.start);
+          query.set("endDate", appliedCustom.end);
+        }
+        const response = await fetch("/api/crm/dashboard?" + query.toString(), {
+          signal: controller.signal,
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: { Accept: "application/json" },
         });
-      return inFlight;
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error ?? "Não foi possível carregar o painel.");
+        if (active) {
+          setData(payload as DashboardData);
+          setError("");
+        }
+      } catch (cause) {
+        if (active && !(cause instanceof DOMException && cause.name === "AbortError")) {
+          setError(cause instanceof Error ? cause.message : "Não foi possível carregar o painel.");
+          if (initial) setData(null);
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+        working = false;
+      }
     };
-    setStats(emptyDashboardStats);
-    setPipelineColumns([]);
-    setStageBuckets([]);
-    setRecentLeads([]);
-    setLoading(true);
-    load();
-    const unsubscribe = subscribeCommercialConfiguration(activeUnitId, load);
+
+    void fetchDashboard(true);
+    const unsubscribe = subscribeCommercialConfiguration(unitId, () => {
+      void fetchDashboard();
+    });
+    const interval = window.setInterval(() => {
+      void fetchDashboard();
+    }, 60_000);
+    const onFocus = () => {
+      void fetchDashboard();
+    };
+    window.addEventListener("focus", onFocus);
     return () => {
+      active = false;
       controller.abort();
       unsubscribe();
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
     };
-  }, [activeUnitId]);
+  }, [unitId, period, appliedCustom.start, appliedCustom.end, refreshKey]);
 
-  const totalOpportunities = stats.openLeads + stats.students;
-  const conversion = totalOpportunities
-    ? Math.round((stats.students / totalOpportunities) * 100)
-    : 0;
-  const stageCounts = pipelineColumns.map((column) => ({
-    ...column,
-    count: stageBuckets.reduce(
-      (total, bucket) =>
-        total +
-        (bucket.pipelineColumnId === column.id ||
-        (!bucket.pipelineColumnId &&
-          column.semanticStage ===
-            (bucket.stage === "Confirmado" ? "Pagamento pendente" : bucket.stage))
-          ? bucket.count
-          : 0),
-      0,
-    ),
-  }));
-  const maxStageCount = Math.max(1, ...stageCounts.map((item) => item.count));
+  const choosePeriod = (next: Period) => {
+    setPeriod(next);
+    setCustomOpen(false);
+  };
+
+  const applyCustom = () => {
+    if (!customStart || !customEnd || customStart > customEnd || customEnd > currentLocalDate()) {
+      setError("Selecione um intervalo válido até a data de hoje.");
+      return;
+    }
+    const days =
+      Math.round(
+        (Date.parse(customEnd + "T12:00:00Z") - Date.parse(customStart + "T12:00:00Z")) / 86400000,
+      ) + 1;
+    if (days > 90) {
+      setError("O período personalizado pode ter no máximo 90 dias.");
+      return;
+    }
+    setError("");
+    setAppliedCustom({ start: customStart, end: customEnd });
+    setPeriod("custom");
+    setCustomOpen(false);
+  };
+
+  const sourceData = React.useMemo(() => {
+    const sources = data?.sources ?? [];
+    const first = sources.slice(0, 5);
+    const others = sources.slice(5).reduce((total, source) => total + source.leads, 0);
+    return others ? [...first, { name: "Outros", leads: others }] : first;
+  }, [data?.sources]);
+
+  const totalSourceLeads = sourceData.reduce((sum, item) => sum + item.leads, 0);
+  const maxAttendanceLeads = Math.max(1, ...(data?.attendances.map((item) => item.leads) ?? [0]));
+  const lastPeriod = data?.metrics.previousLeads ?? 0;
+  const leadDiff = (data?.metrics.leadsReceived ?? 0) - lastPeriod;
+  const delta = lastPeriod ? Math.round((leadDiff / lastPeriod) * 100) : null;
+  const chartTooltipStyle = {
+    border: "1px solid #E3E8F1",
+    borderRadius: 12,
+    boxShadow: "0 14px 36px -20px rgba(20,35,76,.3)",
+    fontSize: 12,
+  };
 
   return (
-    <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-[30px] bg-[#16006C] p-6 text-white shadow-[0_30px_80px_-48px_rgba(22,0,108,0.9)] md:p-8">
-        <div className="pointer-events-none absolute -right-24 -top-28 h-80 w-80 rounded-full border border-white/10" />
-        <div className="pointer-events-none absolute right-8 top-8 h-40 w-40 rounded-full bg-[#377DFE]/20 blur-3xl" />
-        <div className="relative grid gap-7 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-end">
-          <div>
-            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.22em] text-[#F4B728]">
-              <Sparkles className="h-4 w-4" /> Pulso da operação
-            </div>
-            <h1 className="mt-4 max-w-3xl text-3xl font-black tracking-tight md:text-5xl">
-              Olá, {session?.user.name?.split(" ")[0] ?? "time Star"}.
-            </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/65">
-              Uma leitura rápida da unidade {session?.activeUnit?.name ?? "ativa"}, das
-              oportunidades abertas e das matrículas conquistadas.
-            </p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Button
-                asChild
-                className="h-11 bg-[#F4B728] font-bold text-[#07154C] hover:bg-[#F4B728]/90"
-              >
-                <Link to="/crm">
-                  Abrir operação <ArrowRight className="h-4 w-4" />
-                </Link>
-              </Button>
-              <Badge className="h-11 border-white/15 bg-white/10 px-4 text-white hover:bg-white/10">
-                <Activity className="mr-2 h-4 w-4 text-emerald-300" /> Dados em tempo real
-              </Badge>
-            </div>
+    <div className="space-y-5 pb-7">
+      <section className="flex flex-col justify-between gap-5 rounded-[24px] border border-[#E3E8F1] bg-white p-5 shadow-[0_16px_48px_-42px_rgba(22,0,108,.35)] sm:p-7 xl:flex-row xl:items-center">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-[.18em] text-[#386FDB]">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            Visão geral da operação
           </div>
-          <div className="rounded-3xl border border-white/12 bg-white/[0.07] p-5 backdrop-blur-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-xs font-bold uppercase tracking-[0.16em] text-white/45">
-                  Conversão
-                </div>
-                <div className="mt-2 text-5xl font-black text-[#F4B728]">
-                  {loading ? "—" : `${conversion}%`}
-                </div>
-              </div>
-              <ArrowUpRight className="h-9 w-9 text-[#F4B728]/60" />
+          <h1 className="text-2xl font-extrabold tracking-tight text-[#14234C] sm:text-3xl">
+            Painel comercial
+          </h1>
+          <p className="text-sm text-[#7A859A]">
+            {session?.activeUnit?.name ?? "Unidade ativa"} · {periodText(data, period)}
+          </p>
+          <p className="text-xs text-[#9CA6B8]">
+            {isConsultant
+              ? "Entradas da unidade e suas pendências e matrículas."
+              : "Entradas, atendimento e matrículas da unidade."}
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 xl:items-end">
+          <div className="flex flex-wrap items-center gap-1 rounded-xl border border-[#E3E8F1] bg-[#F6F8FC] p-1">
+            {(
+              [
+                ["today", "Hoje"],
+                ["7d", "7 dias"],
+                ["30d", "30 dias"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => choosePeriod(value)}
+                className={`rounded-lg px-3 py-2 text-xs font-bold transition sm:text-sm ${period === value ? "bg-white text-[#234EB8] shadow-sm" : "text-[#72809A] hover:text-[#14234C]"}`}
+              >
+                {label}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setCustomOpen((current) => !current)}
+              className={`flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-bold transition sm:text-sm ${period === "custom" ? "bg-white text-[#234EB8] shadow-sm" : "text-[#72809A] hover:text-[#14234C]"}`}
+            >
+              <CalendarDays className="h-4 w-4" /> Personalizado
+            </button>
+          </div>
+          {customOpen ? (
+            <div className="flex flex-wrap items-end gap-2 rounded-xl border border-[#E3E8F1] bg-white p-3">
+              <label className="text-xs font-medium text-[#62708A]">
+                De
+                <input
+                  aria-label="Data inicial"
+                  type="date"
+                  max={currentLocalDate()}
+                  value={customStart}
+                  onChange={(event) => setCustomStart(event.target.value)}
+                  className="mt-1 block rounded-lg border border-[#DEE5F1] px-2 py-1.5 text-sm text-[#14234C]"
+                />
+              </label>
+              <label className="text-xs font-medium text-[#62708A]">
+                Até
+                <input
+                  aria-label="Data final"
+                  type="date"
+                  max={currentLocalDate()}
+                  value={customEnd}
+                  onChange={(event) => setCustomEnd(event.target.value)}
+                  className="mt-1 block rounded-lg border border-[#DEE5F1] px-2 py-1.5 text-sm text-[#14234C]"
+                />
+              </label>
+              <Button size="sm" onClick={applyCustom}>
+                Aplicar
+              </Button>
             </div>
-            <p className="mt-3 text-xs leading-5 text-white/50">
-              Relação entre oportunidades recebidas e alunos matriculados.
-            </p>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-1 text-[11px] text-[#A0AABD]">
+              {refreshing ? "Atualizando…" : data ? "Atualização automática a cada minuto" : ""}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setRefreshKey((value) => value + 1)}
+              disabled={refreshing}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} /> Atualizar
+            </Button>
+            <Button
+              size="sm"
+              asChild
+              className="gap-1.5 bg-[#16006C] text-white hover:bg-[#16006C]/90"
+            >
+              <Link to="/crm">
+                Abrir CRM <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </Button>
           </div>
         </div>
       </section>
 
+      {error ? (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+        >
+          <span>{error}</span>
+          <Button variant="outline" size="sm" onClick={() => setRefreshKey((value) => value + 1)}>
+            Tentar novamente
+          </Button>
+        </div>
+      ) : null}
+
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {[
-          {
-            label: "Oportunidades abertas",
-            value: stats.openLeads,
-            icon: Users,
-            color: "bg-[#377DFE]",
-          },
-          {
-            label: "Em avanço comercial",
-            value: stats.qualifiedLeads,
-            icon: Target,
-            color: "bg-[#16006C]",
-          },
-          {
-            label: "Alunos matriculados",
-            value: stats.students,
-            icon: GraduationCap,
-            color: "bg-emerald-500",
-          },
-          {
-            label: "Potencial do pipeline",
-            value: stats.pipelineValue.toLocaleString("pt-BR", {
-              style: "currency",
-              currency: "BRL",
-              maximumFractionDigits: 0,
-            }),
-            icon: CircleDollarSign,
-            color: "bg-[#F4B728]",
-          },
-        ].map(({ label, value, icon: Icon, color }) => (
-          <Card key={label} className="overflow-hidden border-[#16006C]/10 shadow-card">
-            <CardContent className="flex items-center gap-4 p-5">
-              <div
-                className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white ${color}`}
-              >
-                <Icon className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="truncate text-2xl font-black text-[#07154C]">
-                  {loading ? "—" : value}
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">{label}</div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+        <MetricCard
+          title="Leads recebidos"
+          value={data?.metrics.leadsReceived}
+          helper="Novas entradas no período"
+          icon={Users}
+          color="#3465D8"
+          loading={loading}
+        >
+          {data && delta !== null ? (
+            <span
+              className={`inline-flex items-center gap-1 font-medium ${delta > 0 ? "text-emerald-600" : delta < 0 ? "text-rose-600" : "text-slate-500"}`}
+            >
+              {delta > 0 ? (
+                <TrendingUp className="h-3.5 w-3.5" />
+              ) : delta < 0 ? (
+                <TrendingDown className="h-3.5 w-3.5" />
+              ) : null}
+              {delta > 0 ? "+" : ""}
+              {delta}% vs. período anterior
+            </span>
+          ) : (
+            "Novas entradas no período"
+          )}
+        </MetricCard>
+        <MetricCard
+          title="Sem primeiro contato"
+          value={data?.metrics.uncontactedLeads}
+          helper={
+            isConsultant
+              ? "Sua fila e fila compartilhada · acumulado"
+              : "Fila atual da unidade · acumulado"
+          }
+          icon={UserRoundX}
+          color="#E18D55"
+          loading={loading}
+        />
+        <MetricCard
+          title="Matrículas"
+          value={data?.metrics.enrollments}
+          helper={isConsultant ? "Suas conversões no período" : "Conversões da unidade no período"}
+          icon={GraduationCap}
+          color="#22A699"
+          loading={loading}
+        />
+        <MetricCard
+          title="Retornos pendentes"
+          value={data?.metrics.pendingTasks}
+          helper={
+            isConsultant
+              ? "Suas tarefas vencidas ou até hoje"
+              : "Tarefas vencidas ou até hoje · unidade"
+          }
+          icon={Clock3}
+          color="#7A5AC4"
+          loading={loading}
+        />
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,.85fr)]">
-        <Card className="overflow-hidden border-[#16006C]/10 shadow-card">
-          <div className="flex items-center justify-between border-b border-[#16006C]/10 p-5">
-            <div>
-              <div className="text-xs font-bold uppercase tracking-[0.16em] text-[#224C99]">
-                Distribuição
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.18fr)_minmax(330px,.82fr)]">
+        <Card className="overflow-hidden rounded-[24px] border-[#E3E8F1] bg-white shadow-[0_18px_40px_-35px_rgba(25,39,80,.5)]">
+          <CardContent className="p-5 sm:p-6">
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-extrabold text-[#14234C]">Leads por turma</h2>
+                <p className="mt-1 text-xs text-[#8792A6]">
+                  Turmas que mais receberam novos leads no período.
+                </p>
               </div>
-              <h2 className="mt-1 text-xl font-black text-[#07154C]">Temperatura do funil</h2>
+              <span className="rounded-lg bg-[#EAF0FF] px-2.5 py-1.5 text-xs font-bold text-[#3465D8]">
+                Top 7
+              </span>
             </div>
-            <Badge variant="secondary">{stats.openLeads} leads</Badge>
-          </div>
-          <CardContent className="space-y-4 p-5">
-            {stageCounts.map((item, index) => (
-              <div
-                key={item.id}
-                className="grid grid-cols-[130px_minmax(0,1fr)_32px] items-center gap-3"
-              >
-                <span className="truncate text-xs font-semibold text-[#07154C]">{item.name}</span>
-                <div className="h-3 overflow-hidden rounded-full bg-[#F1F3F8]">
-                  <div
-                    className="h-full rounded-full"
-                    style={{
-                      width: `${Math.max(item.count ? 8 : 0, (item.count / maxStageCount) * 100)}%`,
-                      backgroundColor: pipelineColorHex[item.color] ?? pipelineColorHex.blue,
-                      opacity: Math.max(0.3, 1 - index * 0.06),
-                    }}
-                  />
-                </div>
-                <strong className="text-right text-xs text-[#16006C]">{item.count}</strong>
+            {loading ? (
+              <Placeholder text="Carregando turmas…" />
+            ) : data?.attendances.length ? (
+              <div className="space-y-4">
+                {data.attendances.map((item) => {
+                  const label = item.id
+                    ? `${item.name} · ${item.city ?? ""}/${item.state ?? ""}${item.classDate ? " · " + compactDate(item.classDate) : ""}`
+                    : item.name;
+                  return (
+                    <div key={item.id ?? "unlinked"} className="group">
+                      <div className="mb-1.5 flex items-center justify-between gap-3">
+                        {item.id ? (
+                          <a
+                            href={`/crm?attendanceId=${encodeURIComponent(item.id)}&startDate=${data.period.start}&endDate=${data.period.end}`}
+                            className="min-w-0 truncate text-[13px] font-semibold text-[#3D4B67] hover:text-[#3465D8] hover:underline"
+                            title={label}
+                          >
+                            {label}
+                          </a>
+                        ) : (
+                          <span
+                            className="min-w-0 truncate text-[13px] font-semibold text-[#3D4B67]"
+                            title={label}
+                          >
+                            {label}
+                          </span>
+                        )}
+                        <span className="shrink-0 text-sm font-extrabold tabular-nums text-[#14234C]">
+                          {numberFormat.format(item.leads)}
+                        </span>
+                      </div>
+                      <div className="h-2.5 overflow-hidden rounded-full bg-[#EEF2F8]">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-[#377DFE] to-[#16006C] transition-all duration-500"
+                          style={{ width: `${(item.leads / maxAttendanceLeads) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+                <p className="pt-2 text-xs text-[#94A0B4]">
+                  Selecione uma turma para consultar seus leads no CRM.
+                </p>
               </div>
-            ))}
+            ) : (
+              <Placeholder text="Nenhum lead recebido nas turmas neste período." />
+            )}
           </CardContent>
         </Card>
 
-        <Card className="overflow-hidden border-[#16006C]/10 shadow-card">
-          <div className="flex items-center justify-between border-b border-[#16006C]/10 p-5">
-            <div>
-              <div className="text-xs font-bold uppercase tracking-[0.16em] text-[#224C99]">
-                Agora
-              </div>
-              <h2 className="mt-1 text-xl font-black text-[#07154C]">Últimas oportunidades</h2>
-            </div>
-            <Button asChild variant="ghost" size="sm">
-              <Link to="/crm">
-                Ver todas <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
-          </div>
-          <CardContent className="p-3">
-            {recentLeads.length ? (
-              recentLeads.map((lead) => (
-                <div
-                  key={lead.id}
-                  className="flex items-center gap-3 rounded-xl p-3 transition hover:bg-[#F7F8FC]"
-                >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#16006C] text-xs font-black text-white">
-                    {lead.fullName
-                      .split(/\s+/)
-                      .slice(0, 2)
-                      .map((part) => part[0])
-                      .join("")
-                      .toUpperCase()}
+        <Card className="overflow-hidden rounded-[24px] border-[#E3E8F1] bg-white shadow-[0_18px_40px_-35px_rgba(25,39,80,.5)]">
+          <CardContent className="p-5 sm:p-6">
+            <h2 className="text-lg font-extrabold text-[#14234C]">Origem dos leads</h2>
+            <p className="mt-1 text-xs text-[#8792A6]">De onde chegam as novas oportunidades.</p>
+            {loading ? (
+              <Placeholder text="Carregando canais…" />
+            ) : sourceData.length ? (
+              <div className="flex flex-col items-center gap-1">
+                <div className="relative h-[215px] w-full max-w-[280px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={sourceData}
+                        dataKey="leads"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={64}
+                        outerRadius={89}
+                        paddingAngle={3}
+                        stroke="none"
+                      >
+                        {sourceData.map((item, index) => (
+                          <Cell key={item.name} fill={chartColors[index % chartColors.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={chartTooltipStyle}
+                        formatter={(value) => numberFormat.format(Number(value ?? 0))}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-[27px] font-black text-[#14234C]">
+                      {numberFormat.format(totalSourceLeads)}
+                    </span>
+                    <span className="text-[11px] text-[#9AA6B8]">leads</span>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-bold text-[#07154C]">{lead.fullName}</div>
-                    <div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
-                      <Clock3 className="h-3 w-3" />
-                      {lead.courseName ?? lead.phone}
-                    </div>
-                  </div>
-                  <Badge variant="secondary" className="max-w-28 truncate">
-                    {resolveLeadPipelineColumn(lead, pipelineColumns)?.name ?? lead.stage}
-                  </Badge>
                 </div>
-              ))
-            ) : (
-              <div className="py-12 text-center text-sm text-muted-foreground">
-                {loading ? "Carregando dados..." : "Nenhuma oportunidade nesta unidade."}
+                <div className="grid w-full gap-2">
+                  {sourceData.map((item, index) => (
+                    <div
+                      key={item.name}
+                      className="flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: chartColors[index % chartColors.length] }}
+                        />
+                        <span className="truncate text-[#61708A]" title={item.name}>
+                          {item.name}
+                        </span>
+                      </div>
+                      <span className="shrink-0 font-bold tabular-nums text-[#14234C]">
+                        {numberFormat.format(item.leads)}{" "}
+                        <span className="font-medium text-[#A2ABBB]">
+                          ({Math.round((item.leads / totalSourceLeads) * 100)}%)
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
+            ) : (
+              <Placeholder text="Nenhum lead com origem registrada no período." />
             )}
           </CardContent>
         </Card>
       </section>
+
+      <Card className="overflow-hidden rounded-[24px] border-[#E3E8F1] bg-white shadow-[0_18px_40px_-35px_rgba(25,39,80,.5)]">
+        <CardContent className="p-5 sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-extrabold text-[#14234C]">Evolução das entradas</h2>
+              <p className="mt-1 text-xs text-[#8792A6]">
+                {data?.period.hourly
+                  ? "Volume de leads por hora, no dia de hoje."
+                  : "Novos leads recebidos em cada dia do período."}
+              </p>
+            </div>
+            <span className="flex items-center gap-1.5 rounded-full bg-[#EAF0FF] px-3 py-1.5 text-xs font-bold text-[#3465D8]">
+              <span className="h-2 w-2 rounded-full bg-[#3465D8]" /> Leads recebidos
+            </span>
+          </div>
+          <div className="mt-5">
+            {loading ? (
+              <Placeholder text="Carregando evolução…" />
+            ) : data?.trend.length ? (
+              <div className="h-[250px] w-full sm:h-[290px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart
+                    data={data.trend}
+                    margin={{ top: 10, right: 12, left: -24, bottom: 0 }}
+                  >
+                    <defs>
+                      <linearGradient id="starDashboardTrend" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#3465D8" stopOpacity={0.26} />
+                        <stop offset="100%" stopColor="#3465D8" stopOpacity={0.015} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid vertical={false} stroke="#E7ECF4" strokeDasharray="4 4" />
+                    <XAxis
+                      dataKey="bucket"
+                      tickLine={false}
+                      axisLine={false}
+                      minTickGap={16}
+                      tick={{ fill: "#98A4B7", fontSize: 11 }}
+                      tickFormatter={(value: string) =>
+                        data.period.hourly
+                          ? value + "h"
+                          : value.slice(8, 10) + "/" + value.slice(5, 7)
+                      }
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      allowDecimals={false}
+                      tick={{ fill: "#98A4B7", fontSize: 11 }}
+                    />
+                    <Tooltip
+                      contentStyle={chartTooltipStyle}
+                      formatter={(value) => [numberFormat.format(Number(value ?? 0)), "Leads"]}
+                      labelFormatter={(value) =>
+                        data.period.hourly ? String(value) + ":00" : compactDate(String(value))
+                      }
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="leads"
+                      stroke="#3465D8"
+                      strokeWidth={3}
+                      fill="url(#starDashboardTrend)"
+                      activeDot={{ r: 5, fill: "#3465D8" }}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <Placeholder text="Ainda não há entradas neste período." />
+            )}
+          </div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#EFF2F7] pt-4 text-xs text-[#8E9AAF]">
+            <span className="flex items-center gap-1.5">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Dados da unidade ativa,
+              atualizados periodicamente
+            </span>
+            {canSeeReports ? (
+              <Link
+                to="/bi"
+                className="flex items-center gap-1 font-bold text-[#3465D8] hover:underline"
+              >
+                Abrir relatórios <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -599,6 +599,26 @@ function CRMPipeline() {
     setPendingAssumeLead(null);
   }, [activeUnitId]);
 
+  // Permite abrir o CRM já filtrado pela turma e pelo período do dashboard.
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const attendanceId = params.get("attendanceId");
+    if (!attendanceId || !/^[0-9a-f-]{36}$/i.test(attendanceId)) return;
+
+    const nextFilters = { ...emptyPipelineFilters(), attendanceId };
+    const startDate = params.get("startDate") ?? "";
+    const endDate = params.get("endDate") ?? "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(startDate) &&
+        /^\d{4}-\d{2}-\d{2}$/.test(endDate) && startDate <= endDate) {
+      nextFilters.startDate = startDate;
+      nextFilters.endDate = endDate;
+    }
+    setFilters(nextFilters);
+    setDraftFilters(nextFilters);
+    // A distribuição por turma é da unidade, inclusive para consultores.
+    if (isConsultant) setConsultantScope("all");
+  }, [activeUnitId, isConsultant]);
+
   const loadLeads = React.useCallback(
     async (options?: { silent?: boolean; force?: boolean }) => {
       const currentLoad = leadLoadRef.current;
