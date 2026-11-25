@@ -1,3 +1,4 @@
+import { withLeadAuditActor } from "@/lib/server/db";
 import { createFileRoute } from "@tanstack/react-router";
 import type { QueryResultRow } from "pg";
 import type { LeadStage } from "@/lib/commercial-types";
@@ -247,161 +248,163 @@ export const Route = createFileRoute("/api/crm/transfer")({
         if (!session) {
           return Response.json({ ok: false, error: "Nao autenticado." }, { status: 401 });
         }
+        return withLeadAuditActor(session.user, "transfer", async () => {
 
-        if (!canAccessLeadTransferCenter(session.user.role)) {
-          return Response.json({ ok: false, error: "Acesso negado." }, { status: 403 });
-        }
+          if (!canAccessLeadTransferCenter(session.user.role)) {
+            return Response.json({ ok: false, error: "Acesso negado." }, { status: 403 });
+          }
 
-        const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-        const unit = getUnitFromBody(session, body?.unitId ?? session.activeUnit?.id);
-        const targetUserId = typeof body?.targetUserId === "string" ? body.targetUserId.trim() : "";
-        const leadIds = uniqueUuidList(body?.leadIds);
+          const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+          const unit = getUnitFromBody(session, body?.unitId ?? session.activeUnit?.id);
+          const targetUserId = typeof body?.targetUserId === "string" ? body.targetUserId.trim() : "";
+          const leadIds = uniqueUuidList(body?.leadIds);
 
-        if (!unit) {
-          return Response.json({ ok: false, error: "Unidade indisponivel." }, { status: 403 });
-        }
+          if (!unit) {
+            return Response.json({ ok: false, error: "Unidade indisponivel." }, { status: 403 });
+          }
 
-        if (!isUuid(targetUserId)) {
-          return Response.json({ ok: false, error: "Usuario invalido." }, { status: 400 });
-        }
+          if (!isUuid(targetUserId)) {
+            return Response.json({ ok: false, error: "Usuario invalido." }, { status: 400 });
+          }
 
-        if (!leadIds.length) {
-          return Response.json(
-            { ok: false, error: "Selecione ao menos um lead." },
-            { status: 400 },
-          );
-        }
+          if (!leadIds.length) {
+            return Response.json(
+              { ok: false, error: "Selecione ao menos um lead." },
+              { status: 400 },
+            );
+          }
 
-        await ensureCommercialSchema();
+          await ensureCommercialSchema();
 
-        const targetResult = await queryDb<TransferUserRow>(
-          `
-            select distinct
-              u.id,
-              u.name,
-              u.email,
-              u.role
-            from app_users u
-            left join app_user_units uu on uu.user_id = u.id and uu.unit_id = $2
-            where u.id = $1
-              and u.status = 'active'
-              and (
-                u.primary_unit_id = $2
-                or uu.user_id is not null
-                or u.role in ('DEV', 'CEO', 'CVO', 'MARKETING')
-              )
-            limit 1
-          `,
-          [targetUserId, unit.id],
-        );
-
-        if (!targetResult.rows[0]) {
-          return Response.json(
-            { ok: false, error: "Usuario de destino indisponivel." },
-            { status: 404 },
-          );
-        }
-
-        const eligibleResult = await queryDb<TransferableLeadIdRow>(
-          `
-            select id, created_by
-            from app_leads
-            where id = any($1::uuid[])
-              and unit_id = $2
-              and stage <> 'Matriculado'
-          `,
-          [leadIds, unit.id],
-        );
-        const eligibleIds = eligibleResult.rows.map((row) => row.id);
-
-        if (eligibleIds.length !== leadIds.length) {
-          return Response.json(
-            {
-              ok: false,
-              error: "Ha leads selecionados fora da unidade ou ja matriculados.",
-            },
-            { status: 400 },
-          );
-        }
-
-        const [tasksTableExists, metaEventsTableExists] = await Promise.all([
-          appCrmTasksExists(),
-          appMetaLeadEventsExists(),
-        ]);
-        await withTransaction(async (client) => {
-          await client.query(
+          const targetResult = await queryDb<TransferUserRow>(
             `
-              insert into app_lead_owner_transfers (
-                unit_id,
-                lead_id,
-                previous_owner_id,
-                next_owner_id,
-                transferred_by,
-                reason
-              )
-              select
-                unit_id,
-                id,
-                created_by,
-                $2,
-                $4,
-                $5
+              select distinct
+                u.id,
+                u.name,
+                u.email,
+                u.role
+              from app_users u
+              left join app_user_units uu on uu.user_id = u.id and uu.unit_id = $2
+              where u.id = $1
+                and u.status = 'active'
+                and (
+                  u.primary_unit_id = $2
+                  or uu.user_id is not null
+                  or u.role in ('DEV', 'CEO', 'CVO', 'MARKETING')
+                )
+              limit 1
+            `,
+            [targetUserId, unit.id],
+          );
+
+          if (!targetResult.rows[0]) {
+            return Response.json(
+              { ok: false, error: "Usuario de destino indisponivel." },
+              { status: 404 },
+            );
+          }
+
+          const eligibleResult = await queryDb<TransferableLeadIdRow>(
+            `
+              select id, created_by
               from app_leads
               where id = any($1::uuid[])
-                and unit_id = $3
-                and created_by is distinct from $2
+                and unit_id = $2
+                and stage <> 'Matriculado'
             `,
-            [
-              eligibleIds,
-              targetUserId,
-              unit.id,
-              session.user.id,
-              "Transferencia pela central de transferencias",
-            ],
+            [leadIds, unit.id],
           );
+          const eligibleIds = eligibleResult.rows.map((row) => row.id);
 
-          await client.query(
-            `
-              update app_leads
-              set created_by = $2,
-                  shared_queue = false,
-                  updated_at = now()
-              where id = any($1::uuid[])
-                and unit_id = $3
-            `,
-            [eligibleIds, targetUserId, unit.id],
-          );
+          if (eligibleIds.length !== leadIds.length) {
+            return Response.json(
+              {
+                ok: false,
+                error: "Ha leads selecionados fora da unidade ou ja matriculados.",
+              },
+              { status: 400 },
+            );
+          }
 
-          if (tasksTableExists) {
+          const [tasksTableExists, metaEventsTableExists] = await Promise.all([
+            appCrmTasksExists(),
+            appMetaLeadEventsExists(),
+          ]);
+          await withTransaction(async (client) => {
             await client.query(
               `
-                update app_crm_tasks
+                insert into app_lead_owner_transfers (
+                  unit_id,
+                  lead_id,
+                  previous_owner_id,
+                  next_owner_id,
+                  transferred_by,
+                  reason
+                )
+                select
+                  unit_id,
+                  id,
+                  created_by,
+                  $2,
+                  $4,
+                  $5
+                from app_leads
+                where id = any($1::uuid[])
+                  and unit_id = $3
+                  and created_by is distinct from $2
+              `,
+              [
+                eligibleIds,
+                targetUserId,
+                unit.id,
+                session.user.id,
+                "Transferencia pela central de transferencias",
+              ],
+            );
+
+            await client.query(
+              `
+                update app_leads
                 set created_by = $2,
+                    shared_queue = false,
                     updated_at = now()
-                where lead_id = any($1::uuid[])
-                  and status <> 'archived'
+                where id = any($1::uuid[])
+                  and unit_id = $3
               `,
-              [eligibleIds, targetUserId],
+              [eligibleIds, targetUserId, unit.id],
             );
-          }
 
-          if (metaEventsTableExists) {
-            await client.query(
-              `
-                update app_meta_lead_events
-                set assigned_user_id = $2,
-                    updated_at = now()
-                where lead_id = any($1::uuid[])
-              `,
-              [eligibleIds, targetUserId],
-            );
-          }
-        });
+            if (tasksTableExists) {
+              await client.query(
+                `
+                  update app_crm_tasks
+                  set created_by = $2,
+                      updated_at = now()
+                  where lead_id = any($1::uuid[])
+                    and status <> 'archived'
+                `,
+                [eligibleIds, targetUserId],
+              );
+            }
 
-        return Response.json({
-          ok: true,
-          transferredIds: eligibleIds,
-          targetUser: targetResult.rows[0],
+            if (metaEventsTableExists) {
+              await client.query(
+                `
+                  update app_meta_lead_events
+                  set assigned_user_id = $2,
+                      updated_at = now()
+                  where lead_id = any($1::uuid[])
+                `,
+                [eligibleIds, targetUserId],
+              );
+            }
+          });
+
+          return Response.json({
+            ok: true,
+            transferredIds: eligibleIds,
+            targetUser: targetResult.rows[0],
+          });
         });
       },
     },

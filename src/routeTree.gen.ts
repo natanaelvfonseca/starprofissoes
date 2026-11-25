@@ -47,6 +47,7 @@ import { Route as ApiAuthSessionRouteImport } from './routes/api/auth/session'
 import { Route as ApiBiReportsRouteImport } from './routes/api/bi/reports'
 import { Route as ApiCrmDashboardRouteImport } from './routes/api/crm/dashboard'
 import { Route as ApiCrmImportRouteImport } from './routes/api/crm/import'
+import { Route as ApiCrmLeadHistoryRouteImport } from './routes/api/crm/lead-history'
 import { Route as ApiCrmLeadsRouteImport } from './routes/api/crm/leads'
 import { Route as ApiCrmTasksRouteImport } from './routes/api/crm/tasks'
 import { Route as ApiCrmTransferRouteImport } from './routes/api/crm/transfer'
@@ -279,6 +280,11 @@ const ApiCrmDashboardRoute = ApiCrmDashboardRouteImport.update({
 const ApiCrmImportRoute = ApiCrmImportRouteImport.update({
   id: '/api/crm/import',
   path: '/api/crm/import',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCrmLeadHistoryRoute = ApiCrmLeadHistoryRouteImport.update({
+  id: '/api/crm/lead-history',
+  path: '/api/crm/lead-history',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiCrmLeadsRoute = ApiCrmLeadsRouteImport.update({
@@ -549,6 +555,7 @@ export interface FileRoutesByFullPath {
   '/api/bi/reports': typeof ApiBiReportsRoute
   '/api/crm/dashboard': typeof ApiCrmDashboardRoute
   '/api/crm/import': typeof ApiCrmImportRoute
+  '/api/crm/lead-history': typeof ApiCrmLeadHistoryRoute
   '/api/crm/leads': typeof ApiCrmLeadsRouteWithChildren
   '/api/crm/tasks': typeof ApiCrmTasksRoute
   '/api/crm/transfer': typeof ApiCrmTransferRoute
@@ -632,6 +639,7 @@ export interface FileRoutesByTo {
   '/api/bi/reports': typeof ApiBiReportsRoute
   '/api/crm/dashboard': typeof ApiCrmDashboardRoute
   '/api/crm/import': typeof ApiCrmImportRoute
+  '/api/crm/lead-history': typeof ApiCrmLeadHistoryRoute
   '/api/crm/leads': typeof ApiCrmLeadsRouteWithChildren
   '/api/crm/tasks': typeof ApiCrmTasksRoute
   '/api/crm/transfer': typeof ApiCrmTransferRoute
@@ -716,6 +724,7 @@ export interface FileRoutesById {
   '/api/bi/reports': typeof ApiBiReportsRoute
   '/api/crm/dashboard': typeof ApiCrmDashboardRoute
   '/api/crm/import': typeof ApiCrmImportRoute
+  '/api/crm/lead-history': typeof ApiCrmLeadHistoryRoute
   '/api/crm/leads': typeof ApiCrmLeadsRouteWithChildren
   '/api/crm/tasks': typeof ApiCrmTasksRoute
   '/api/crm/transfer': typeof ApiCrmTransferRoute
@@ -801,6 +810,7 @@ export interface FileRouteTypes {
     | '/api/bi/reports'
     | '/api/crm/dashboard'
     | '/api/crm/import'
+    | '/api/crm/lead-history'
     | '/api/crm/leads'
     | '/api/crm/tasks'
     | '/api/crm/transfer'
@@ -884,6 +894,7 @@ export interface FileRouteTypes {
     | '/api/bi/reports'
     | '/api/crm/dashboard'
     | '/api/crm/import'
+    | '/api/crm/lead-history'
     | '/api/crm/leads'
     | '/api/crm/tasks'
     | '/api/crm/transfer'
@@ -967,6 +978,7 @@ export interface FileRouteTypes {
     | '/api/bi/reports'
     | '/api/crm/dashboard'
     | '/api/crm/import'
+    | '/api/crm/lead-history'
     | '/api/crm/leads'
     | '/api/crm/tasks'
     | '/api/crm/transfer'
@@ -1048,6 +1060,7 @@ export interface RootRouteChildren {
   ApiBiReportsRoute: typeof ApiBiReportsRoute
   ApiCrmDashboardRoute: typeof ApiCrmDashboardRoute
   ApiCrmImportRoute: typeof ApiCrmImportRoute
+  ApiCrmLeadHistoryRoute: typeof ApiCrmLeadHistoryRoute
   ApiCrmLeadsRoute: typeof ApiCrmLeadsRouteWithChildren
   ApiCrmTasksRoute: typeof ApiCrmTasksRoute
   ApiCrmTransferRoute: typeof ApiCrmTransferRoute
@@ -1345,6 +1358,13 @@ declare module '@tanstack/react-router' {
       path: '/api/crm/import'
       fullPath: '/api/crm/import'
       preLoaderRoute: typeof ApiCrmImportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/crm/lead-history': {
+      id: '/api/crm/lead-history'
+      path: '/api/crm/lead-history'
+      fullPath: '/api/crm/lead-history'
+      preLoaderRoute: typeof ApiCrmLeadHistoryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/crm/leads': {
@@ -1835,6 +1855,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiBiReportsRoute: ApiBiReportsRoute,
   ApiCrmDashboardRoute: ApiCrmDashboardRoute,
   ApiCrmImportRoute: ApiCrmImportRoute,
+  ApiCrmLeadHistoryRoute: ApiCrmLeadHistoryRoute,
   ApiCrmLeadsRoute: ApiCrmLeadsRouteWithChildren,
   ApiCrmTasksRoute: ApiCrmTasksRoute,
   ApiCrmTransferRoute: ApiCrmTransferRoute,

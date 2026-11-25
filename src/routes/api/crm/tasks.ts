@@ -1,3 +1,4 @@
+import { withLeadAuditActor } from "@/lib/server/db";
 import { createFileRoute } from "@tanstack/react-router";
 import type { QueryResultRow } from "pg";
 import { CRM_TASK_STATUSES, type CrmLeadTask, type CrmTaskStatus } from "@/lib/crm-task-types";
@@ -309,79 +310,81 @@ export const Route = createFileRoute("/api/crm/tasks")({
         if (!session) {
           return Response.json({ ok: false, error: "Não autenticado." }, { status: 401 });
         }
+        return withLeadAuditActor(session.user, "task", async () => {
 
-        const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-        const leadId = readString(body?.leadId, 80);
-        const title = readString(body?.title, MAX_TITLE_LENGTH);
-        const notes = readString(body?.notes, MAX_NOTES_LENGTH);
-        const dueAtText = readString(body?.dueAt, 80);
-        const dueAt = dueAtText ? new Date(dueAtText) : null;
+          const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+          const leadId = readString(body?.leadId, 80);
+          const title = readString(body?.title, MAX_TITLE_LENGTH);
+          const notes = readString(body?.notes, MAX_NOTES_LENGTH);
+          const dueAtText = readString(body?.dueAt, 80);
+          const dueAt = dueAtText ? new Date(dueAtText) : null;
 
-        if (!isUuid(leadId)) {
-          return Response.json({ ok: false, error: "Lead inválido." }, { status: 400 });
-        }
+          if (!isUuid(leadId)) {
+            return Response.json({ ok: false, error: "Lead inválido." }, { status: 400 });
+          }
 
-        if (!title || !dueAt || Number.isNaN(dueAt.getTime())) {
-          return Response.json(
-            { ok: false, error: "Preencha o título e a data/hora da tarefa." },
-            { status: 400 },
-          );
-        }
+          if (!title || !dueAt || Number.isNaN(dueAt.getTime())) {
+            return Response.json(
+              { ok: false, error: "Preencha o título e a data/hora da tarefa." },
+              { status: 400 },
+            );
+          }
 
-        await ensureCommercialSchema();
-        await ensureCrmTaskSchema();
-        const canManageUnitLeads = canTransferLeads(session.user.role);
+          await ensureCommercialSchema();
+          await ensureCrmTaskSchema();
+          const canManageUnitLeads = canTransferLeads(session.user.role);
 
-        const leadAccess = await getLeadForUser(
-          leadId,
-          session.user.id,
-          session.activeUnit ? [session.activeUnit.id] : [],
-          canManageUnitLeads,
-        );
-
-        if ("error" in leadAccess) {
-          return Response.json(
-            { ok: false, error: leadAccess.error },
-            { status: leadAccess.status },
-          );
-        }
-
-        const result = await queryDb<TaskRow>(
-          `
-            insert into app_crm_tasks (
-              unit_id,
-              lead_id,
-              title,
-              notes,
-              due_at,
-              created_by
-            )
-            values ($1, $2, $3, $4, $5, $6)
-            returning
-              id,
-              unit_id,
-              (select name from app_units where id = $1) as unit_name,
-              lead_id,
-              $7::text as lead_name,
-              title,
-              notes,
-              due_at::text,
-              status,
-              created_at::text,
-              completed_at::text
-          `,
-          [
-            leadAccess.lead.unit_id,
-            leadAccess.lead.id,
-            title,
-            notes,
-            dueAt.toISOString(),
+          const leadAccess = await getLeadForUser(
+            leadId,
             session.user.id,
-            leadAccess.lead.full_name,
-          ],
-        );
+            session.activeUnit ? [session.activeUnit.id] : [],
+            canManageUnitLeads,
+          );
 
-        return Response.json({ task: mapTask(result.rows[0]) }, { status: 201 });
+          if ("error" in leadAccess) {
+            return Response.json(
+              { ok: false, error: leadAccess.error },
+              { status: leadAccess.status },
+            );
+          }
+
+          const result = await queryDb<TaskRow>(
+            `
+              insert into app_crm_tasks (
+                unit_id,
+                lead_id,
+                title,
+                notes,
+                due_at,
+                created_by
+              )
+              values ($1, $2, $3, $4, $5, $6)
+              returning
+                id,
+                unit_id,
+                (select name from app_units where id = $1) as unit_name,
+                lead_id,
+                $7::text as lead_name,
+                title,
+                notes,
+                due_at::text,
+                status,
+                created_at::text,
+                completed_at::text
+            `,
+            [
+              leadAccess.lead.unit_id,
+              leadAccess.lead.id,
+              title,
+              notes,
+              dueAt.toISOString(),
+              session.user.id,
+              leadAccess.lead.full_name,
+            ],
+          );
+
+          return Response.json({ task: mapTask(result.rows[0]) }, { status: 201 });
+        });
       },
       PATCH: async ({ request }) => {
         const session = await getSessionFromRequest(request);
@@ -389,55 +392,57 @@ export const Route = createFileRoute("/api/crm/tasks")({
         if (!session) {
           return Response.json({ ok: false, error: "Não autenticado." }, { status: 401 });
         }
+        return withLeadAuditActor(session.user, "task", async () => {
 
-        const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-        const taskId = readString(body?.taskId, 80);
-        const status = isTaskStatus(body?.status) ? body.status : null;
+          const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+          const taskId = readString(body?.taskId, 80);
+          const status = isTaskStatus(body?.status) ? body.status : null;
 
-        if (!isUuid(taskId)) {
-          return Response.json({ ok: false, error: "Tarefa inválida." }, { status: 400 });
-        }
+          if (!isUuid(taskId)) {
+            return Response.json({ ok: false, error: "Tarefa inválida." }, { status: 400 });
+          }
 
-        if (!status) {
-          return Response.json({ ok: false, error: "Status inválido." }, { status: 400 });
-        }
+          if (!status) {
+            return Response.json({ ok: false, error: "Status inválido." }, { status: 400 });
+          }
 
-        await ensureCrmTaskSchema();
-        const canManageUnitLeads = canTransferLeads(session.user.role);
+          await ensureCrmTaskSchema();
+          const canManageUnitLeads = canTransferLeads(session.user.role);
 
-        const taskAccess = await assertTaskForUser(
-          taskId,
-          session.user.id,
-          session.activeUnit ? [session.activeUnit.id] : [],
-          canManageUnitLeads,
-        );
-
-        if ("error" in taskAccess) {
-          return Response.json(
-            { ok: false, error: taskAccess.error },
-            { status: taskAccess.status },
+          const taskAccess = await assertTaskForUser(
+            taskId,
+            session.user.id,
+            session.activeUnit ? [session.activeUnit.id] : [],
+            canManageUnitLeads,
           );
-        }
 
-        await queryDb(
-          `
-            update app_crm_tasks
-            set
-              status = $2,
-              completed_at = case when $2 = 'done' then coalesce(completed_at, now()) else null end,
-              updated_at = now()
-            where id = $1
-          `,
-          [taskId, status],
-        );
+          if ("error" in taskAccess) {
+            return Response.json(
+              { ok: false, error: taskAccess.error },
+              { status: taskAccess.status },
+            );
+          }
 
-        const task = await getTask(taskId);
+          await queryDb(
+            `
+              update app_crm_tasks
+              set
+                status = $2,
+                completed_at = case when $2 = 'done' then coalesce(completed_at, now()) else null end,
+                updated_at = now()
+              where id = $1
+            `,
+            [taskId, status],
+          );
 
-        if (!task) {
-          return Response.json({ ok: false, error: "Tarefa não encontrada." }, { status: 404 });
-        }
+          const task = await getTask(taskId);
 
-        return Response.json({ task });
+          if (!task) {
+            return Response.json({ ok: false, error: "Tarefa não encontrada." }, { status: 404 });
+          }
+
+          return Response.json({ task });
+        });
       },
       DELETE: async ({ request }) => {
         const session = await getSessionFromRequest(request);
@@ -445,42 +450,44 @@ export const Route = createFileRoute("/api/crm/tasks")({
         if (!session) {
           return Response.json({ ok: false, error: "Não autenticado." }, { status: 401 });
         }
+        return withLeadAuditActor(session.user, "task", async () => {
 
-        const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-        const taskId = readString(body?.taskId, 80);
+          const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+          const taskId = readString(body?.taskId, 80);
 
-        if (!isUuid(taskId)) {
-          return Response.json({ ok: false, error: "Tarefa inválida." }, { status: 400 });
-        }
+          if (!isUuid(taskId)) {
+            return Response.json({ ok: false, error: "Tarefa inválida." }, { status: 400 });
+          }
 
-        await ensureCrmTaskSchema();
-        const canManageUnitLeads = canTransferLeads(session.user.role);
+          await ensureCrmTaskSchema();
+          const canManageUnitLeads = canTransferLeads(session.user.role);
 
-        const taskAccess = await assertTaskForUser(
-          taskId,
-          session.user.id,
-          session.activeUnit ? [session.activeUnit.id] : [],
-          canManageUnitLeads,
-        );
-
-        if ("error" in taskAccess) {
-          return Response.json(
-            { ok: false, error: taskAccess.error },
-            { status: taskAccess.status },
+          const taskAccess = await assertTaskForUser(
+            taskId,
+            session.user.id,
+            session.activeUnit ? [session.activeUnit.id] : [],
+            canManageUnitLeads,
           );
-        }
 
-        await queryDb(
-          `
-            update app_crm_tasks
-            set status = 'archived',
-                updated_at = now()
-            where id = $1
-          `,
-          [taskId],
-        );
+          if ("error" in taskAccess) {
+            return Response.json(
+              { ok: false, error: taskAccess.error },
+              { status: taskAccess.status },
+            );
+          }
 
-        return Response.json({ ok: true });
+          await queryDb(
+            `
+              update app_crm_tasks
+              set status = 'archived',
+                  updated_at = now()
+              where id = $1
+            `,
+            [taskId],
+          );
+
+          return Response.json({ ok: true });
+        });
       },
     },
   },

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { createServerOnlyFn } from "@tanstack/react-start";
 import type { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
@@ -5,6 +6,20 @@ import type { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
 declare global {
   var __starDbPool: Pool | undefined;
   var __starDbPoolPromise: Promise<Pool> | undefined;
+}
+
+type LeadAuditActor = { id: string; name: string; source: string };
+const leadAuditContext = new AsyncLocalStorage<LeadAuditActor>();
+
+export function withLeadAuditActor<T>(user: { id: string; name: string }, source: string, fn: () => Promise<T>) {
+  return leadAuditContext.run({ id: user.id, name: user.name, source }, fn);
+}
+
+async function setTransactionAuditActor(client: PoolClient) {
+  const actor = leadAuditContext.getStore();
+  if (actor) {
+    await client.query("select set_config('star.audit_actor_id',$1,true), set_config('star.audit_actor_name',$2,true), set_config('star.audit_source',$3,true)", [actor.id, actor.name, actor.source]);
+  }
 }
 
 const RUNTIME_SCHEMA_LOCK_KEY = "star_profissoes:runtime_schema";
@@ -63,6 +78,9 @@ export async function queryDb<TRow extends QueryResultRow = QueryResultRow>(
   text: string,
   values: ReadonlyArray<unknown> = [],
 ): Promise<QueryResult<TRow>> {
+  if (leadAuditContext.getStore() && /^\s*(insert|update|delete|with)\b/i.test(text)) {
+    return withTransaction((client) => client.query<TRow>(text, [...values]));
+  }
   const pool = await getDbPool();
 
   return pool.query<TRow>(text, [...values]);
@@ -109,6 +127,7 @@ export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>)
 
   try {
     await client.query("begin");
+    await setTransactionAuditActor(client);
     const result = await fn(client);
     await client.query("commit");
     return result;

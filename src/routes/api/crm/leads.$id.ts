@@ -1,3 +1,4 @@
+import { withLeadAuditActor } from "@/lib/server/db";
 import { createFileRoute } from "@tanstack/react-router";
 import type { QueryResultRow } from "pg";
 import type { LeadStage } from "@/lib/commercial-types";
@@ -270,431 +271,433 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
         if (!session) {
           return Response.json({ ok: false, error: "Não autenticado." }, { status: 401 });
         }
+        return withLeadAuditActor(session.user, "lead_edit", async () => {
 
-        if (!isUuid(params.id)) {
-          return Response.json({ ok: false, error: "Lead inválido." }, { status: 400 });
-        }
+          if (!isUuid(params.id)) {
+            return Response.json({ ok: false, error: "Lead inválido." }, { status: 400 });
+          }
 
-        const body = await request.json().catch(() => null);
-        const payload = parseLeadUpdate(body);
-        const nextStage = payload.stage || parseStage(body);
-        const pipelineMove = body as {
-          pipelineColumnId?: unknown;
-          studentPipelineColumnId?: unknown;
-          returnToLead?: unknown;
-        } | null;
-        const requestedLeadColumnId =
-          typeof pipelineMove?.pipelineColumnId === "string"
-            ? pipelineMove.pipelineColumnId.trim()
-            : "";
-        const requestedStudentColumnId =
-          typeof pipelineMove?.studentPipelineColumnId === "string"
-            ? pipelineMove.studentPipelineColumnId.trim()
-            : "";
+          const body = await request.json().catch(() => null);
+          const payload = parseLeadUpdate(body);
+          const nextStage = payload.stage || parseStage(body);
+          const pipelineMove = body as {
+            pipelineColumnId?: unknown;
+            studentPipelineColumnId?: unknown;
+            returnToLead?: unknown;
+          } | null;
+          const requestedLeadColumnId =
+            typeof pipelineMove?.pipelineColumnId === "string"
+              ? pipelineMove.pipelineColumnId.trim()
+              : "";
+          const requestedStudentColumnId =
+            typeof pipelineMove?.studentPipelineColumnId === "string"
+              ? pipelineMove.studentPipelineColumnId.trim()
+              : "";
 
-        await ensureCommercialSchema();
-        await ensureCourseAttendanceSchema();
+          await ensureCommercialSchema();
+          await ensureCourseAttendanceSchema();
 
-        const leadResult = await queryDb<LeadEditableRow>(
-          `
-            select
-              unit_id,
-              created_by,
-              full_name,
-              phone,
-              phone2,
-              email,
-              city,
-              attendance_id,
-              course_id,
-              acquisition_channel_id,
-              acquisition_channel_name_snapshot,
-              observations,
-              stage,
-              shared_queue
-            from app_leads
-            where id = $1
-            limit 1
-          `,
-          [params.id],
-        );
-
-        const lead = leadResult.rows[0];
-
-        if (!lead) {
-          return Response.json({ ok: false, error: "Lead não encontrado." }, { status: 404 });
-        }
-
-        if (!session.units.some((unit) => unit.id === lead.unit_id)) {
-          return Response.json({ ok: false, error: "Acesso negado." }, { status: 403 });
-        }
-
-        const canManageUnitLeads = canTransferLeads(session.user.role);
-        const canOperate = canOperateCrm(session.user.role);
-        const canClaim = canClaimLeads(session.user.role);
-        const isSharedNewLead =
-          lead.shared_queue && lead.stage === "Novo lead" && Boolean(lead.attendance_id);
-        const userCanAccessSharedLead =
-          canClaim && isSharedNewLead && (await hasActiveUnitUser(lead.unit_id, session.user.id));
-
-        if (!canOperate && !(requestedLeadColumnId && userCanAccessSharedLead)) {
-          return Response.json(
-            {
-              ok: false,
-              error: "Seu perfil pode pegar leads livres, mas não alterar este registro.",
-            },
-            { status: 403 },
+          const leadResult = await queryDb<LeadEditableRow>(
+            `
+              select
+                unit_id,
+                created_by,
+                full_name,
+                phone,
+                phone2,
+                email,
+                city,
+                attendance_id,
+                course_id,
+                acquisition_channel_id,
+                acquisition_channel_name_snapshot,
+                observations,
+                stage,
+                shared_queue
+              from app_leads
+              where id = $1
+              limit 1
+            `,
+            [params.id],
           );
-        }
 
-        if (
-          !canManageUnitLeads &&
-          lead.created_by !== session.user.id &&
-          !userCanAccessSharedLead
-        ) {
-          return Response.json(
-            {
-              ok: false,
-              error:
-                session.user.role === "CONSULTOR"
-                  ? "Este lead já foi assumido por outro usuário."
-                  : "Acesso negado.",
-            },
-            { status: session.user.role === "CONSULTOR" ? 409 : 403 },
-          );
-        }
+          const lead = leadResult.rows[0];
 
-        if (pipelineMove?.returnToLead === true) {
-          if (!canReturnStudentToLead(session.user.role)) {
+          if (!lead) {
+            return Response.json({ ok: false, error: "Lead não encontrado." }, { status: 404 });
+          }
+
+          if (!session.units.some((unit) => unit.id === lead.unit_id)) {
             return Response.json({ ok: false, error: "Acesso negado." }, { status: 403 });
           }
 
-          try {
-            const reverted = await returnStudentToLead(params.id);
-            return Response.json({ ok: true, ...reverted });
-          } catch (error) {
-            if (error instanceof LeadPipelineMoveError) {
-              return Response.json({ ok: false, error: error.message }, { status: error.status });
-            }
-            throw error;
-          }
-        }
+          const canManageUnitLeads = canTransferLeads(session.user.role);
+          const canOperate = canOperateCrm(session.user.role);
+          const canClaim = canClaimLeads(session.user.role);
+          const isSharedNewLead =
+            lead.shared_queue && lead.stage === "Novo lead" && Boolean(lead.attendance_id);
+          const userCanAccessSharedLead =
+            canClaim && isSharedNewLead && (await hasActiveUnitUser(lead.unit_id, session.user.id));
 
-        if (requestedLeadColumnId || requestedStudentColumnId) {
-          const columnId = requestedLeadColumnId || requestedStudentColumnId;
-          if (!isUuid(columnId)) {
-            return Response.json({ ok: false, error: "Coluna inválida." }, { status: 400 });
-          }
-
-          const expectedPipeline = requestedLeadColumnId ? "leads" : "students";
-          const columnResult = await queryDb<PipelineMoveRow>(
-            `
-              select id, pipeline_type, semantic_stage
-              from app_pipeline_columns
-              where id = $1 and unit_id = $2 and pipeline_type = $3
-              limit 1
-            `,
-            [columnId, lead.unit_id, expectedPipeline],
-          );
-          const column = columnResult.rows[0];
-          if (!column) {
-            return Response.json({ ok: false, error: "Coluna não encontrada." }, { status: 404 });
-          }
-
-          if (expectedPipeline === "students") {
-            if (lead.stage !== "Matriculado") {
-              return Response.json(
-                { ok: false, error: "Este registro ainda não é um aluno." },
-                { status: 400 },
-              );
-            }
-            await queryDb(
-              `update app_leads set student_pipeline_column_id = $2, updated_at = now() where id = $1`,
-              [params.id, column.id],
-            );
-            return Response.json({ ok: true, studentPipelineColumnId: column.id });
-          }
-
-          if (isSharedNewLead && !userCanAccessSharedLead) {
+          if (!canOperate && !(requestedLeadColumnId && userCanAccessSharedLead)) {
             return Response.json(
-              { ok: false, error: "Um usuário ativo com acesso à unidade deve assumir este lead." },
+              {
+                ok: false,
+                error: "Seu perfil pode pegar leads livres, mas não alterar este registro.",
+              },
               { status: 403 },
             );
           }
 
-          try {
-            const moved = await moveLeadToPipelineColumn({
-              leadId: params.id,
-              pipelineColumnId: column.id,
-              claimUserId: isSharedNewLead ? session.user.id : null,
-            });
+          if (
+            !canManageUnitLeads &&
+            lead.created_by !== session.user.id &&
+            !userCanAccessSharedLead
+          ) {
+            return Response.json(
+              {
+                ok: false,
+                error:
+                  session.user.role === "CONSULTOR"
+                    ? "Este lead já foi assumido por outro usuário."
+                    : "Acesso negado.",
+              },
+              { status: session.user.role === "CONSULTOR" ? 409 : 403 },
+            );
+          }
+
+          if (pipelineMove?.returnToLead === true) {
+            if (!canReturnStudentToLead(session.user.role)) {
+              return Response.json({ ok: false, error: "Acesso negado." }, { status: 403 });
+            }
+
+            try {
+              const reverted = await returnStudentToLead(params.id);
+              return Response.json({ ok: true, ...reverted });
+            } catch (error) {
+              if (error instanceof LeadPipelineMoveError) {
+                return Response.json({ ok: false, error: error.message }, { status: error.status });
+              }
+              throw error;
+            }
+          }
+
+          if (requestedLeadColumnId || requestedStudentColumnId) {
+            const columnId = requestedLeadColumnId || requestedStudentColumnId;
+            if (!isUuid(columnId)) {
+              return Response.json({ ok: false, error: "Coluna inválida." }, { status: 400 });
+            }
+
+            const expectedPipeline = requestedLeadColumnId ? "leads" : "students";
+            const columnResult = await queryDb<PipelineMoveRow>(
+              `
+                select id, pipeline_type, semantic_stage
+                from app_pipeline_columns
+                where id = $1 and unit_id = $2 and pipeline_type = $3
+                limit 1
+              `,
+              [columnId, lead.unit_id, expectedPipeline],
+            );
+            const column = columnResult.rows[0];
+            if (!column) {
+              return Response.json({ ok: false, error: "Coluna não encontrada." }, { status: 404 });
+            }
+
+            if (expectedPipeline === "students") {
+              if (lead.stage !== "Matriculado") {
+                return Response.json(
+                  { ok: false, error: "Este registro ainda não é um aluno." },
+                  { status: 400 },
+                );
+              }
+              await queryDb(
+                `update app_leads set student_pipeline_column_id = $2, updated_at = now() where id = $1`,
+                [params.id, column.id],
+              );
+              return Response.json({ ok: true, studentPipelineColumnId: column.id });
+            }
+
+            if (isSharedNewLead && !userCanAccessSharedLead) {
+              return Response.json(
+                { ok: false, error: "Um usuário ativo com acesso à unidade deve assumir este lead." },
+                { status: 403 },
+              );
+            }
+
+            try {
+              const moved = await moveLeadToPipelineColumn({
+                leadId: params.id,
+                pipelineColumnId: column.id,
+                claimUserId: isSharedNewLead ? session.user.id : null,
+              });
+
+              return Response.json({
+                ok: true,
+                claimed: moved.claimed,
+                stage: moved.stage,
+                pipelineColumnId: moved.pipelineColumnId,
+                createdById: moved.createdById,
+                createdByName: moved.claimed ? session.user.name : undefined,
+                sharedQueue: moved.sharedQueue,
+              });
+            } catch (error) {
+              if (error instanceof LeadPipelineMoveError) {
+                return Response.json({ ok: false, error: error.message }, { status: error.status });
+              }
+              throw error;
+            }
+          }
+
+          if (isSharedNewLead) {
+            return Response.json(
+              { ok: false, error: "Mova o lead para outra etapa para iniciar o atendimento." },
+              { status: 409 },
+            );
+          }
+
+          if (!payload.fullName || !payload.phone) {
+            if (!nextStage || !allowedStages.includes(nextStage as LeadStage)) {
+              return Response.json(
+                { ok: false, error: "Nome completo e telefone são obrigatórios." },
+                { status: 400 },
+              );
+            }
+          }
+
+          const hasLeadFields =
+            payload.fullName ||
+            payload.phone ||
+            payload.phone2 !== "" ||
+            payload.email !== "" ||
+            payload.city !== "" ||
+            payload.attendanceId !== "" ||
+            payload.courseId !== "" ||
+            payload.acquisitionChannelId !== "" ||
+            payload.observations !== "";
+
+          if (!hasLeadFields && (!nextStage || !allowedStages.includes(nextStage as LeadStage))) {
+            return Response.json({ ok: false, error: "Dados insuficientes." }, { status: 400 });
+          }
+
+          const resolvedStage =
+            nextStage && allowedStages.includes(nextStage as LeadStage)
+              ? (nextStage as LeadStage)
+              : lead.stage;
+
+          if (isSharedNewLead && resolvedStage !== "Novo lead") {
+            return Response.json(
+              {
+                ok: false,
+                error: "Um usuário ativo da unidade deve assumir o lead pelo pipeline.",
+              },
+              { status: 409 },
+            );
+          }
+
+          if (payload.fullName && payload.phone) {
+            let attendance: AttendanceSnapshotRow | null = null;
+
+            if (payload.attendanceId) {
+              if (!isUuid(payload.attendanceId)) {
+                return Response.json(
+                  { ok: false, error: "Selecione uma turma válida." },
+                  { status: 400 },
+                );
+              }
+              const attendanceResult = await queryDb<AttendanceSnapshotRow>(
+                `
+                  select a.id, a.course_id, c.name as course_name, c.value::text as course_value,
+                    a.city, a.state, a.status
+                  from app_course_attendances a
+                  inner join app_courses c on c.id = a.course_id
+                  where a.id = $1 and a.unit_id = $2
+                    and (a.status = 'active' or a.id = $3)
+                  limit 1
+                `,
+                [payload.attendanceId, lead.unit_id, lead.attendance_id],
+              );
+              attendance = attendanceResult.rows[0] ?? null;
+              if (!attendance) {
+                return Response.json(
+                  { ok: false, error: "Não é permitido escolher outra turma inativa." },
+                  { status: 400 },
+                );
+              }
+            }
+
+            const consultantEditingOwnLead = session.user.role === "CONSULTOR";
+            const channelResult = consultantEditingOwnLead
+              ? { channel: null }
+              : await getChannelSnapshot(payload.acquisitionChannelId, lead.unit_id);
+
+            if ("error" in channelResult && channelResult.error) {
+              return Response.json(
+                { ok: false, error: channelResult.error },
+                { status: channelResult.status },
+              );
+            }
+
+            const resolvedCity = attendance
+              ? `${attendance.city} - ${attendance.state}`
+              : payload.city;
+            const releaseToSharedQueue = resolvedStage === "Novo lead" && Boolean(attendance);
+
+            await queryDb(
+              `
+                update app_leads
+                set
+                  full_name = $2,
+                  phone = $3,
+                  phone2 = nullif($4, ''),
+                  email = nullif($5, ''),
+                  city = nullif($6, ''),
+                  attendance_id = $7,
+                  course_id = $8,
+                  course_name_snapshot = $9,
+                  course_value_snapshot = $10,
+                  acquisition_channel_id = $11,
+                  acquisition_channel_name_snapshot = $12,
+                  observations = nullif($13, ''),
+                  pre_enrollment_stage = case
+                    when $14 = 'Matriculado' and stage <> 'Matriculado' then stage
+                    else pre_enrollment_stage
+                  end,
+                  pre_enrollment_pipeline_column_id = case
+                    when $14 = 'Matriculado' and stage <> 'Matriculado' then pipeline_column_id
+                    else pre_enrollment_pipeline_column_id
+                  end,
+                  pipeline_column_id = case when $14 <> stage then null else pipeline_column_id end,
+                  stage = $14,
+                  shared_queue = $16,
+                  created_by = case when $16 then null else created_by end,
+                  first_contact_at = case
+                    when $14 <> 'Novo lead' then coalesce(first_contact_at, now())
+                    else first_contact_at
+                  end,
+                  last_follow_up_at = case
+                    when $14 <> stage and $14 <> 'Novo lead' then now()
+                    else last_follow_up_at
+                  end,
+                  follow_up_count = case
+                    when $14 <> stage and $14 <> 'Novo lead' then follow_up_count + 1
+                    else follow_up_count
+                  end,
+                  converted_at = case
+                    when $14 = 'Matriculado' then coalesce(converted_at, now())
+                    else converted_at
+                  end,
+                  converted_by = case
+                    when $14 = 'Matriculado' then coalesce(converted_by, $15)
+                    else converted_by
+                  end,
+                  payment_status = case
+                    when $14 = 'Matriculado' then 'paid'
+                    else payment_status
+                  end,
+                  payment_confirmed_at = case
+                    when $14 = 'Matriculado' then coalesce(payment_confirmed_at, now())
+                    else payment_confirmed_at
+                  end,
+                  updated_at = now()
+                where id = $1
+              `,
+              [
+                params.id,
+                payload.fullName,
+                payload.phone,
+                payload.phone2,
+                payload.email,
+                resolvedCity,
+                attendance?.id ?? null,
+                attendance?.course_id ?? null,
+                attendance?.course_name ?? null,
+                attendance ? Number(attendance.course_value) : null,
+                consultantEditingOwnLead
+                  ? lead.acquisition_channel_id
+                  : (channelResult.channel?.id ?? null),
+                consultantEditingOwnLead
+                  ? lead.acquisition_channel_name_snapshot
+                  : (channelResult.channel?.name ?? null),
+                payload.observations,
+                resolvedStage,
+                session.user.id,
+                releaseToSharedQueue,
+              ],
+            );
+
+            if (resolvedStage === "Matriculado") {
+              await recordPaidStudentPayment(params.id, session.user.id);
+            }
 
             return Response.json({
               ok: true,
-              claimed: moved.claimed,
-              stage: moved.stage,
-              pipelineColumnId: moved.pipelineColumnId,
-              createdById: moved.createdById,
-              createdByName: moved.claimed ? session.user.name : undefined,
-              sharedQueue: moved.sharedQueue,
+              stage: resolvedStage,
+              sharedQueue: releaseToSharedQueue,
             });
-          } catch (error) {
-            if (error instanceof LeadPipelineMoveError) {
-              return Response.json({ ok: false, error: error.message }, { status: error.status });
-            }
-            throw error;
           }
-        }
 
-        if (isSharedNewLead) {
-          return Response.json(
-            { ok: false, error: "Mova o lead para outra etapa para iniciar o atendimento." },
-            { status: 409 },
-          );
-        }
-
-        if (!payload.fullName || !payload.phone) {
           if (!nextStage || !allowedStages.includes(nextStage as LeadStage)) {
-            return Response.json(
-              { ok: false, error: "Nome completo e telefone são obrigatórios." },
-              { status: 400 },
-            );
-          }
-        }
-
-        const hasLeadFields =
-          payload.fullName ||
-          payload.phone ||
-          payload.phone2 !== "" ||
-          payload.email !== "" ||
-          payload.city !== "" ||
-          payload.attendanceId !== "" ||
-          payload.courseId !== "" ||
-          payload.acquisitionChannelId !== "" ||
-          payload.observations !== "";
-
-        if (!hasLeadFields && (!nextStage || !allowedStages.includes(nextStage as LeadStage))) {
-          return Response.json({ ok: false, error: "Dados insuficientes." }, { status: 400 });
-        }
-
-        const resolvedStage =
-          nextStage && allowedStages.includes(nextStage as LeadStage)
-            ? (nextStage as LeadStage)
-            : lead.stage;
-
-        if (isSharedNewLead && resolvedStage !== "Novo lead") {
-          return Response.json(
-            {
-              ok: false,
-              error: "Um usuário ativo da unidade deve assumir o lead pelo pipeline.",
-            },
-            { status: 409 },
-          );
-        }
-
-        if (payload.fullName && payload.phone) {
-          let attendance: AttendanceSnapshotRow | null = null;
-
-          if (payload.attendanceId) {
-            if (!isUuid(payload.attendanceId)) {
-              return Response.json(
-                { ok: false, error: "Selecione uma turma válida." },
-                { status: 400 },
-              );
-            }
-            const attendanceResult = await queryDb<AttendanceSnapshotRow>(
-              `
-                select a.id, a.course_id, c.name as course_name, c.value::text as course_value,
-                  a.city, a.state, a.status
-                from app_course_attendances a
-                inner join app_courses c on c.id = a.course_id
-                where a.id = $1 and a.unit_id = $2
-                  and (a.status = 'active' or a.id = $3)
-                limit 1
-              `,
-              [payload.attendanceId, lead.unit_id, lead.attendance_id],
-            );
-            attendance = attendanceResult.rows[0] ?? null;
-            if (!attendance) {
-              return Response.json(
-                { ok: false, error: "Não é permitido escolher outra turma inativa." },
-                { status: 400 },
-              );
-            }
+            return Response.json({ ok: false, error: "Estágio inválido." }, { status: 400 });
           }
 
-          const consultantEditingOwnLead = session.user.role === "CONSULTOR";
-          const channelResult = consultantEditingOwnLead
-            ? { channel: null }
-            : await getChannelSnapshot(payload.acquisitionChannelId, lead.unit_id);
-
-          if ("error" in channelResult && channelResult.error) {
-            return Response.json(
-              { ok: false, error: channelResult.error },
-              { status: channelResult.status },
-            );
-          }
-
-          const resolvedCity = attendance
-            ? `${attendance.city} - ${attendance.state}`
-            : payload.city;
-          const releaseToSharedQueue = resolvedStage === "Novo lead" && Boolean(attendance);
+          const releaseToSharedQueue = nextStage === "Novo lead" && Boolean(lead.attendance_id);
 
           await queryDb(
             `
               update app_leads
               set
-                full_name = $2,
-                phone = $3,
-                phone2 = nullif($4, ''),
-                email = nullif($5, ''),
-                city = nullif($6, ''),
-                attendance_id = $7,
-                course_id = $8,
-                course_name_snapshot = $9,
-                course_value_snapshot = $10,
-                acquisition_channel_id = $11,
-                acquisition_channel_name_snapshot = $12,
-                observations = nullif($13, ''),
                 pre_enrollment_stage = case
-                  when $14 = 'Matriculado' and stage <> 'Matriculado' then stage
+                  when $2 = 'Matriculado' and stage <> 'Matriculado' then stage
                   else pre_enrollment_stage
                 end,
                 pre_enrollment_pipeline_column_id = case
-                  when $14 = 'Matriculado' and stage <> 'Matriculado' then pipeline_column_id
+                  when $2 = 'Matriculado' and stage <> 'Matriculado' then pipeline_column_id
                   else pre_enrollment_pipeline_column_id
                 end,
-                pipeline_column_id = case when $14 <> stage then null else pipeline_column_id end,
-                stage = $14,
-                shared_queue = $16,
-                created_by = case when $16 then null else created_by end,
+                pipeline_column_id = case when $2 <> stage then null else pipeline_column_id end,
+                stage = $2,
+                shared_queue = $4,
+                created_by = case when $4 then null else created_by end,
                 first_contact_at = case
-                  when $14 <> 'Novo lead' then coalesce(first_contact_at, now())
+                  when $2 <> 'Novo lead' then coalesce(first_contact_at, now())
                   else first_contact_at
                 end,
                 last_follow_up_at = case
-                  when $14 <> stage and $14 <> 'Novo lead' then now()
+                  when $2 <> stage and $2 <> 'Novo lead' then now()
                   else last_follow_up_at
                 end,
                 follow_up_count = case
-                  when $14 <> stage and $14 <> 'Novo lead' then follow_up_count + 1
+                  when $2 <> stage and $2 <> 'Novo lead' then follow_up_count + 1
                   else follow_up_count
                 end,
                 converted_at = case
-                  when $14 = 'Matriculado' then coalesce(converted_at, now())
+                  when $2 = 'Matriculado' then coalesce(converted_at, now())
                   else converted_at
                 end,
                 converted_by = case
-                  when $14 = 'Matriculado' then coalesce(converted_by, $15)
+                  when $2 = 'Matriculado' then coalesce(converted_by, $3)
                   else converted_by
                 end,
                 payment_status = case
-                  when $14 = 'Matriculado' then 'paid'
+                  when $2 = 'Matriculado' then 'paid'
                   else payment_status
                 end,
                 payment_confirmed_at = case
-                  when $14 = 'Matriculado' then coalesce(payment_confirmed_at, now())
+                  when $2 = 'Matriculado' then coalesce(payment_confirmed_at, now())
                   else payment_confirmed_at
                 end,
                 updated_at = now()
               where id = $1
             `,
-            [
-              params.id,
-              payload.fullName,
-              payload.phone,
-              payload.phone2,
-              payload.email,
-              resolvedCity,
-              attendance?.id ?? null,
-              attendance?.course_id ?? null,
-              attendance?.course_name ?? null,
-              attendance ? Number(attendance.course_value) : null,
-              consultantEditingOwnLead
-                ? lead.acquisition_channel_id
-                : (channelResult.channel?.id ?? null),
-              consultantEditingOwnLead
-                ? lead.acquisition_channel_name_snapshot
-                : (channelResult.channel?.name ?? null),
-              payload.observations,
-              resolvedStage,
-              session.user.id,
-              releaseToSharedQueue,
-            ],
+            [params.id, nextStage, session.user.id, releaseToSharedQueue],
           );
 
-          if (resolvedStage === "Matriculado") {
+          if (nextStage === "Matriculado") {
             await recordPaidStudentPayment(params.id, session.user.id);
           }
 
-          return Response.json({
-            ok: true,
-            stage: resolvedStage,
-            sharedQueue: releaseToSharedQueue,
-          });
-        }
-
-        if (!nextStage || !allowedStages.includes(nextStage as LeadStage)) {
-          return Response.json({ ok: false, error: "Estágio inválido." }, { status: 400 });
-        }
-
-        const releaseToSharedQueue = nextStage === "Novo lead" && Boolean(lead.attendance_id);
-
-        await queryDb(
-          `
-            update app_leads
-            set
-              pre_enrollment_stage = case
-                when $2 = 'Matriculado' and stage <> 'Matriculado' then stage
-                else pre_enrollment_stage
-              end,
-              pre_enrollment_pipeline_column_id = case
-                when $2 = 'Matriculado' and stage <> 'Matriculado' then pipeline_column_id
-                else pre_enrollment_pipeline_column_id
-              end,
-              pipeline_column_id = case when $2 <> stage then null else pipeline_column_id end,
-              stage = $2,
-              shared_queue = $4,
-              created_by = case when $4 then null else created_by end,
-              first_contact_at = case
-                when $2 <> 'Novo lead' then coalesce(first_contact_at, now())
-                else first_contact_at
-              end,
-              last_follow_up_at = case
-                when $2 <> stage and $2 <> 'Novo lead' then now()
-                else last_follow_up_at
-              end,
-              follow_up_count = case
-                when $2 <> stage and $2 <> 'Novo lead' then follow_up_count + 1
-                else follow_up_count
-              end,
-              converted_at = case
-                when $2 = 'Matriculado' then coalesce(converted_at, now())
-                else converted_at
-              end,
-              converted_by = case
-                when $2 = 'Matriculado' then coalesce(converted_by, $3)
-                else converted_by
-              end,
-              payment_status = case
-                when $2 = 'Matriculado' then 'paid'
-                else payment_status
-              end,
-              payment_confirmed_at = case
-                when $2 = 'Matriculado' then coalesce(payment_confirmed_at, now())
-                else payment_confirmed_at
-              end,
-              updated_at = now()
-            where id = $1
-          `,
-          [params.id, nextStage, session.user.id, releaseToSharedQueue],
-        );
-
-        if (nextStage === "Matriculado") {
-          await recordPaidStudentPayment(params.id, session.user.id);
-        }
-
-        return Response.json({ ok: true, stage: nextStage, sharedQueue: releaseToSharedQueue });
+          return Response.json({ ok: true, stage: nextStage, sharedQueue: releaseToSharedQueue });
+        });
       },
       DELETE: async ({ request, params }) => {
         const session = await getSessionFromRequest(request);
@@ -702,52 +705,54 @@ export const Route = createFileRoute("/api/crm/leads/$id")({
         if (!session) {
           return Response.json({ ok: false, error: "Não autenticado." }, { status: 401 });
         }
+        return withLeadAuditActor(session.user, "lead_delete", async () => {
 
-        if (!canOperateCrm(session.user.role)) {
-          return Response.json(
-            { ok: false, error: "Acesso somente para leitura." },
-            { status: 403 },
+          if (!canOperateCrm(session.user.role)) {
+            return Response.json(
+              { ok: false, error: "Acesso somente para leitura." },
+              { status: 403 },
+            );
+          }
+
+          if (!isUuid(params.id)) {
+            return Response.json({ ok: false, error: "Lead inválido." }, { status: 400 });
+          }
+
+          await ensureCommercialSchema();
+
+          const leadResult = await queryDb<LeadUnitRow>(
+            `
+              select unit_id, created_by
+              from app_leads
+              where id = $1
+              limit 1
+            `,
+            [params.id],
           );
-        }
+          const lead = leadResult.rows[0];
 
-        if (!isUuid(params.id)) {
-          return Response.json({ ok: false, error: "Lead inválido." }, { status: 400 });
-        }
+          if (!lead) {
+            return Response.json({ ok: false, error: "Lead não encontrado." }, { status: 404 });
+          }
 
-        await ensureCommercialSchema();
+          if (!session.units.some((unit) => unit.id === lead.unit_id)) {
+            return Response.json({ ok: false, error: "Acesso negado." }, { status: 403 });
+          }
 
-        const leadResult = await queryDb<LeadUnitRow>(
-          `
-            select unit_id, created_by
-            from app_leads
-            where id = $1
-            limit 1
-          `,
-          [params.id],
-        );
-        const lead = leadResult.rows[0];
+          if (!canTransferLeads(session.user.role)) {
+            return Response.json({ ok: false, error: "Acesso negado." }, { status: 403 });
+          }
 
-        if (!lead) {
-          return Response.json({ ok: false, error: "Lead não encontrado." }, { status: 404 });
-        }
+          await queryDb(
+            `
+              delete from app_leads
+              where id = $1
+            `,
+            [params.id],
+          );
 
-        if (!session.units.some((unit) => unit.id === lead.unit_id)) {
-          return Response.json({ ok: false, error: "Acesso negado." }, { status: 403 });
-        }
-
-        if (!canTransferLeads(session.user.role)) {
-          return Response.json({ ok: false, error: "Acesso negado." }, { status: 403 });
-        }
-
-        await queryDb(
-          `
-            delete from app_leads
-            where id = $1
-          `,
-          [params.id],
-        );
-
-        return Response.json({ ok: true });
+          return Response.json({ ok: true });
+        });
       },
     },
   },

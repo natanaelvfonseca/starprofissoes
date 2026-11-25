@@ -1,3 +1,4 @@
+import { withLeadAuditActor } from "@/lib/server/db";
 import { createFileRoute } from "@tanstack/react-router";
 import type { QueryResultRow } from "pg";
 import type { LeadRecord, LeadStage, PipelineColumn, PipelineType } from "@/lib/commercial-types";
@@ -519,143 +520,145 @@ export const Route = createFileRoute("/api/crm/leads")({
         if (!session) {
           return Response.json({ ok: false, error: "Não autenticado." }, { status: 401 });
         }
+        return withLeadAuditActor(session.user, "manual_create", async () => {
 
-        if (!canOperateCrm(session.user.role)) {
-          return Response.json(
-            { ok: false, error: "Acesso somente para leitura." },
-            { status: 403 },
-          );
-        }
-
-        const body = await request.json().catch(() => null);
-        const payload = parseLeadPayload(body);
-        const unit = getUnitFromBody(session, payload.unitId);
-
-        if (!unit) {
-          return Response.json({ ok: false, error: "Unidade indisponível." }, { status: 403 });
-        }
-
-        if (!payload.fullName || !payload.phone) {
-          return Response.json(
-            { ok: false, error: "Nome completo e telefone são obrigatórios." },
-            { status: 400 },
-          );
-        }
-
-        await ensureCommercialSchema();
-        await ensureCourseAttendanceSchema();
-
-        let attendance: AttendanceSnapshotRow | null = null;
-
-        if (payload.attendanceId) {
-          if (!isUuid(payload.attendanceId)) {
+          if (!canOperateCrm(session.user.role)) {
             return Response.json(
-              { ok: false, error: "Selecione uma turma válida." },
+              { ok: false, error: "Acesso somente para leitura." },
+              { status: 403 },
+            );
+          }
+
+          const body = await request.json().catch(() => null);
+          const payload = parseLeadPayload(body);
+          const unit = getUnitFromBody(session, payload.unitId);
+
+          if (!unit) {
+            return Response.json({ ok: false, error: "Unidade indisponível." }, { status: 403 });
+          }
+
+          if (!payload.fullName || !payload.phone) {
+            return Response.json(
+              { ok: false, error: "Nome completo e telefone são obrigatórios." },
               { status: 400 },
             );
           }
 
-          const attendanceResult = await queryDb<AttendanceSnapshotRow>(
+          await ensureCommercialSchema();
+          await ensureCourseAttendanceSchema();
+
+          let attendance: AttendanceSnapshotRow | null = null;
+
+          if (payload.attendanceId) {
+            if (!isUuid(payload.attendanceId)) {
+              return Response.json(
+                { ok: false, error: "Selecione uma turma válida." },
+                { status: 400 },
+              );
+            }
+
+            const attendanceResult = await queryDb<AttendanceSnapshotRow>(
+              `
+                select a.id, a.unit_id, a.course_id, c.name as course_name, c.value::text as course_value,
+                  a.city, a.state
+                from app_course_attendances a
+                inner join app_courses c on c.id = a.course_id
+                where a.id = $1 and a.unit_id = $2 and a.status = 'active' and c.status = 'active'
+                limit 1
+              `,
+              [payload.attendanceId, unit.id],
+            );
+            attendance = attendanceResult.rows[0] ?? null;
+            if (!attendance) {
+              return Response.json(
+                { ok: false, error: "Turma inativa ou indisponível nesta unidade." },
+                { status: 400 },
+              );
+            }
+          }
+          const channelResult = await getChannelSnapshot(payload.acquisitionChannelId, unit.id);
+
+          if (channelResult.error) {
+            return Response.json(
+              { ok: false, error: channelResult.error },
+              { status: channelResult.status },
+            );
+          }
+
+          const channel = channelResult.channel;
+          const resolvedCity = attendance ? `${attendance.city} - ${attendance.state}` : payload.city;
+          const releaseToSharedQueue = Boolean(attendance);
+          const result = await queryDb<LeadRow>(
             `
-              select a.id, a.unit_id, a.course_id, c.name as course_name, c.value::text as course_value,
-                a.city, a.state
-              from app_course_attendances a
-              inner join app_courses c on c.id = a.course_id
-              where a.id = $1 and a.unit_id = $2 and a.status = 'active' and c.status = 'active'
-              limit 1
+              insert into app_leads (
+                unit_id,
+                attendance_id,
+                full_name,
+                phone,
+                phone2,
+                email,
+                city,
+                course_id,
+                course_name_snapshot,
+                course_value_snapshot,
+                acquisition_channel_id,
+                acquisition_channel_name_snapshot,
+                observations,
+                shared_queue,
+                created_by
+              )
+              values ($1, $2, $3, $4, nullif($5, ''), nullif($6, ''), nullif($7, ''), $8, $9, $10, $11, $12, nullif($13, ''), $14, $15)
+              returning
+                id,
+                unit_id,
+                (select name from app_units where id = $1) as unit_name,
+                full_name,
+                phone,
+                phone2,
+                email,
+                city,
+                attendance_id,
+                (select concat(c.name, ' · ', a.city, '/', a.state, ' · ', to_char(a.class_date, 'DD/MM/YYYY'))
+                  from app_course_attendances a inner join app_courses c on c.id = a.course_id where a.id = attendance_id) as attendance_name,
+                case when attendance_id is null then null else 'active'::text end as attendance_status,
+                course_id,
+                course_name_snapshot,
+                course_value_snapshot::text,
+                acquisition_channel_id,
+                acquisition_channel_name_snapshot,
+                created_by,
+                null::text as created_by_name,
+                shared_queue,
+                observations,
+                null::text as campaign_name,
+                null::text as form_id,
+                stage,
+                created_at::text
             `,
-            [payload.attendanceId, unit.id],
+            [
+              unit.id,
+              attendance?.id ?? null,
+              payload.fullName,
+              payload.phone,
+              payload.phone2,
+              payload.email,
+              resolvedCity,
+              attendance?.course_id ?? null,
+              attendance?.course_name ?? null,
+              attendance ? Number(attendance.course_value) : null,
+              channel?.id ?? null,
+              channel?.name ?? null,
+              payload.observations,
+              releaseToSharedQueue,
+              session.user.id,
+            ],
           );
-          attendance = attendanceResult.rows[0] ?? null;
-          if (!attendance) {
-            return Response.json(
-              { ok: false, error: "Turma inativa ou indisponível nesta unidade." },
-              { status: 400 },
-            );
-          }
-        }
-        const channelResult = await getChannelSnapshot(payload.acquisitionChannelId, unit.id);
 
-        if (channelResult.error) {
           return Response.json(
-            { ok: false, error: channelResult.error },
-            { status: channelResult.status },
+            { lead: mapLead(result.rows[0], session.user.role !== "CONSULTOR") },
+            { status: 201 },
           );
-        }
-
-        const channel = channelResult.channel;
-        const resolvedCity = attendance ? `${attendance.city} - ${attendance.state}` : payload.city;
-        const releaseToSharedQueue = Boolean(attendance);
-        const result = await queryDb<LeadRow>(
-          `
-            insert into app_leads (
-              unit_id,
-              attendance_id,
-              full_name,
-              phone,
-              phone2,
-              email,
-              city,
-              course_id,
-              course_name_snapshot,
-              course_value_snapshot,
-              acquisition_channel_id,
-              acquisition_channel_name_snapshot,
-              observations,
-              shared_queue,
-              created_by
-            )
-            values ($1, $2, $3, $4, nullif($5, ''), nullif($6, ''), nullif($7, ''), $8, $9, $10, $11, $12, nullif($13, ''), $14, $15)
-            returning
-              id,
-              unit_id,
-              (select name from app_units where id = $1) as unit_name,
-              full_name,
-              phone,
-              phone2,
-              email,
-              city,
-              attendance_id,
-              (select concat(c.name, ' · ', a.city, '/', a.state, ' · ', to_char(a.class_date, 'DD/MM/YYYY'))
-                from app_course_attendances a inner join app_courses c on c.id = a.course_id where a.id = attendance_id) as attendance_name,
-              case when attendance_id is null then null else 'active'::text end as attendance_status,
-              course_id,
-              course_name_snapshot,
-              course_value_snapshot::text,
-              acquisition_channel_id,
-              acquisition_channel_name_snapshot,
-              created_by,
-              null::text as created_by_name,
-              shared_queue,
-              observations,
-              null::text as campaign_name,
-              null::text as form_id,
-              stage,
-              created_at::text
-          `,
-          [
-            unit.id,
-            attendance?.id ?? null,
-            payload.fullName,
-            payload.phone,
-            payload.phone2,
-            payload.email,
-            resolvedCity,
-            attendance?.course_id ?? null,
-            attendance?.course_name ?? null,
-            attendance ? Number(attendance.course_value) : null,
-            channel?.id ?? null,
-            channel?.name ?? null,
-            payload.observations,
-            releaseToSharedQueue,
-            session.user.id,
-          ],
-        );
-
-        return Response.json(
-          { lead: mapLead(result.rows[0], session.user.role !== "CONSULTOR") },
-          { status: 201 },
-        );
+        });
       },
     },
   },

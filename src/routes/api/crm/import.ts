@@ -1,3 +1,4 @@
+import { withLeadAuditActor } from "@/lib/server/db";
 import { createFileRoute } from "@tanstack/react-router";
 import type { QueryResultRow } from "pg";
 import { canImportLeads } from "@/lib/auth-types";
@@ -152,145 +153,147 @@ export const Route = createFileRoute("/api/crm/import")({
       POST: async ({ request }) => {
         const session = await getSessionFromRequest(request);
         if (!session) return Response.json({ error: "Não autenticado." }, { status: 401 });
-        if (!canImportLeads(session.user.role))
-          return Response.json({ error: "Consultores não podem importar leads." }, { status: 403 });
+        return withLeadAuditActor(session.user, "import", async () => {
+          if (!canImportLeads(session.user.role))
+            return Response.json({ error: "Consultores não podem importar leads." }, { status: 403 });
 
-        const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-        const unit = getUnitFromBody(session, body?.unitId);
-        if (!unit) return Response.json({ error: "Unidade indisponível." }, { status: 403 });
-        const rows = parseRows(body?.rows);
-        const skipDuplicates = body?.skipDuplicates !== false;
-        const courseId = typeof body?.courseId === "string" ? body.courseId.trim() : "";
-        const attendanceId = typeof body?.attendanceId === "string" ? body.attendanceId.trim() : "";
+          const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+          const unit = getUnitFromBody(session, body?.unitId);
+          if (!unit) return Response.json({ error: "Unidade indisponível." }, { status: 403 });
+          const rows = parseRows(body?.rows);
+          const skipDuplicates = body?.skipDuplicates !== false;
+          const courseId = typeof body?.courseId === "string" ? body.courseId.trim() : "";
+          const attendanceId = typeof body?.attendanceId === "string" ? body.attendanceId.trim() : "";
 
-        if (!rows.length)
-          return Response.json({ error: "Nenhuma linha para importar." }, { status: 400 });
-        if (!isUuid(courseId))
-          return Response.json({ error: "Selecione um curso válido." }, { status: 400 });
-        if (!isUuid(attendanceId))
-          return Response.json({ error: "Selecione uma turma válida." }, { status: 400 });
-        const invalidRows = rows.filter((row) => !row.fullName || !normalizePhone(row.phone));
-        if (invalidRows.length)
-          return Response.json(
-            { error: `${invalidRows.length} linha(s) sem nome ou telefone válido.` },
-            { status: 400 },
+          if (!rows.length)
+            return Response.json({ error: "Nenhuma linha para importar." }, { status: 400 });
+          if (!isUuid(courseId))
+            return Response.json({ error: "Selecione um curso válido." }, { status: 400 });
+          if (!isUuid(attendanceId))
+            return Response.json({ error: "Selecione uma turma válida." }, { status: 400 });
+          const invalidRows = rows.filter((row) => !row.fullName || !normalizePhone(row.phone));
+          if (invalidRows.length)
+            return Response.json(
+              { error: `${invalidRows.length} linha(s) sem nome ou telefone válido.` },
+              { status: 400 },
+            );
+
+          await ensureCommercialSchema();
+          await ensureCourseAttendanceSchema();
+          await ensureLeadImportSchema();
+          const courseResult = await queryDb<{
+            id: string;
+            name: string;
+            value: string;
+            city: string;
+            state: string;
+          }>(
+            `
+            select c.id, c.name, c.value::text, a.city, a.state
+            from app_course_attendances a
+            inner join app_courses c on c.id = a.course_id
+            where a.id = $1 and a.course_id = $2 and a.unit_id = $3
+              and a.status = 'active' and c.status = 'active'
+            limit 1
+          `,
+            [attendanceId, courseId, unit.id],
           );
+          const course = courseResult.rows[0];
+          if (!course)
+            return Response.json(
+              { error: "A turma não pertence ao curso ou à unidade selecionada." },
+              { status: 400 },
+            );
+          const city = `${course.city} - ${course.state}`;
 
-        await ensureCommercialSchema();
-        await ensureCourseAttendanceSchema();
-        await ensureLeadImportSchema();
-        const courseResult = await queryDb<{
-          id: string;
-          name: string;
-          value: string;
-          city: string;
-          state: string;
-        }>(
-          `
-          select c.id, c.name, c.value::text, a.city, a.state
-          from app_course_attendances a
-          inner join app_courses c on c.id = a.course_id
-          where a.id = $1 and a.course_id = $2 and a.unit_id = $3
-            and a.status = 'active' and c.status = 'active'
-          limit 1
-        `,
-          [attendanceId, courseId, unit.id],
-        );
-        const course = courseResult.rows[0];
-        if (!course)
-          return Response.json(
-            { error: "A turma não pertence ao curso ou à unidade selecionada." },
-            { status: 400 },
-          );
-        const city = `${course.city} - ${course.state}`;
-
-        const result = await withTransaction(async (client) => {
-          let imported = 0;
-          let duplicates = 0;
-          let updated = 0;
-          for (const row of rows) {
-            const phone = normalizePhone(row.phone);
-            const phone2 = normalizePhone(row.phone2);
-            if (skipDuplicates) {
-              const existing = await client.query<{ id: string; imported: boolean }>(
-                `
-                select l.id, (i.lead_id is not null) as imported
-                from app_leads l
-                left join app_lead_import_rows i on i.lead_id = l.id
-                where l.unit_id = $1 and (regexp_replace(l.phone, '\\D', '', 'g') = $2 or regexp_replace(coalesce(l.phone2, ''), '\\D', '', 'g') = $2)
-                limit 1
-              `,
-                [unit.id, phone],
-              );
-              if (existing.rowCount) {
-                if (existing.rows[0].imported) {
-                  await client.query(
-                    `
-                    update app_leads
-                    set city = $2,
-                        attendance_id = $3,
-                        course_id = $4,
-                        course_name_snapshot = $5,
-                        course_value_snapshot = $6,
-                        shared_queue = case when stage = 'Novo lead' then true else shared_queue end,
-                        created_by = case when stage = 'Novo lead' then null else created_by end,
-                        updated_at = now()
-                    where id = $1
-                  `,
-                    [
-                      existing.rows[0].id,
-                      city,
-                      attendanceId,
-                      course.id,
-                      course.name,
-                      Number(course.value),
-                    ],
-                  );
-                  updated += 1;
-                } else {
-                  duplicates += 1;
+          const result = await withTransaction(async (client) => {
+            let imported = 0;
+            let duplicates = 0;
+            let updated = 0;
+            for (const row of rows) {
+              const phone = normalizePhone(row.phone);
+              const phone2 = normalizePhone(row.phone2);
+              if (skipDuplicates) {
+                const existing = await client.query<{ id: string; imported: boolean }>(
+                  `
+                  select l.id, (i.lead_id is not null) as imported
+                  from app_leads l
+                  left join app_lead_import_rows i on i.lead_id = l.id
+                  where l.unit_id = $1 and (regexp_replace(l.phone, '\\D', '', 'g') = $2 or regexp_replace(coalesce(l.phone2, ''), '\\D', '', 'g') = $2)
+                  limit 1
+                `,
+                  [unit.id, phone],
+                );
+                if (existing.rowCount) {
+                  if (existing.rows[0].imported) {
+                    await client.query(
+                      `
+                      update app_leads
+                      set city = $2,
+                          attendance_id = $3,
+                          course_id = $4,
+                          course_name_snapshot = $5,
+                          course_value_snapshot = $6,
+                          shared_queue = case when stage = 'Novo lead' then true else shared_queue end,
+                          created_by = case when stage = 'Novo lead' then null else created_by end,
+                          updated_at = now()
+                      where id = $1
+                    `,
+                      [
+                        existing.rows[0].id,
+                        city,
+                        attendanceId,
+                        course.id,
+                        course.name,
+                        Number(course.value),
+                      ],
+                    );
+                    updated += 1;
+                  } else {
+                    duplicates += 1;
+                  }
+                  continue;
                 }
-                continue;
               }
+              const lead = await client.query<{ id: string }>(
+                `
+                insert into app_leads (
+                  unit_id, full_name, phone, phone2, city, attendance_id, course_id, course_name_snapshot,
+                  course_value_snapshot, observations, stage, shared_queue, created_by
+                )
+                values ($1, $2, $3, nullif($4, ''), $5, $6, $7, $8, $9, nullif($10, ''), 'Novo lead', true, null)
+                returning id
+              `,
+                [
+                  unit.id,
+                  row.fullName,
+                  phone,
+                  phone2,
+                  city,
+                  attendanceId,
+                  course.id,
+                  course.name,
+                  Number(course.value),
+                  row.observations,
+                ],
+              );
+              await client.query(
+                `
+                insert into app_lead_import_rows (lead_id, campaign_name, form_id, whatsapp_number, imported_by)
+                values ($1, nullif($2, ''), nullif($3, ''), nullif($4, ''), $5)
+              `,
+                [lead.rows[0].id, row.campaignName, row.formId, phone2, session.user.id],
+              );
+              imported += 1;
             }
-            const lead = await client.query<{ id: string }>(
-              `
-              insert into app_leads (
-                unit_id, full_name, phone, phone2, city, attendance_id, course_id, course_name_snapshot,
-                course_value_snapshot, observations, stage, shared_queue, created_by
-              )
-              values ($1, $2, $3, nullif($4, ''), $5, $6, $7, $8, $9, nullif($10, ''), 'Novo lead', true, null)
-              returning id
-            `,
-              [
-                unit.id,
-                row.fullName,
-                phone,
-                phone2,
-                city,
-                attendanceId,
-                course.id,
-                course.name,
-                Number(course.value),
-                row.observations,
-              ],
-            );
-            await client.query(
-              `
-              insert into app_lead_import_rows (lead_id, campaign_name, form_id, whatsapp_number, imported_by)
-              values ($1, nullif($2, ''), nullif($3, ''), nullif($4, ''), $5)
-            `,
-              [lead.rows[0].id, row.campaignName, row.formId, phone2, session.user.id],
-            );
-            imported += 1;
-          }
-          return {
-            imported,
-            updated,
-            duplicates,
-          };
+            return {
+              imported,
+              updated,
+              duplicates,
+            };
+          });
+          return Response.json({ ok: true, ...result });
         });
-        return Response.json({ ok: true, ...result });
       },
     },
   },

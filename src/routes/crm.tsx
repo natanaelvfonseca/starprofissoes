@@ -1,3 +1,4 @@
+import { LeadHistory } from "@/components/LeadHistory";
 import {
   resolveLeadPipelineColumn,
   kanbanHorizontalScrollStep,
@@ -2159,6 +2160,9 @@ function CRMPipeline() {
       <CreateLeadDialog
         open={leadDialogOpen}
         mode={leadDialogMode}
+        historyLeadId={editingLead?.id ?? ""}
+        historyUnitId={activeUnitId}
+        historyRefreshKey={JSON.stringify([editingLead?.updatedAt, syncingLeadId, savingLead, savingTask, updatingTaskId, removingTaskId])}
         form={form}
         courses={courses}
         attendances={attendances}
@@ -2865,6 +2869,9 @@ function TransferLeadDialog({
 function CreateLeadDialog({
   open,
   mode,
+  historyLeadId,
+  historyUnitId,
+  historyRefreshKey,
   form,
   courses,
   attendances,
@@ -2898,6 +2905,9 @@ function CreateLeadDialog({
 }: {
   open: boolean;
   mode: LeadDialogMode;
+  historyLeadId: string;
+  historyUnitId: string;
+  historyRefreshKey: string;
   form: LeadFormState;
   courses: Array<CourseRecord>;
   attendances: Array<AttendanceOption>;
@@ -3189,6 +3199,10 @@ function CreateLeadDialog({
                 </Select>
                 <p className="text-xs text-muted-foreground">A etapa é salva ao selecionar.</p>
               </div>
+            ) : null}
+
+            {open && isEditMode && historyLeadId ? (
+              <LeadHistory key={historyLeadId} leadId={historyLeadId} unitId={historyUnitId} refreshKey={historyRefreshKey} />
             ) : null}
 
             {isEditMode ? (
