@@ -233,7 +233,8 @@ const pipelineColorVisual: Record<string, { accent: string; dot: string; surface
   rose: pipelineStageVisual.Recuperação,
 };
 
-const pollingIntervalMs = 15000;
+const pollingIntervalMs = 30000;
+const leadRequestTimeoutMs = 30000;
 const leadOptionsCacheTtlMs = 5 * 60_000;
 
 type LeadOptionsData = {
@@ -492,7 +493,8 @@ function CRMPipeline() {
     attendances.find((attendance) => attendance.id === form.attendanceId) ?? null;
   const broadcastChannelRef = React.useRef<BroadcastChannel | null>(null);
   const leadRequestIdRef = React.useRef(0);
-  const leadLoadRef = React.useRef<{ unitId: string; promise: Promise<void> } | null>(null);
+  const leadLoadRef = React.useRef<{ unitId: string; promise: Promise<void>; controller: AbortController } | null>(null);
+  const leadVersionRef = React.useRef<{ unitId: string; etag: string } | null>(null);
   const optionsRequestIdRef = React.useRef(0);
   const canTransferUnitLeads = session ? canTransferLeads(session.user.role) : false;
   const canAccessTransfers = session ? canAccessLeadTransferCenter(session.user.role) : false;
@@ -625,6 +627,9 @@ function CRMPipeline() {
       if (!options?.force && currentLoad?.unitId === activeUnitId) return currentLoad.promise;
 
       const requestId = ++leadRequestIdRef.current;
+      currentLoad?.controller.abort();
+      const controller = new AbortController();
+      if (options?.force || leadVersionRef.current?.unitId !== activeUnitId) leadVersionRef.current = null;
 
       if (!activeUnitId) {
         setLeads([]);
@@ -638,15 +643,34 @@ function CRMPipeline() {
       }
 
       const promise = (async () => {
+        const timeout = window.setTimeout(() => controller.abort(), leadRequestTimeoutMs);
         try {
-          const data = await readJson<LeadsResponse>(
-            await fetch(`/api/crm/leads${unitQuery(activeUnitId)}`, {
-              credentials: "same-origin",
-              headers: { Accept: "application/json" },
-            }),
-          );
+          const headers = new Headers({ Accept: "application/json" });
+          const version = leadVersionRef.current;
+          if (version?.unitId === activeUnitId) headers.set("If-None-Match", version.etag);
+          const response = await fetch(`/api/crm/leads${unitQuery(activeUnitId)}`, {
+            credentials: "same-origin",
+            cache: "no-store",
+            headers,
+            signal: controller.signal,
+          });
+          if (response.status === 304 && version?.unitId === activeUnitId) return;
+          if (!response.ok) {
+            if ([401, 403].includes(response.status) && requestId === leadRequestIdRef.current) {
+              leadVersionRef.current = null;
+              setLeads([]);
+              setLoadedLeadsUnitId("");
+              setPipelineColumns([]);
+              setUnitOwners([]);
+            }
+            await readJson<LeadsResponse>(response);
+          }
+          const data = await response.json() as LeadsResponse;
+          if (!Array.isArray(data.leads)) throw new Error("Resposta incompleta dos leads.");
 
           if (requestId === leadRequestIdRef.current) {
+            const etag = response.headers.get("ETag");
+            leadVersionRef.current = etag ? { unitId: activeUnitId, etag } : null;
             setLeads(data.leads);
             setLoadedLeadsUnitId(activeUnitId);
             setPipelineColumns(data.pipelineColumns ?? []);
@@ -654,15 +678,18 @@ function CRMPipeline() {
           }
         } catch (error) {
           if (requestId === leadRequestIdRef.current) {
-            toast.error(error instanceof Error ? error.message : "Falha ao carregar leads.");
+            toast.error(controller.signal.aborted
+              ? "Tempo limite ao carregar leads. A atualização será repetida."
+              : error instanceof Error ? error.message : "Falha ao carregar leads.");
           }
         } finally {
+          window.clearTimeout(timeout);
           if (requestId === leadRequestIdRef.current) {
             setLoadingLeads(false);
           }
         }
       })();
-      leadLoadRef.current = { unitId: activeUnitId, promise };
+      leadLoadRef.current = { unitId: activeUnitId, promise, controller };
       try {
         await promise;
       } finally {
@@ -829,7 +856,7 @@ function CRMPipeline() {
       subscribeCommercialConfiguration(
         activeUnitId,
         () => {
-          void loadLeads({ silent: true, force: true });
+          void loadLeads({ silent: true });
           void loadOptions(formUnitId, true);
         },
         60000,
@@ -946,6 +973,7 @@ function CRMPipeline() {
         setForm(emptyLeadForm(activeUnitId));
 
         if (data.lead.unitId === activeUnitId) {
+          leadVersionRef.current = null;
           setLeads((current) => [data.lead, ...current]);
         }
       } else if (editingLead) {
@@ -965,6 +993,7 @@ function CRMPipeline() {
         const course = courses.find((item) => item.id === attendance?.courseId);
         const channel = channels.find((item) => item.id === (payload.acquisitionChannelId || ""));
 
+        leadVersionRef.current = null;
         setLeads((current) =>
           current.map((item) =>
             item.id === editingLead.id
@@ -1127,6 +1156,7 @@ function CRMPipeline() {
         }),
       );
 
+      leadVersionRef.current = null;
       setLeads((current) => current.filter((item) => item.id !== lead.id));
       toast.success("Lead removido.");
     } catch (error) {
@@ -1146,6 +1176,7 @@ function CRMPipeline() {
     const nextStage = column.semanticStage ?? "Em contato";
 
     setSyncingLeadId(lead.id);
+    leadVersionRef.current = null;
     setLeads((current) =>
       current.map((item) =>
         item.id === lead.id ? { ...item, pipelineColumnId: column.id, stage: nextStage } : item,
@@ -1173,6 +1204,7 @@ function CRMPipeline() {
         }),
       );
 
+      leadVersionRef.current = null;
       setLeads((current) =>
         current.map((item) =>
           item.id === lead.id
@@ -1211,6 +1243,7 @@ function CRMPipeline() {
 
       toast.success(`Lead movido para ${column.name}.`);
     } catch (error) {
+      leadVersionRef.current = null;
       setLeads((current) =>
         current.map((item) =>
           item.id === lead.id
@@ -1255,6 +1288,7 @@ function CRMPipeline() {
         }),
       );
 
+      leadVersionRef.current = null;
       setLeads((current) =>
         current.map((item) =>
           item.id === pendingAssumeLead.id
@@ -1302,6 +1336,7 @@ function CRMPipeline() {
         }),
       );
 
+      leadVersionRef.current = null;
       setLeads((current) => current.filter((item) => item.id !== editingLead.id));
       broadcastChannelRef.current?.postMessage({
         type: "lead-stage-updated",

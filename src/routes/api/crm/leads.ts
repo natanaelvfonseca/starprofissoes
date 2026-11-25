@@ -19,6 +19,7 @@ import {
   normalizeRoutingText,
 } from "@/lib/server/course-attendances";
 import { queryDb } from "@/lib/server/db";
+import { leadListResponse } from "@/lib/server/lead-list-response";
 import { reconcileEvolutionLabelsForUser } from "@/lib/server/evolution-label-automation";
 
 type LeadRow = QueryResultRow & {
@@ -476,7 +477,7 @@ export const Route = createFileRoute("/api/crm/leads")({
                 ($3 = 'students' and l.stage = 'Matriculado')
                 or ($3 = 'pipeline' and l.stage <> 'Matriculado')
               )
-            order by l.created_at desc
+            order by l.created_at desc, l.id
           `,
             [unit.id, session.user.id, listView, canManageUnitLeads],
           ),
@@ -485,7 +486,7 @@ export const Route = createFileRoute("/api/crm/leads")({
               select id, unit_id, pipeline_type, name, color, position, system_key, semantic_stage
               from app_pipeline_columns
               where unit_id = $1 and pipeline_type = $2
-              order by position, created_at, name
+              order by position, created_at, name, id
             `,
             [unit.id, listView === "students" ? "students" : "leads"],
           ),
@@ -500,20 +501,17 @@ export const Route = createFileRoute("/api/crm/leads")({
                   or uu.user_id is not null
                   or u.role in ('DEV', 'CEO', 'CVO', 'MARKETING')
                 )
-              order by u.name
+              order by u.name, u.id
             `,
             [unit.id],
           ),
         ]);
 
-        return Response.json(
-          {
-            leads: result.rows.map((row) => mapLead(row, exposeAcquisitionChannel)),
-            pipelineColumns: columnsResult.rows.map(mapPipelineColumn),
-            owners: ownersResult.rows,
-          },
-          { headers: { "Cache-Control": "no-store" } },
-        );
+        return leadListResponse(request, {
+          leads: result.rows.map((row) => mapLead(row, exposeAcquisitionChannel)),
+          pipelineColumns: columnsResult.rows.map(mapPipelineColumn),
+          owners: ownersResult.rows,
+        });
       },
       POST: async ({ request }) => {
         const session = await getSessionFromRequest(request);
