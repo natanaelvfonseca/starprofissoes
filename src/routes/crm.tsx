@@ -1,4 +1,5 @@
 import { LeadHistory } from "@/components/LeadHistory";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   resolveLeadPipelineColumn,
   kanbanHorizontalScrollStep,
@@ -24,6 +25,8 @@ import {
   FileUp,
   Filter,
   KanbanSquare,
+  History,
+  UserRound,
   List as ListIcon,
   Loader2,
   Mail,
@@ -2941,6 +2944,12 @@ function CreateLeadDialog({
 }) {
   const isEditMode = mode === "edit";
   const showAcquisitionChannelField = !isEditMode || canViewAcquisitionChannel;
+  const [activeTab, setActiveTab] = React.useState("details");
+  React.useEffect(() => {
+    setActiveTab("details");
+  }, [open, mode, historyLeadId]);
+  const showHistoryTab = isEditMode && Boolean(historyLeadId);
+  const currentTab = showHistoryTab ? activeTab : "details";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -2963,7 +2972,7 @@ function CreateLeadDialog({
                   </DialogDescription>
                 </DialogHeader>
               </div>
-              {isEditMode ? (
+              {isEditMode && currentTab === "details" ? (
                 <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
                   <Button
                     type="button"
@@ -2999,6 +3008,20 @@ function CreateLeadDialog({
             </div>
           </div>
 
+          <Tabs value={currentTab} onValueChange={setActiveTab}>
+            {showHistoryTab ? (
+              <div className="border-b border-border/70 bg-muted/30 px-6 pt-3">
+                <TabsList aria-label="Seções do lead" className="h-auto w-full justify-start gap-1 rounded-none bg-transparent p-0 sm:w-auto">
+                  <TabsTrigger value="details" className="gap-2 rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none">
+                    <UserRound className="h-4 w-4" /> Dados do lead
+                  </TabsTrigger>
+                  <TabsTrigger value="history" className="gap-2 rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none">
+                    <History className="h-4 w-4" /> Histórico
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+            ) : null}
+            <TabsContent value="details" className="mt-0">
           <div className="grid gap-4 p-6 md:grid-cols-2">
             <div className="space-y-2 md:col-span-2">
               <Label htmlFor="lead-full-name">Nome Completo</Label>
@@ -3201,10 +3224,6 @@ function CreateLeadDialog({
               </div>
             ) : null}
 
-            {open && isEditMode && historyLeadId ? (
-              <LeadHistory key={historyLeadId} leadId={historyLeadId} unitId={historyUnitId} refreshKey={historyRefreshKey} />
-            ) : null}
-
             {isEditMode ? (
               <div className="space-y-4 rounded-xl border border-primary/15 bg-[linear-gradient(135deg,rgba(22,0,108,.05),rgba(255,138,31,.09),rgba(18,54,201,.08))] p-4 md:col-span-2">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -3395,6 +3414,20 @@ function CreateLeadDialog({
                   : "Criar Lead"}
             </Button>
           </DialogFooter>
+            </TabsContent>
+            {showHistoryTab ? (
+              <TabsContent value="history" className="mt-0">
+                <div className="p-6">
+                  {open && currentTab === "history" ? (
+                    <LeadHistory key={historyLeadId} leadId={historyLeadId} unitId={historyUnitId} refreshKey={historyRefreshKey} />
+                  ) : null}
+                </div>
+                <DialogFooter className="border-t border-border/70 bg-muted/30 px-6 py-4">
+                  <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Fechar</Button>
+                </DialogFooter>
+              </TabsContent>
+            ) : null}
+          </Tabs>
         </form>
       </DialogContent>
     </Dialog>
