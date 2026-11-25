@@ -1,3 +1,5 @@
+import { summarizeConsultantPipeline, type PipelineCountGroup } from "@/lib/consultant-pipeline-report";
+import type { PipelineColumn, LeadStage } from "@/lib/commercial-types";
 import { createFileRoute } from "@tanstack/react-router";
 import type { QueryResultRow } from "pg";
 import { canViewGrowth } from "@/lib/auth-types";
@@ -34,6 +36,7 @@ type ConsultantRow = QueryResultRow & {
   received: string;
   enrollments: string;
 };
+type ColumnRow = QueryResultRow & { id:string; unit_id:string; name:string; color:string; position:number; system_key:string|null; semantic_stage:LeadStage|null };
 type DetailAttendanceRow = QueryResultRow & {
   id: string;
   name: string;
@@ -137,6 +140,8 @@ export const Route = createFileRoute("/api/bi/reports")({
             cities,
             campaigns,
             consultants,
+            pipelineColumns,
+            pipelineGroups,
             preview,
           ] = await Promise.all([
             queryDb<SummaryRow>(
@@ -217,11 +222,25 @@ export const Route = createFileRoute("/api/bi/reports")({
                       and m.converted_at < (($3::date + 1)::timestamp at time zone 'America/Sao_Paulo')
                  )::text as enrollments
               from app_users u
-              join app_user_units uu on uu.user_id = u.id and uu.unit_id = $1
               left join app_leads l on l.unit_id = $1 and l.created_by = u.id and ${attendanceFilter}
-              where u.role = 'CONSULTOR'
+              where u.role = 'CONSULTOR' and (u.primary_unit_id = $1 or exists (
+                select 1 from app_user_units uu where uu.user_id=u.id and uu.unit_id=$1
+              ))
               group by u.id, u.name, u.status order by u.name`,
               params,
+            ),
+            queryDb<ColumnRow>(
+              `select id,unit_id,name,color,position,system_key,semantic_stage
+               from app_pipeline_columns where unit_id=$1 and pipeline_type='leads'
+               order by position,created_at,name,id`, [unit.id],
+            ),
+            queryDb<PipelineCountGroup>(
+              `select l.created_by as owner_id,
+                (l.shared_queue and l.stage='Novo lead' and l.attendance_id is not null) as shared_queue,
+                l.pipeline_column_id,l.stage,count(*)::text as total,
+                count(*) filter (where ${leadPeriod})::text as period_total
+              from app_leads l where l.unit_id=$1 and ${attendanceFilter} and l.stage<>'Matriculado'
+              group by 1,2,3,4`, params,
             ),
             queryDb<LeadRow>(
               `select l.id, l.full_name as name, l.created_at::text as created_at, l.stage,
@@ -237,6 +256,11 @@ export const Route = createFileRoute("/api/bi/reports")({
             ),
           ]);
 
+          const columns: PipelineColumn[] = pipelineColumns.rows.map(row=>({
+            id:row.id,unitId:row.unit_id,pipelineType:"leads",name:row.name,color:row.color,
+            position:Number(row.position),systemKey:row.system_key,semanticStage:row.semantic_stage,
+          }));
+          const pipeline = summarizeConsultantPipeline(unit.id,columns,pipelineGroups.rows,consultants.rows.map(row=>row.id));
           const consultantList = consultants.rows
             .map((row) => ({
               id: row.id,
@@ -245,6 +269,7 @@ export const Route = createFileRoute("/api/bi/reports")({
               portfolio: n(row.portfolio),
               received: n(row.received),
               enrollments: n(row.enrollments),
+              pipeline: pipeline.consultants.get(row.id)!,
             }))
             .sort(
               (a, b) =>
@@ -337,6 +362,9 @@ export const Route = createFileRoute("/api/bi/reports")({
               cities: cities.rows.map((row) => ({ name: row.name, leads: n(row.leads) })),
               campaigns: campaigns.rows.map((row) => ({ name: row.name, leads: n(row.leads) })),
               consultants: consultantList,
+              pipelineColumns: columns.map(({id,name,color})=>({id,name,color})),
+              pipelineShared: pipeline.shared,
+              pipelineOther: pipeline.other,
               consultantDetail,
               preview: preview.rows.map((row) => ({
                 id: row.id,

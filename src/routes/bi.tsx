@@ -1,3 +1,5 @@
+import { pipelineColorHex } from "@/lib/pipeline-configuration";
+import type { PipelineCounts } from "@/lib/consultant-pipeline-report";
 import * as React from "react";
 import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
 import {
@@ -60,6 +62,7 @@ type Consultant = {
   portfolio: number;
   received: number;
   enrollments: number;
+  pipeline: PipelineCounts;
 };
 type Reports = {
   unit: { id: string; name: string };
@@ -78,6 +81,9 @@ type Reports = {
   cities: Group[];
   campaigns: Group[];
   consultants: Consultant[];
+  pipelineColumns: {id:string;name:string;color:string}[];
+  pipelineShared: PipelineCounts;
+  pipelineOther: PipelineCounts;
   consultantDetail: null | {
     trend: TrendPoint[];
     attendances: Array<{ id: string; name: string; leads: number; enrollments: number }>;
@@ -371,6 +377,7 @@ function BI() {
   const [attendanceId, setAttendanceId] = React.useState("");
   const [attendanceOptions, setAttendanceOptions] = React.useState<ClassRow[]>([]);
   const [consultantId, setConsultantId] = React.useState("");
+  const [pipelineScope, setPipelineScope] = React.useState<"current"|"period">("current");
   const [refreshCount, setRefreshCount] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
@@ -1055,57 +1062,55 @@ function BI() {
                       )}
                     </div>
                   </Panel>
-                  <Panel
-                    title="Comparativo da equipe"
-                    description="A carteira é o estoque atual; leads e matrículas pertencem ao período selecionado."
-                  >
-                    {report.consultants.length ? (
-                      <div className="overflow-x-auto">
-                        <table className="w-full min-w-[650px] text-left text-sm">
-                          <thead>
-                            <tr className="border-b border-[#E7ECF4] text-xs text-[#8390A6]">
-                              <th className="px-3 pb-3">Consultor</th>
-                              <th className="px-3 pb-3 text-right">Carteira ativa</th>
-                              <th className="px-3 pb-3 text-right">Leads do período</th>
-                              <th className="px-3 pb-3 text-right">Matrículas feitas</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {report.consultants.map((row) => (
-                              <tr
-                                key={row.id}
-                                className="border-b border-[#EEF1F6] last:border-0 hover:bg-[#F9FAFD]"
-                              >
-                                <td className="px-3 py-3 font-semibold text-[#3568DE]">
-                                  <button
-                                    type="button"
-                                    className="text-left hover:underline"
-                                    onClick={() => setConsultantId(row.id)}
-                                  >
-                                    {row.name}
-                                    {row.status === "inactive" ? " · Inativo" : ""}
-                                  </button>
-                                </td>
-                                <td className="px-3 py-3 text-right tabular-nums">
-                                  {fmt.format(row.portfolio)}
-                                </td>
-                                <td className="px-3 py-3 text-right tabular-nums">
-                                  {fmt.format(row.received)}
-                                </td>
-                                <td className="px-3 py-3 text-right font-bold tabular-nums">
-                                  {fmt.format(row.enrollments)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <Empty>Nenhum consultor cadastrado nesta unidade.</Empty>
-                    )}
-                  </Panel>
+
                 </>
               )}
+              <Panel
+                title={selected ? `Pipeline de ${selected.name}` : "Comparativo dos consultores por pipeline"}
+                description="Quantidade de leads em cada coluna real do Kanban, por responsável atual. A fila compartilhada não é atribuída a todos os consultores."
+              >
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" variant={pipelineScope==="current"?"default":"outline"} onClick={()=>setPipelineScope("current")}>Carteira atual</Button>
+                    <Button type="button" size="sm" variant={pipelineScope==="period"?"default":"outline"} onClick={()=>setPipelineScope("period")}>Leads do período</Button>
+                  </div>
+                  <span className="text-xs text-[#8390A6]">{pipelineScope==="current"?"Todas as datas · respeita a turma selecionada":"Criados no período selecionado · etapa atual"}</span>
+                </div>
+                {report.pipelineColumns?.length ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-max text-left text-sm">
+                      <thead><tr className="border-b border-[#E7ECF4] text-xs text-[#8390A6]">
+                        <th className="sticky left-0 z-10 bg-white px-3 pb-3 min-w-[160px]">Consultor</th>
+                        {report.pipelineColumns.map(column=>(
+                          <th key={column.id} className="px-3 pb-3 text-center whitespace-nowrap">
+                            <span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{backgroundColor:pipelineColorHex[column.color]??"#8390A6"}}/>{column.name}
+                          </th>
+                        ))}
+                        <th className="px-3 pb-3 text-right">Total no funil</th>
+                      </tr></thead>
+                      <tbody>
+                        {(selected?[selected]:report.consultants).map(row=>(
+                          <tr key={row.id} className="border-b border-[#EEF1F6] hover:bg-[#F9FAFD]">
+                            <td className="sticky left-0 z-10 bg-white px-3 py-3 font-semibold text-[#3568DE]">
+                              <button type="button" className="text-left hover:underline" onClick={()=>setConsultantId(row.id)}>{row.name}{row.status==="inactive"?" · Inativo":""}</button>
+                            </td>
+                            {report.pipelineColumns.map(column=>{const count=row.pipeline?.[pipelineScope]?.[column.id]??0;return <td key={column.id} className={`px-3 py-3 text-center tabular-nums ${count?"font-semibold text-[#273959]":"text-[#AAB4C5]"}`}>{fmt.format(count)}</td>})}
+                            <td className="px-3 py-3 text-right font-bold tabular-nums">{fmt.format(Object.values(row.pipeline?.[pipelineScope]??{}).reduce((sum,v)=>sum+v,0))}</td>
+                          </tr>
+                        ))}
+                        {!selected && [ {name:"Fila compartilhada",counts:report.pipelineShared}, {name:"Outros / sem responsável",counts:report.pipelineOther} ].map(row=>(
+                          <tr key={row.name} className="border-b border-[#EEF1F6] bg-[#F9FAFD]">
+                            <td className="sticky left-0 z-10 bg-[#F9FAFD] px-3 py-3 text-xs font-semibold text-[#6D7A90]">{row.name}</td>
+                            {report.pipelineColumns.map(column=><td key={column.id} className="px-3 py-3 text-center tabular-nums">{fmt.format(row.counts?.[pipelineScope]?.[column.id]??0)}</td>)}
+                            <td className="px-3 py-3 text-right font-bold tabular-nums">{fmt.format(Object.values(row.counts?.[pipelineScope]??{}).reduce((sum,v)=>sum+v,0))}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : <Empty>Nenhuma coluna do pipeline encontrada.</Empty>}
+                <p className="mt-3 text-xs text-[#8C99AE]">Matriculados não fazem parte do Kanban de leads e continuam no indicador de matrículas realizadas.</p>
+              </Panel>
               {report.metrics.enrollmentsWithoutConverter ? (
                 <p className="text-xs text-[#9B7080]">
                   {fmt.format(report.metrics.enrollmentsWithoutConverter)} matrícula(s) no período
